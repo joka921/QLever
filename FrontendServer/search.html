@@ -1,0 +1,37 @@
+<html>
+  <head>
+    <title> Fuzzy City Search </title>
+    <meta http-equiv="Content-Type" content="text/html;charset=utf-8"> 
+
+
+
+    <link rel="stylesheet" type="text/css" href="search.css"/>
+    <script src="https://code.jquery.com/jquery-3.1.1.min.js"></script>
+    <script src="js_cookie.js"></script>
+    <script src="search.js"></script>
+  </head>
+  <body>
+    <div class="normal" id="heading">The Western European Fuzzy City searcher</div>
+    Search for a city using the search bar. Click at a result to see
+    the position<br />
+
+    <div id = "left">
+  <button type ="button" onclick="viewSource()">View Source</button>
+    <input id="query"/><br />
+    <div id = "searchRes"> </div>
+    <div id = "thanks"> </div>
+    </div>
+    <div id="right">
+      <div id="triples">
+      <div class="triple" id="triple0">
+        <div class="subject" ondrop="drop(event)" ondragover="allowDrop(event)"> </div>
+        <div class="property" ondrop="drop(event)" ondragover="allowDrop(event)"> </div>
+        <div class="object" ondrop="drop(event)" ondragover="allowDrop(event)"> </div>
+        <button class="deleteTripleButton" onclick="removeTriple(0)"> - </button>
+      </div>
+      </div>
+      <div class="triple">
+        <button class="addTripleButton" onclick="addTriple()">Add Triple </button>
+    </div>
+  </body>
+</html>

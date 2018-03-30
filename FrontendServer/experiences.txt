@@ -1,0 +1,39 @@
+Dear Prof. Bast, dear Raghu,
+
+This sheet was really instructive with all the encoding stuff and so on. And I
+got myself an goole maps api key. I hope this works, if you run it from your
+machines, I tested it on different machines, so you have a fair chance.
+
+I spent really much time on correcting small mistakes in last weeks sheet and
+not tooo much on the layout. I will probably be working more on command lines
+than on web layouts.
+
+Overall I spent maybe 7 hours on this which was much, since I already had the
+fuzzy search working last time.
+
+
+One advise for next year:
+If you can provide one slide for the c++/encoding/wstring issue. You wouldn't
+need to talk about it, just tell people it's there.
+
+- std::codecvt_utf8 is what you need with a wstring_converter
+- this needs a certain version of g++
+- why advise wstring (some special encoding, implementation dependend)
+when there is char_16t for utf16 and char_32t for utf32 which supports all kinds
+of operations. (If I had known earlier... but on linux we have 4 Bytes of
+wstrings)
+
+
+For Raghu:
+I have tried to improve everything
+- no more segfaults with empty requests (also tested)
+- we are searching for the last dot in a filename now
+- the url-decoding is in utils.h and tested in the SearchServerMainTest
+
+- the json-escaping is in QGramIndex.cpp and tested there, because the whole
+  JSON business is there
+- The layout is not that nice, but I have Google Maps
+
+
+Best regards,
+Johannes
