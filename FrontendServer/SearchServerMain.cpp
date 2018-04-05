@@ -87,16 +87,17 @@ int main(int argc, char** argv) {
       } else {
         // request is valid, cut relevant part
         auto filename = req.substr(5, posReqEnd - 5);
-        if (filename.substr(0, 3) == std::string("?q=")) {
+        if (filename.substr(0, 3) == std::string("?t=")) {
           // query request, find matches
           contentType = "application/json";
-          std::string query = decodeURL(filename.substr(3));
+          auto parsed = ServerUtils::parseQuery(filename);
           //TODO: Implement UTF-8 again
           //auto queryWide = converter.from_bytes(query.c_str());
-          if (query.length() == 0) {
+          
+          if (parsed.first.length() == 0 || parsed.second == SearchMode::Invalid) {
             contentString = "[]";
           } else {
-            auto res = finder.findEntitiesByPrefix(query, SearchMode::Properties);
+            auto res = finder.findEntitiesByPrefix(parsed.first, parsed.second);
            // get at most ten results as JSON
            contentString = ServerUtils::entitiesToJson(res, 10);
           }
@@ -104,14 +105,14 @@ int main(int argc, char** argv) {
         // redirect empty string (start page) to standard file
         if (!filename.length()) filename = "search.html";
         // match file ending
-          auto pairContentType = detectContentType(filename);
+          auto pairContentType = ServerUtils::detectContentType(filename);
           contentType = pairContentType.second;
           if (!pairContentType.first) {
             validReq = false;
             contentString = "unsupported file type detected";
           } else {
             if (whitelist.find(filename) != whitelist.end()) {
-              auto fileContents = readFile(filename);
+              auto fileContents = ServerUtils::readFile(filename);
               if (!fileContents.first) validReq = false;
               contentString = fileContents.second;
             } else {

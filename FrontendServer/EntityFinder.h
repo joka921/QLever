@@ -9,7 +9,7 @@
 #include "WikidataEntity.h"
 
 enum class SearchMode {
-  All, Subjects, Properties};
+  All, Subjects, Properties, Invalid};
 
 
 // ___________________________________________________________

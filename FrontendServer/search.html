@@ -18,11 +18,28 @@
     <div id = "left">
   <button type ="button" onclick="viewSource()">View Source</button>
     <input id="query"/><br />
+    <fieldset id="searchmodeButtons">
+      <input type="radio" id="radioAll" name="searchtype" value="all"
+      checked="checked">
+      <label for="radioAll"> All Entities</label>
+      <input type="radio" id="radioObj" name="searchtype" value="obj">
+      <label for="radioObj"> Subjects/ Objects</label>
+      <input type="radio" id="radioPred" name="searchtype" value="prd">
+      <label for="radioPred"> Predicates Only</label>
+    </fieldset>
+
+
     <div id = "searchRes"> </div>
     <div id = "thanks"> </div>
     </div>
     <div id="right">
       <div id="triples">
+      <div class="triple" id="variables">
+        <div class="variable" id="x0" wdName="?x0" draggable="true" ondragstart="drag(event)" >?x0</div>
+        <div class="variable" id="x1" wdName="?x1" draggable="true" ondragstart="drag(event)" >?x1</div>
+        <div class="variable" id="x2" wdName="?x2" draggable="true" ondragstart="drag(event)" >?x2</div>
+        <div class="variable" id="x3" wdName="?x3" draggable="true" ondragstart="drag(event)" >?x3</div>
+        </div>
       <div class="triple" id="triple0">
         <div class="subject" ondrop="drop(event)" ondragover="allowDrop(event)"> </div>
         <div class="property" ondrop="drop(event)" ondragover="allowDrop(event)"> </div>
@@ -32,6 +49,10 @@
       </div>
       <div class="triple">
         <button class="addTripleButton" onclick="addTriple()">Add Triple </button>
+    </div>
+      <div class="triple">
+        <button class="addTripleButton"
+          onclick="removeEmptyTriples()">SendQuery(notWorking) </button>
     </div>
   </body>
 </html>

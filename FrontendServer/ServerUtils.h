@@ -2,13 +2,21 @@
 #define _SERVER_UTILS_H
 
 #include <vector>
+#include <string>
+#include <utility>
+
 
 #include "WikidataEntity.h"
+#include "EntityFinder.h"
 
 class ServerUtils {
  public:
   static std::string entitiesToJson(const std::vector<WikidataEntityShort>& entities, size_t num);
   static std::string escapeJson(const std::string& wordNarrow);
+  static std::pair<std::string, SearchMode> parseQuery(const std::string& query);
+  static std::string decodeURL(std::string encoded);
+  static std::pair<bool, std::string> readFile(std::string filename);
+  static std::pair<bool, std::string> detectContentType(std::string filename); 
 };
 
 #endif  // _SERVER_UTILS_H

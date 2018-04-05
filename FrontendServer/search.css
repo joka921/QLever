@@ -28,7 +28,7 @@
 }
 
 #right {
-  width: 60%;
+  width: 400pt;
   height: 80%;
   float: right;
 }
@@ -93,4 +93,12 @@
   height: 80%;
   margin: auto;
   display:block;
+}
+
+.variable{
+  background-color: #FF0000;
+  width: 20%;
+  height: 100%;
+  float:left;
+  margin-left: 2%
 }
