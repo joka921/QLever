@@ -1,5 +1,6 @@
 #include "WikidataEntity.h"
 
+// _____________________________________________________________________
 WikidataEntity::WikidataEntity(const std::string& line) {
 
   auto pos = line.find("\t");
@@ -12,3 +13,4 @@ WikidataEntity::WikidataEntity(const std::string& line) {
     newpos = line.find("\t", pos + 1);
   }
 }
+

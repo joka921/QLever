@@ -54,39 +54,48 @@ def extract_entities(infile, outfile):
             with open(outfile + '.desc', 'w') as f_desc:
                 with open(outfile + '.triple', 'w') as f_triples:
                     for line in f_in:
+                        #if ANYTHING GOES WRONG, continue
+                        #TODO: this is bad style and also catches
+                        #keyboardInterrupts
                         try:
-                            data_raw = json.loads(line[:-2])
-                        except json.decoder.JSONDecodeError:
-                            print("error")
-                            continue
-                        data = data_raw
-                        wd_id = data["id"]
-                        if (not wd_id.startswith("Q")):
-                            print(wd_id)
-                        try:
-                            label = data["labels"]["en"]["value"]
-                        except KeyError:
-                            #no english label
-                            continue
-                        #description = data["descriptions"]["en"]["value"]
-                        aliases = data["aliases"]
-                        alias_str = extract_english(data["aliases"])
-                        desc_str = extract_english(data["descriptions"])
+                            try:
+                                data_raw = json.loads(line[:-2])
+                            except json.decoder.JSONDecodeError:
+                                print("error")
+                                continue
+                            data = data_raw
+                            wd_id = data["id"]
+                            #if (not wd_id.startswith("Q")):
+                              #  print(wd_id)
 
-                        # check type of alias??
-                        out_str = wd_id + "\t" + label
-                        if (alias_str):
-                            out_str = out_str + "\t" + alias_str
-                        print(out_str, file=f_out)
-                        print(desc_str, file=f_desc)
+                            # add the "<..>" brackets needed by QLever
+                            wd_id = "<" + wd_id + ">"
+                            try:
+                                label = data["labels"]["en"]["value"]
+                            except KeyError:
+                                #no english label
+                                continue
+                            #description = data["descriptions"]["en"]["value"]
+                            aliases = data["aliases"]
+                            alias_str = extract_english(data["aliases"])
+                            desc_str = extract_english(data["descriptions"])
 
-                        #handle the claims and statements
-                        claim_list = extract_claims(data["claims"])
-                        for el in claim_list:
-                            print("<" + wd_id  + ">\t" + el + "\t.", file = f_triples)
-                        count += 1
-                        if (count % 10000 ==0):
-                            print(count)
+                            # check type of alias??
+                            out_str = wd_id + "\t" + label
+                            if (alias_str):
+                                out_str = out_str + "\t" + alias_str
+                            print(out_str, file=f_out)
+                            print(desc_str, file=f_desc)
+
+                            #handle the claims and statements
+                            claim_list = extract_claims(data["claims"])
+                            for el in claim_list:
+                                print(wd_id+"\t" + el + "\t.", file = f_triples)
+                            count += 1
+                            if (count % 10000 ==0):
+                                print(count)
+                        except:
+                            continue
 
 if __name__ == "__main__":
     import sys

@@ -37,6 +37,8 @@ class EntityFinder {
   EntityFinder(const std::string& filename);
   std::vector<WikidataEntityShort> findEntitiesByPrefix(const std::string& prefix, SearchMode mode = SearchMode::All);
 
+
+
 };
 
 #endif  // _ENTITY_FINDER_H

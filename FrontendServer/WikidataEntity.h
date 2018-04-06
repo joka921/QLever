@@ -22,6 +22,17 @@ class WikidataEntity {
   // read line that python preprocessor outputs
   // TODO: document format when finished
   WikidataEntity(const string& line);
+
+  // _____________________________________
+  static bool IsPropertyName(const std::string& name) {
+    std::cout << name.substr(0, 2) << std::endl;
+    return name.substr(0, 2) == std::string("<P");
+  }
+
+  // _________________________________________________________________________
+  static bool IsSubjectName(const std::string& name) {
+    return name.substr(0, 2) == std::string("<Q");
+  }
 };
 
 // for search results, only index, name and description
@@ -34,10 +45,11 @@ class WikidataEntityShort {
 
   WikidataEntityShort(const string& wd, const string& nameT, const string& desc)
     : wdName(wd), name(nameT), description(desc) {
-    type = wdName[0] =='P' ? EntityType::Property : EntityType::Subject;}
+    type = WikidataEntity::IsPropertyName(wdName) ? EntityType::Property : EntityType::Subject;}
 
 
   string toString() {return wdName + "\t" + name + "\t" + description;}
+
 };
 
 #endif  // _WIKIDATA_ENTITY_H

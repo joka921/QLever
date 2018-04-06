@@ -105,7 +105,7 @@ function removeEmptyTriples() {
    triples = document.getElementById("triples").children;
    var triplesToBeDeleted = [];
    var invalidTripleFound = 0;
-   var sparql ="SELECT ?x1 ?x2 ?x3 ?x4 WHERE \{ ";
+   var sparql ="SELECT ?x0 ?x1 ?x2 ?x3 WHERE \{ ";
   for (var i = 0; i < triples.length; i++) {
     var name = triples[i].getAttribute("id");
     if (!name.startsWith("triple")) {
@@ -145,8 +145,21 @@ function removeEmptyTriples() {
   }
   sparql += "\}";
   if (!invalidTripleFound) {
-    alert(sparql);
+    // TODO: also filter empty queries!!!
+    executeSparqlQuery(sparql);
   }
 }
 
-// __________________________________________________________________________________
+// ______________________________________________________
+function executeSparqlQuery(query) {
+    var host = window.location.host;
+    // TODO: not- hardcoded port (what is the easiest way ??)
+    var port = window.location.port - 1;
+    var url = "http://localhost:9998" + "/?query=" + query;
+    console.log("URL: " + url);
+    $.getJSON(url, function(data) {retJson = data
+      console.log(retJson);
+    });
+}
+
+

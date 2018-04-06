@@ -50,12 +50,14 @@ EntityFinder::EntityFinder(const std::string& filename) {
   size_t maxIdxEntity = 0;
   size_t maxIdxProperty = 0;
   for (const auto& el : wdNameVec) {
-    std::stringstream s(el.substr(1));
+    // Entities start with <P or <Q after this there comes index number and >
+    //  TODO: make more explicit
+    std::stringstream s(el.substr(2));
     size_t idx;
     s >> idx;
-    if (el.at(0) == 'Q') {
+    if (WikidataEntity::IsSubjectName(el)) {
       maxIdxEntity = std::max(maxIdxEntity, idx);
-    } else if (el.at(0) == 'P') {
+    } else if (WikidataEntity::IsPropertyName(el)) {
       maxIdxProperty = std::max(maxIdxProperty, idx);
     }
 
@@ -67,13 +69,12 @@ EntityFinder::EntityFinder(const std::string& filename) {
 
   size_t num = 0;
   for (const auto& el : wdNameVec) {
-   
     std::stringstream s(el.substr(1));
     size_t idx;
     s >> idx;
-    if (el.at(0) == 'Q') {
+    if (WikidataEntity::IsSubjectName(el)) {
       EntityToIdxVec[idx] = num;
-    } else if (el.at(0) == 'P') {
+    } else if (WikidataEntity::IsPropertyName(el)) {
       PropertyToIdxVec[idx] = num;
     }
     num += 1;
@@ -94,8 +95,8 @@ std::vector<WikidataEntityShort> EntityFinder::findEntitiesByPrefix( const std::
    while (res != aliasVec.end() && std::equal(prefix.begin(), prefix.end(), (*res).first.begin())) {
      auto indices = (*res).second;
      for (const auto idx : indices) {
-       if(mode == SearchMode::Properties && wdNameVec[idx][0] == 'Q') continue;
-       if(mode == SearchMode::Subjects && wdNameVec[idx][0] == 'P') continue;
+       if(mode == SearchMode::Properties && WikidataEntity::IsSubjectName(wdNameVec[idx])) continue;
+       if(mode == SearchMode::Subjects && WikidataEntity::IsPropertyName(wdNameVec[idx])) continue;
        descFile.seekg(descOffsetVec[idx]);
        std::string desc;
        std::getline(descFile, desc);
@@ -106,3 +107,4 @@ std::vector<WikidataEntityShort> EntityFinder::findEntitiesByPrefix( const std::
    std::cout << "found " << ret.size() << std::endl;
    return ret;
  }
+
