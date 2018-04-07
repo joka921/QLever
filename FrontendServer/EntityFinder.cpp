@@ -95,6 +95,8 @@ std::vector<WikidataEntityShort> EntityFinder::findEntitiesByPrefix( const std::
        std::string desc;
        std::getline(descFile, desc);
        ret.emplace_back(wdNameVec[idx], nameDescVec[idx].first, desc);
+       std::cout << ret.size() << std::endl;
+       if (ret.size() > 100) return ret;
      }
      res++;
    }

@@ -156,7 +156,7 @@ function executeSparqlQuery(query) {
     var host = window.location.host;
     // TODO: not- hardcoded port (what is the easiest way ??)
     var port = window.location.port - 1;
-    var url = "http://localhost:9998" + "/?query=" + query;
+    var url = "http://titan.informatik.privat:9998" + "/?query=" + query;
     console.log("URL: " + url);
     $.getJSON(url, function(data) {retJson = data
       console.log(retJson);

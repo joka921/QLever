@@ -1,4 +1,4 @@
-CXX = g++  -g -O3 -Wall -std=c++11
+CXX = g++   -O3 -Wall -std=c++11 -L/home/kalmbacj/lib
 MAIN_BINARIES = $(basename $(wildcard *Main.cpp))
 TEST_BINARIES = $(basename $(wildcard *Test.cpp))
 HEADER = $(wildcard *.h)
@@ -7,7 +7,7 @@ CPPLINT_PATH = ./cpplint.py
 CPPLINT_FILTERS = -runtime/references,-build/header_guard,-build/include
 
 PORT = 9999
-FILE = ../pythonParser/medium.txt
+FILE = ../Wikidata/complete.txt
 
 .PRECIOUS: %.o
 
