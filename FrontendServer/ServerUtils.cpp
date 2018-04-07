@@ -155,3 +155,14 @@ std::pair<bool, std::string> ServerUtils::detectContentType(std::string filename
   }
   return std::make_pair(reqValid, contentType);
 }
+
+// ___________________________________________________________________________________
+std::vector<std::string> ServerUtils::split(const std::string& s, char delim) {
+  std::vector<std::string> ret;
+  std::stringstream sstream(s);
+  std::string item;
+  while (std::getline(sstream, item, delim)) {
+    ret.push_back(item);
+  }
+  return ret;
+}

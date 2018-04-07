@@ -101,6 +101,13 @@ int main(int argc, char** argv) {
            // get at most ten results as JSON
            contentString = ServerUtils::entitiesToJson(res, 10);
           }
+        } else if (filename.substr(0, 3) == std::string("?c=")) {
+          contentType = "application/json";
+          auto listOfNames = ServerUtils::decodeURL(filename.substr(3));
+          auto vecOfNames = ServerUtils::split(listOfNames, ' ');
+          //TODO: convert ALL
+          // and do this directly without detour in client
+          contentString = ServerUtils::entitiesToJson(finder.wdNamesToEntities(vecOfNames), 100);
         } else {
         // redirect empty string (start page) to standard file
         if (!filename.length()) filename = "search.html";

@@ -30,12 +30,15 @@ class EntityFinder {
 
   // sorted vector where aliases are assigned to indices in the 2 vectors above
   std::vector<std::pair<std::string, std::vector<unsigned>>> aliasVec;
+  size_t getIdxFromWdName(const std::string& wdName);
 
 
  public:
   // Construct from file prepared by Preprocessor
   EntityFinder(const std::string& filename);
   std::vector<WikidataEntityShort> findEntitiesByPrefix(const std::string& prefix, SearchMode mode = SearchMode::All);
+
+  std::vector<WikidataEntityShort> wdNamesToEntities(std::vector<string> wdNames);
 
 
 

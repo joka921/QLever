@@ -27,7 +27,6 @@ function getEntitySearchResults() {
     console.log("URL: " + url);
     $.getJSON(url, function(data) {retJson = data
       console.log(retJson);
-      var items = "<br />";
       $("#searchRes").empty();
       for (var i = 0; i < retJson.length; i++) {
         var cssClass = retJson[i]["type"] == "P" ? "resLinePredicate" : "resLineSubject";
@@ -39,8 +38,6 @@ function getEntitySearchResults() {
         $("#wdDesc" + i).text(retJson[i]["desc"]);
       }
 
-
-      console.log(items);
     });
   }
 
@@ -159,7 +156,28 @@ function executeSparqlQuery(query) {
     console.log("URL: " + url);
     $.getJSON(url, function(data) {retJson = data
       console.log(retJson);
+    if (retJson["status"] == "OK" && retJson["res"].length > 0) {
+      url = "http://" + host + "/?c=" + retJson["res"][0].join(' ');
+      $.getJSON(url, function(data) {retJson = data
+        console.log(retJson);
+        showEntitiesInResline(retJson, "queryRes");
+      }
+
+    }
     });
+}
+
+// ______________________________________________________
+function showEntitiesInResline(retJson, basename) {
+  $("#" + basename).empty();
+  for (var i = 0; i < retJson.length; i++) {
+    var cssClass = retJson[i]["type"] == "P" ? "resLinePredicate" : "resLineSubject";
+    $("#" + basename).append("<div class =\"" + cssClass +"\" id=res" + basename + i + " >");
+    $("#res"+ basename + i).append("<div class = \"wdName\" id=wdName" + basename + i + " draggable=\"true\" ondragstart=\"drag(event)\" wdName=\"" + retJson[i]["wdName"] + "\"> ");
+    $("#res" + basename + i).append("<div class = \"wdDesc\" id=wdDesc" + basename + i + " > ");
+    $("#wdName" + basename + i).text(retJson[i]["name"]);
+    $("#wdDesc" + basename + i).text(retJson[i]["desc"]);
+  }
 }
 
 

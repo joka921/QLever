@@ -50,11 +50,7 @@ EntityFinder::EntityFinder(const std::string& filename) {
   size_t maxIdxEntity = 0;
   size_t maxIdxProperty = 0;
   for (const auto& el : wdNameVec) {
-    // Entities start with <P or <Q after this there comes index number and >
-    //  TODO: make more explicit
-    std::stringstream s(el.substr(2));
-    size_t idx;
-    s >> idx;
+    size_t idx = getIdxFromWdName(el);
     if (WikidataEntity::IsSubjectName(el)) {
       maxIdxEntity = std::max(maxIdxEntity, idx);
     } else if (WikidataEntity::IsPropertyName(el)) {
@@ -69,9 +65,7 @@ EntityFinder::EntityFinder(const std::string& filename) {
 
   size_t num = 0;
   for (const auto& el : wdNameVec) {
-    std::stringstream s(el.substr(1));
-    size_t idx;
-    s >> idx;
+    size_t idx = getIdxFromWdName(el);
     if (WikidataEntity::IsSubjectName(el)) {
       EntityToIdxVec[idx] = num;
     } else if (WikidataEntity::IsPropertyName(el)) {
@@ -108,3 +102,37 @@ std::vector<WikidataEntityShort> EntityFinder::findEntitiesByPrefix( const std::
    return ret;
  }
 
+// ________________________________________________________________________
+size_t EntityFinder::getIdxFromWdName(const std::string& wdName) {
+  // start with "<Q" or "<P", then number
+  std::stringstream s(wdName.substr(2));
+  size_t idx;
+  s >> idx;
+  return idx;
+}
+
+// ___________________________________________________________________
+std::vector<WikidataEntityShort> EntityFinder::wdNamesToEntities(std::vector<string> wdNames) {
+  std::vector<WikidataEntityShort> ret;
+  for (const auto& el : wdNames) {
+    auto idx = getIdxFromWdName(el);
+    std::cout <<idx<<std::endl;
+    auto& vec = EntityToIdxVec;
+    if (WikidataEntity::IsPropertyName(el)) {
+      vec = PropertyToIdxVec;
+    }
+    std::string name = "";
+    std::string desc = "";
+    if (idx < vec.size()) {
+      // convert from the "wikidata-name-idx" to the internal (unique) index
+      idx = vec[idx];
+      if (idx >= 0) {
+        // if there is an entity matching, then also include name and description
+        name = nameDescVec[idx].first;
+        desc = nameDescVec[idx].second;
+      }
+    }
+    ret.emplace_back(el, nameDescVec[idx].first, nameDescVec[idx].second);
+  }
+  return ret;
+}

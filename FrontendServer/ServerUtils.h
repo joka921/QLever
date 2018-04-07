@@ -17,6 +17,7 @@ class ServerUtils {
   static std::string decodeURL(std::string encoded);
   static std::pair<bool, std::string> readFile(std::string filename);
   static std::pair<bool, std::string> detectContentType(std::string filename); 
+  static std::vector<std::string> split(const std::string& s, char delim);
 };
 
 #endif  // _SERVER_UTILS_H
