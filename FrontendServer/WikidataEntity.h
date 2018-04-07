@@ -25,7 +25,6 @@ class WikidataEntity {
 
   // _____________________________________
   static bool IsPropertyName(const std::string& name) {
-    std::cout << name.substr(0, 2) << std::endl;
     return name.substr(0, 2) == std::string("<P");
   }
 

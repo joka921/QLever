@@ -27,7 +27,8 @@ function getEntitySearchResults() {
     console.log("URL: " + url);
     $.getJSON(url, function(data) {retJson = data
       console.log(retJson);
-      $("#searchRes").empty();
+      showEntitiesInResline(retJson, "searchRes");
+      /*$("#searchRes").empty();
       for (var i = 0; i < retJson.length; i++) {
         var cssClass = retJson[i]["type"] == "P" ? "resLinePredicate" : "resLineSubject";
         $("#searchRes").append("<div class =\"" + cssClass +"\" id=res" + i + " >");
@@ -37,6 +38,7 @@ function getEntitySearchResults() {
         $("#wdName" + i).text(retJson[i]["name"]);
         $("#wdDesc" + i).text(retJson[i]["desc"]);
       }
+      */
 
     });
   }
@@ -64,12 +66,14 @@ function removeTriple(idx) {
  }
 }
 
+// __________________________________________________________________________
 function allowDrop(ev) {
     ev.preventDefault();
 }
 
+// __________________________________________________________________________
 function drag(ev) {
-    ev.dataTransfer.setData("text", ev.target.innerHTML);
+    ev.dataTransfer.setData("text", ev.target.getAttribute("readableName"));
     ev.dataTransfer.setData("wdName", ev.target.getAttribute("wdName"));
 
 }
@@ -156,12 +160,13 @@ function executeSparqlQuery(query) {
     console.log("URL: " + url);
     $.getJSON(url, function(data) {retJson = data
       console.log(retJson);
-    if (retJson["status"] == "OK" && retJson["res"].length > 0) {
-      url = "http://" + host + "/?c=" + retJson["res"][0].join(' ');
+    if (retJson["status"] == "OK") {
+      var flattend = [].concat.apply([], retJson["res"]);
+      url = "http://" + host + "/?c=" + flattend.join(' ');
       $.getJSON(url, function(data) {retJson = data
         console.log(retJson);
         showEntitiesInResline(retJson, "queryRes");
-      }
+      });
 
     }
     });
@@ -173,10 +178,12 @@ function showEntitiesInResline(retJson, basename) {
   for (var i = 0; i < retJson.length; i++) {
     var cssClass = retJson[i]["type"] == "P" ? "resLinePredicate" : "resLineSubject";
     $("#" + basename).append("<div class =\"" + cssClass +"\" id=res" + basename + i + " >");
-    $("#res"+ basename + i).append("<div class = \"wdName\" id=wdName" + basename + i + " draggable=\"true\" ondragstart=\"drag(event)\" wdName=\"" + retJson[i]["wdName"] + "\"> ");
-    $("#res" + basename + i).append("<div class = \"wdDesc\" id=wdDesc" + basename + i + " > ");
-    $("#wdName" + basename + i).text(retJson[i]["name"]);
-    $("#wdDesc" + basename + i).text(retJson[i]["desc"]);
+    //$("#res"+ basename + i).append("<div class = \"wdName\" id=wdId" + basename + i + " draggable=\"true\" ondragstart=\"drag(event)\" wdName=\"" + retJson[i]["wdName"] + "\ readableName=\"" + retJson[i]["name"] + "\" >");
+    $("#res"+ basename + i).append("<div class = \"wdName\" id=wdName" + basename + i + " draggable=\"true\" ondragstart=\"drag(event)\" wdName=\"" + retJson[i]["wdName"] + "\" readableName=\"" + retJson[i]["name"] + "\" >");
+    //$("#res" + basename + i).append("<div class = \"wdDesc\" id=wdDesc" + basename + i + " > ");
+    var text = retJson[i]["wdName"] + "\n" + retJson[i]["name"] + "\n" + retJson[i]["desc"]
+    $("#wdName" + basename + i).text(text);
+    //$("#wdDesc" + basename + i).text(retJson[i]["desc"]);
   }
 }
 

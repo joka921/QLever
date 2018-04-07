@@ -116,7 +116,6 @@ std::vector<WikidataEntityShort> EntityFinder::wdNamesToEntities(std::vector<str
   std::vector<WikidataEntityShort> ret;
   for (const auto& el : wdNames) {
     auto idx = getIdxFromWdName(el);
-    std::cout <<idx<<std::endl;
     auto& vec = EntityToIdxVec;
     if (WikidataEntity::IsPropertyName(el)) {
       vec = PropertyToIdxVec;
