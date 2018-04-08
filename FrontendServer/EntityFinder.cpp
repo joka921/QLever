@@ -11,38 +11,32 @@ EntityFinder::EntityFinder(const std::string& filename) {
   descriptionFilename = filename + ".desc";
   std::ifstream fileDesc(descriptionFilename);
   std::string line;
-  std::unordered_map<std::string, std::vector<unsigned>> wordMap;
   while (std::getline(file, line)) {
     auto entity = WikidataEntity(line);
     wdNameVec.push_back(entity.name);
 
     if (entity.aliases.size() > 0) {
-      nameDescVec.push_back(std::make_pair(entity.aliases[0], entity.description));
+      nameDescVec.push_back(entity.aliases[0]);
     } else {
-      nameDescVec.push_back(std::make_pair("no name", entity.description));
+      nameDescVec.push_back("no name");
       //std::cout << "No Name!!" << std::endl;
     }
 
     for ( auto& el : entity.aliases) {
       std::transform(el.begin(), el.end(), el.begin(), ::tolower);
-      wordMap[el].push_back(wdNameVec.size() - 1);
+      // TODO: substring memory consumption test
+      aliasVec.push_back(std::make_pair(el, wdNameVec.size() -1));
     }
 
     // for each line in alias file there must exist exactly one line in
     // description file. We don't want the description but only the offsets
     // TODO: is there a way to do this without actually reading the file?
-    descOffsetVec.push_back(fileDesc.tellg());
+    //descOffsetVec.push_back(fileDesc.tellg());
     std::string tempDesc;
     std::getline(fileDesc, tempDesc);
-
-
   }
-  aliasVec.reserve(wordMap.size());
-  for (const auto& entry : wordMap) {
-    aliasVec.push_back(entry);
-  }
-  auto sortPred = [](const std::pair<std::string, std::vector<unsigned>>&  p1,
-                     const std::pair<std::string, std::vector<unsigned>>&  p2) {
+  auto sortPred = [](const std::pair<std::string, unsigned>&  p1,
+                     const std::pair<std::string, unsigned>&  p2) {
      return p1.first < p2.first;};
   std::sort(aliasVec.begin(), aliasVec.end(), sortPred);
 
@@ -81,23 +75,24 @@ std::vector<WikidataEntityShort> EntityFinder::findEntitiesByPrefix( const std::
   std::string prefix = prefixA;
   std::ifstream descFile(descriptionFilename);
   std::transform(prefix.begin(), prefix.end(), prefix.begin(), ::tolower);
-  auto boundPred = [](const std::pair<std::string, std::vector<unsigned>>&  p1,
+  auto boundPred = [](const std::pair<std::string, unsigned>&  p1,
                      const std::string& p2) { return p1.first < p2;};
 
    auto res = std::lower_bound(aliasVec.begin(), aliasVec.end(), prefix, boundPred);
    std::vector<WikidataEntityShort> ret;
    while (res != aliasVec.end() && std::equal(prefix.begin(), prefix.end(), (*res).first.begin())) {
-     auto indices = (*res).second;
-     for (const auto idx : indices) {
-       if(mode == SearchMode::Properties && WikidataEntity::IsSubjectName(wdNameVec[idx])) continue;
-       if(mode == SearchMode::Subjects && WikidataEntity::IsPropertyName(wdNameVec[idx])) continue;
+     auto idx = (*res).second;
+     if(mode == SearchMode::Properties && WikidataEntity::IsSubjectName(wdNameVec[idx])) continue;
+     if(mode == SearchMode::Subjects && WikidataEntity::IsPropertyName(wdNameVec[idx])) continue;
+     if (descFile.is_open()) {
        descFile.seekg(descOffsetVec[idx]);
-       std::string desc;
-       std::getline(descFile, desc);
-       ret.emplace_back(wdNameVec[idx], nameDescVec[idx].first, desc);
-       std::cout << ret.size() << std::endl;
-       if (ret.size() > 100) return ret;
      }
+     std::cout << "idx " << idx << "size " << wdNameVec.size() << std::endl;
+     std::string desc;
+     std::getline(descFile, desc);
+     ret.emplace_back(wdNameVec[idx], nameDescVec[idx], desc);
+     std::cout << ret.size() << std::endl;
+     if (ret.size() > 100) return ret;
      res++;
    }
    std::cout << "found " << ret.size() << std::endl;
@@ -129,11 +124,11 @@ std::vector<WikidataEntityShort> EntityFinder::wdNamesToEntities(std::vector<str
       idx = vec[idx];
       if (idx >= 0) {
         // if there is an entity matching, then also include name and description
-        name = nameDescVec[idx].first;
-        desc = nameDescVec[idx].second;
+        name = nameDescVec[idx];
       }
     }
-    ret.emplace_back(el, nameDescVec[idx].first, nameDescVec[idx].second);
+    //TODO: read from descfile
+    ret.emplace_back(el, nameDescVec[idx], nameDescVec[idx]);
   }
   return ret;
 }

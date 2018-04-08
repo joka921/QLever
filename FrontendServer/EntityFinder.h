@@ -5,6 +5,7 @@
 #include <utility>
 #include <string>
 #include <iostream>
+#include <unordered_map>
 
 #include "WikidataEntity.h"
 
@@ -26,10 +27,11 @@ class EntityFinder {
   std::string descriptionFilename;
   // offsets of descriptions in description text file
   std::vector<std::streampos> descOffsetVec;
-  std::vector<std::pair<std::string, std::string>> nameDescVec; // Name and description
+  std::vector<std::string> nameDescVec; // Name and description
 
   // sorted vector where aliases are assigned to indices in the 2 vectors above
-  std::vector<std::pair<std::string, std::vector<unsigned>>> aliasVec;
+  std::vector<std::pair<std::string, unsigned>> aliasVec;
+//  std::unordered_map<std::string, std::vector<unsigned>> wordMap;
   size_t getIdxFromWdName(const std::string& wdName);
 
 
