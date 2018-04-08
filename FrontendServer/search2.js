@@ -74,7 +74,10 @@ function executeSparqlQuery(query) {
     if (retJson["status"] == "OK") {
       var flattend = [].concat.apply([], retJson["res"]);
       resultForPassing = "http://" + host + "/?c=" + flattend.join(' ');
-      $("#hidden").text(flattend);
+      $.getJSON(resultForPassing, function(resData) {
+	console.log(resData);
+	showEntitiesInResline(resData, "queryRes");
+      });
     }
 
     /*
@@ -83,10 +86,6 @@ function executeSparqlQuery(query) {
       showEntitiesInResline(resData, "queryRes");
     });
     */
-    $.getJSON(resultForPassing, function(resData) {
-      console.log(resData);
-      showEntitiesInResline(resData, "queryRes");
-    });
     });
 }
 
