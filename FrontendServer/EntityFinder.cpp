@@ -31,7 +31,7 @@ EntityFinder::EntityFinder(const std::string& filename) {
     // for each line in alias file there must exist exactly one line in
     // description file. We don't want the description but only the offsets
     // TODO: is there a way to do this without actually reading the file?
-    //descOffsetVec.push_back(fileDesc.tellg());
+    descOffsetVec.push_back(fileDesc.tellg());
     std::string tempDesc;
     std::getline(fileDesc, tempDesc);
   }
@@ -90,9 +90,9 @@ std::vector<WikidataEntityShort> EntityFinder::findEntitiesByPrefix( const std::
      std::cout << "idx " << idx << "size " << wdNameVec.size() << std::endl;
      std::string desc;
      std::getline(descFile, desc);
-     ret.emplace_back(wdNameVec[idx], nameDescVec[idx], desc);
+     ret.push_back(WikidataEntityShort(wdNameVec[idx], nameDescVec[idx], desc));
      std::cout << ret.size() << std::endl;
-     if (ret.size() > 100) return ret;
+     if (ret.size() > 20) return ret;
      res++;
    }
    std::cout << "found " << ret.size() << std::endl;

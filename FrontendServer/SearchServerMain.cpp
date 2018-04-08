@@ -54,7 +54,7 @@ int main(int argc, char** argv) {
   // (I was not sure if it would be sufficient to filter anything
   // starting with "../" or "/"
   std::unordered_set<string> whitelist{
-    "search.css", "search.js", "search.html", "js_cookie.js"};
+    "search.css", "search.js", "search2.js", "search.html", "js_cookie.js"};
 
   while (true) {
     try {
