@@ -38,7 +38,9 @@ int main(int argc, char** argv) {
   uint16_t port = atoi(argv[2]);
 
   // createEntityFinder
-  EntityFinder finder(argv[1]);
+  EntityFinder finder;
+  finder.InitializeFromTextFile(argv[1]);
+  finder.WriteToFile("test.dat");
 
   // set up server endpoints etc
   basio::io_service ioService;

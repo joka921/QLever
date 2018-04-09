@@ -1,12 +1,13 @@
 #include "EntityFinder.h"
 
 #include <fstream>
+#include <ios>
 #include <sstream>
 #include <unordered_map>
 #include <algorithm>
 
 // ______________________________________________________________________
-EntityFinder::EntityFinder(const std::string& filename) {
+void EntityFinder::InitializeFromTextFile(const std::string& filename) {
   std::ifstream file(filename);
   descriptionFilename = filename + ".desc";
   std::ifstream fileDesc(descriptionFilename);
@@ -162,4 +163,40 @@ std::vector<WikidataEntityShort> EntityFinder::wdNamesToEntities(std::vector<str
     ret.emplace_back(el, (*nameVec)[idx], (*nameVec)[idx]);
   }
   return ret;
+}
+
+// ______________________________________________________________________________
+void EntityFinder::WriteToFile(const std::string& filename) {
+  std::cout << "Writing to file " << filename << std::endl;
+  std::ofstream os(filename, std::ios::binary);
+  boost::archive::binary_oarchive oar(os);
+  oar << *this;
+  std::cout << "Done." << std::endl;
+}
+
+// ______________________________________________________________________________
+EntityFinder EntityFinder::ReadFromFile(const std::string& filename) {
+  std::cout << "Reading from file " << filename << std::endl;
+  std::ifstream os(filename, std::ios::binary);
+  boost::archive::binary_iarchive oar(os);
+  EntityFinder ent;
+  oar >> ent;
+  std::cout << "Done." << std::endl;
+  return ent;
+}
+
+// ________________________________________________________________
+template<class Archive>
+void EntityFinder::serialize(Archive& ar, const unsigned int version){
+  ar & wdNameVec;
+  ar & wdNameVecPred;
+  ar & EntityToIdxVec;
+  ar & PropertyToIdxVec;
+  ar & descriptionFilename;
+  //ar & descOffsetVec;
+  //ar & descOffsetVecPred;
+  ar & nameDescVec;
+  ar & nameDescVecPred;
+  ar & aliasVec;
+  ar & aliasVecPred;
 }

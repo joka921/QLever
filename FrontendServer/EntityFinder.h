@@ -7,6 +7,12 @@
 #include <iostream>
 #include <unordered_map>
 
+#include <boost/archive/binary_oarchive.hpp>
+#include <boost/archive/binary_iarchive.hpp>
+#include <boost/serialization/vector.hpp>
+#include <boost/serialization/string.hpp>
+#include <boost/serialization/utility.hpp>
+
 #include "WikidataEntity.h"
 
 enum class SearchMode {
@@ -16,6 +22,9 @@ enum class SearchMode {
 // ___________________________________________________________
 class EntityFinder {
  private:
+  friend class boost::serialization::access;
+  template<class Archive>
+  void serialize(Archive & ar, const unsigned int version);
   std::vector<std::string> wdNameVec; // Name in Wikidata, e.gl "Q23"
   std::vector<std::string> wdNameVecPred; // Name in Wikidata, e.gl "Q23"
 
@@ -41,13 +50,19 @@ class EntityFinder {
 
  public:
   // Construct from file prepared by Preprocessor
-  EntityFinder(const std::string& filename);
+  void InitializeFromTextFile(const std::string& filename);
+  void WriteToFile(const std::string& filename);
+  static EntityFinder ReadFromFile(const std::string& filename);
+ 
   std::vector<WikidataEntityShort> findEntitiesByPrefix(const std::string& prefix, SearchMode mode = SearchMode::All);
 
   std::vector<WikidataEntityShort> wdNamesToEntities(std::vector<string> wdNames);
 
 
 
+
 };
+
+
 
 #endif  // _ENTITY_FINDER_H
