@@ -17,6 +17,7 @@ enum class SearchMode {
 class EntityFinder {
  private:
   std::vector<std::string> wdNameVec; // Name in Wikidata, e.gl "Q23"
+  std::vector<std::string> wdNameVecPred; // Name in Wikidata, e.gl "Q23"
 
   // in wikidata dumps, the entries are not ordered, so we have to keep track of
   // their indices
@@ -27,10 +28,13 @@ class EntityFinder {
   std::string descriptionFilename;
   // offsets of descriptions in description text file
   std::vector<std::streampos> descOffsetVec;
+  std::vector<std::streampos> descOffsetVecPred;
   std::vector<std::string> nameDescVec; // Name and description
+  std::vector<std::string> nameDescVecPred; // Name and description
 
   // sorted vector where aliases are assigned to indices in the 2 vectors above
   std::vector<std::pair<std::string, unsigned>> aliasVec;
+  std::vector<std::pair<std::string, unsigned>> aliasVecPred;
 //  std::unordered_map<std::string, std::vector<unsigned>> wordMap;
   size_t getIdxFromWdName(const std::string& wdName);
 
