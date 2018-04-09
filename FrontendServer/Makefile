@@ -33,10 +33,10 @@ clean:
 	rm -f core
 
 %Main: %Main.o $(OBJECTS)
-	$(CXX) -o $@ $^ -lboost_system
+	$(CXX) -o $@ $^ -lboost_system -lboost_serialization
 
 %Test: %Test.o $(OBJECTS)
-	$(CXX) -o $@ $^ -lgtest -lgtest_main -lpthread -lboost_system
+	$(CXX) -o $@ $^ -lgtest -lgtest_main -lpthread -lboost_system -lboost_serialization
 
 %.o: %.cpp $(HEADER)
 	$(CXX) -c $<
