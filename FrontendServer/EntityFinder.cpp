@@ -167,11 +167,25 @@ std::vector<WikidataEntityShort> EntityFinder::wdNamesToEntities(std::vector<str
 
 // ______________________________________________________________________________
 void EntityFinder::WriteToFile(const std::string& filename) {
+
   std::cout << "Writing to file " << filename << std::endl;
+  descOffsetVecSer.clear();
+  descOffsetVecSer.reserve(descOffsetVec.size());
+  descOffsetVecPredSer.clear();
+  descOffsetVecPredSer.reserve(descOffsetVecPred.size());
+  for (const auto& el : descOffsetVec) {
+    descOffsetVecSer.emplace_back(el);
+  }
+
+  for (const auto& el : descOffsetVecPred) {
+    descOffsetVecPredSer.emplace_back(el);
+  }
   std::ofstream os(filename, std::ios::binary);
   boost::archive::binary_oarchive oar(os);
   oar << *this;
   std::cout << "Done." << std::endl;
+  descOffsetVecSer.clear();
+  descOffsetVecPredSer.clear();
 }
 
 // ______________________________________________________________________________
@@ -193,10 +207,19 @@ void EntityFinder::serialize(Archive& ar, const unsigned int version){
   ar & EntityToIdxVec;
   ar & PropertyToIdxVec;
   ar & descriptionFilename;
-  //ar & descOffsetVec;
-  //ar & descOffsetVecPred;
+  ar & descOffsetVecSer;
+  ar & descOffsetVecPredSer;
   ar & nameDescVec;
   ar & nameDescVecPred;
   ar & aliasVec;
   ar & aliasVecPred;
+  
+}
+
+
+// ________________________________________________________________
+template<class Archive>
+void streamposSerializable::serialize(Archive& ar, const unsigned int version){
+  ar & readableOffset;
+  ar & readableState;
 }
