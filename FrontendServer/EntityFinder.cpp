@@ -193,6 +193,7 @@ EntityFinder EntityFinder::ReadFromFile(const std::string& filename) {
   boost::archive::binary_iarchive oar(os);
   EntityFinder ent;
   oar >> ent;
+  std::cout << ent.aliasVec.size() << std::endl;
   std::cout << "Done." << std::endl;
   return ent;
 }

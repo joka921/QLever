@@ -74,13 +74,15 @@ class EntityFinder {
   std::vector<std::string> nameDescVecPred; // Name and description
 
   // sorted vector where aliases are assigned to indices in the 2 vectors above
+  // TODO: public actually only here for debugging
+ public:
   std::vector<std::pair<std::string, unsigned>> aliasVec;
   std::vector<std::pair<std::string, unsigned>> aliasVecPred;
 //  std::unordered_map<std::string, std::vector<unsigned>> wordMap;
   size_t getIdxFromWdName(const std::string& wdName);
 
 
- public:
+// public:
   // Construct from file prepared by Preprocessor
   void InitializeFromTextFile(const std::string& filename);
   void WriteToFile(const std::string& filename);

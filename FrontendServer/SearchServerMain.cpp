@@ -43,7 +43,9 @@ int main(int argc, char** argv) {
     finder.InitializeFromTextFile(argv[1]);
     finder.WriteToFile("test.dat");
   } else {
-    finder.ReadFromFile("test.dat");
+    finder = EntityFinder::ReadFromFile("test.dat");
+    std::cout << finder.aliasVec.size()<< std::endl;
+    std::cout << finder.aliasVec[0].first;
   }
 
   // set up server endpoints etc
