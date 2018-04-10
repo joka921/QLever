@@ -63,13 +63,13 @@ void EntityFinder::InitializeFromTextFile(const std::string& filename) {
     size_t idx = getIdxFromWdName(el);
     maxIdxEntity = std::max(maxIdxEntity, idx);
   }
-  EntityToIdxVec.resize(maxIdxEntity);
+  EntityToIdxVec.resize(maxIdxEntity + 1);
   std::fill(EntityToIdxVec.begin(), EntityToIdxVec.end(), -1);
 
   size_t num = 0;
   for (const auto& el : wdNameVec) {
     size_t idx = getIdxFromWdName(el);
-    EntityToIdxVec[idx] = num;
+    EntityToIdxVec.at(idx) = num;
     num += 1;
   }
 
@@ -80,15 +80,25 @@ void EntityFinder::InitializeFromTextFile(const std::string& filename) {
     maxIdxEntity = std::max(maxIdxEntity, idx);
   }
 
-  PropertyToIdxVec.resize(maxIdxEntity);
+  PropertyToIdxVec.resize(maxIdxEntity + 1);
   std::fill(PropertyToIdxVec.begin(), PropertyToIdxVec.end(), -1);
 
   num = 0;
   for (const auto& el : wdNameVecPred) {
     size_t idx = getIdxFromWdName(el);
-    PropertyToIdxVec[idx] = num;
+    PropertyToIdxVec.at(idx) = num;
     num += 1;
   }
+
+  EntityToIdxVec.shrink_to_fit();
+  PropertyToIdxVec.shrink_to_fit();
+  aliasVec.shrink_to_fit();
+  aliasVecPred.shrink_to_fit();
+  descOffsetVec.shrink_to_fit();
+  descOffsetVecPred.shrink_to_fit();
+  nameDescVec.shrink_to_fit();
+  nameDescVecPred.shrink_to_fit();
+
 }
 
 // __________________________________________________________________
@@ -169,23 +179,11 @@ std::vector<WikidataEntityShort> EntityFinder::wdNamesToEntities(std::vector<str
 void EntityFinder::WriteToFile(const std::string& filename) {
 
   std::cout << "Writing to file " << filename << std::endl;
-  descOffsetVecSer.clear();
-  descOffsetVecSer.reserve(descOffsetVec.size());
-  descOffsetVecPredSer.clear();
-  descOffsetVecPredSer.reserve(descOffsetVecPred.size());
-  for (const auto& el : descOffsetVec) {
-    descOffsetVecSer.emplace_back(el);
-  }
-
-  for (const auto& el : descOffsetVecPred) {
-    descOffsetVecPredSer.emplace_back(el);
-  }
+  std::cout << sizeof(std::streampos) << std::endl;
   std::ofstream os(filename, std::ios::binary);
   boost::archive::binary_oarchive oar(os);
   oar << *this;
   std::cout << "Done." << std::endl;
-  descOffsetVecSer.clear();
-  descOffsetVecPredSer.clear();
 }
 
 // ______________________________________________________________________________
@@ -207,19 +205,12 @@ void EntityFinder::serialize(Archive& ar, const unsigned int version){
   ar & EntityToIdxVec;
   ar & PropertyToIdxVec;
   ar & descriptionFilename;
-  ar & descOffsetVecSer;
-  ar & descOffsetVecPredSer;
+  ar & descOffsetVec;
+  ar & descOffsetVecPred;
   ar & nameDescVec;
   ar & nameDescVecPred;
   ar & aliasVec;
   ar & aliasVecPred;
-  
 }
 
 
-// ________________________________________________________________
-template<class Archive>
-void streamposSerializable::serialize(Archive& ar, const unsigned int version){
-  ar & readableOffset;
-  ar & readableState;
-}

@@ -7,7 +7,7 @@ CPPLINT_PATH = ./cpplint.py
 CPPLINT_FILTERS = -runtime/references,-build/header_guard,-build/include
 
 PORT = 9999
-FILE = ../Wikidata/complete.txt
+FILE = ../Wikidata/million.txt
 
 .PRECIOUS: %.o
 

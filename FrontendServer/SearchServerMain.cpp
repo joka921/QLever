@@ -30,7 +30,7 @@ using std::endl;
 // _____________________________________________________________________________
 int main(int argc, char** argv) {
   // Parse the command line arguments.
-  if (argc < 3) {
+  if (argc < 3 || argc > 4) {
     std::cerr << "Usage " << argv[0] << " <inputfile> <port>\n";
     exit(1);
   }
@@ -39,8 +39,12 @@ int main(int argc, char** argv) {
 
   // createEntityFinder
   EntityFinder finder;
-  finder.InitializeFromTextFile(argv[1]);
-  finder.WriteToFile("test.dat");
+  if (argc == 3) {
+    finder.InitializeFromTextFile(argv[1]);
+    finder.WriteToFile("test.dat");
+  } else {
+    finder.ReadFromFile("test.dat");
+  }
 
   // set up server endpoints etc
   basio::io_service ioService;

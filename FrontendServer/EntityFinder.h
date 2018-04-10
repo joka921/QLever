@@ -18,30 +18,34 @@
 enum class SearchMode {
   All, Subjects, Properties, Invalid};
 
-class streamposSerializable {
-  public:
-   std::streamoff readableOffset;
-   std::mbstate_t readableState;
-   //default constructor needed for serialization
-   streamposSerializable() : readableOffset(0), readableState(){}
-   streamposSerializable(const std::streampos& x) : readableOffset(x), readableState(x.state()){}
-   std::streampos toStreampos() {
-     std::streampos res(readableOffset);
-     res.state(readableState);
-     return res;
-   }
 
-   friend class boost::serialization::access;
-   template<class Archive>
-     void serialize(Archive& ar, const unsigned int version);
-};
-
+BOOST_SERIALIZATION_SPLIT_FREE(std::streampos)
 namespace boost {
   namespace serialization {
     template<class Archive>
       void serialize(Archive & ar, std::mbstate_t& s, const unsigned int version) {
         ar & s.__count;
         ar & s.__value.__wch;
+      }
+
+    template<class Archive>
+      void save(Archive& ar, const std::streampos &s, const unsigned int version) 
+      {
+        std::streamoff off = s;
+        ar & off;
+        std::mbstate_t state = s.state();
+        ar & state;
+      }
+
+    template<class Archive>
+      void load(Archive& ar, std::streampos &s, const unsigned int version)
+      {
+        std::streamoff off;
+        ar & off;
+        std::mbstate_t state;
+        ar & state;
+        s += off;
+        s.state(state);
       }
   }
 }
@@ -66,8 +70,6 @@ class EntityFinder {
   std::vector<std::streampos> descOffsetVec;
   std::vector<std::streampos> descOffsetVecPred;
   // only used during serialization
-  std::vector<streamposSerializable> descOffsetVecSer;
-  std::vector<streamposSerializable> descOffsetVecPredSer;
   std::vector<std::string> nameDescVec; // Name and description
   std::vector<std::string> nameDescVecPred; // Name and description
 
