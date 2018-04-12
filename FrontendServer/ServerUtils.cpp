@@ -2,6 +2,11 @@
 #include "utils.h"
 #include "EntityFinder.h"
 
+#include <sstream>
+
+#include <cereal/archives/json.hpp>
+#include <cereal/types/vector.hpp>
+
 // _______________________________________________________________
 std::string ServerUtils::entitiesToJson(const std::vector<WikidataEntityShort>& entities, size_t num) {
 
@@ -28,7 +33,13 @@ std::string ServerUtils::entitiesToJson(const std::vector<WikidataEntityShort>& 
     contentString = contentString.substr(0, contentString.length() - 1);
   }
   contentString.append("]");
-  return contentString;
+  std::stringstream stream;
+  {
+    cereal::JSONOutputArchive archive(stream);
+    archive(CEREAL_NVP(entities));
+  }
+
+  return stream.str();
 }
 
 // _______________________________________________________________

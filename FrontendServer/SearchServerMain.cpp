@@ -17,6 +17,7 @@
 #include "./EntityFinder.h"
 #include "./utils.h"
 #include "./ServerUtils.h"
+#include "./QLeverCommunicator.h"
 
 
 namespace basio = boost::asio;
@@ -39,6 +40,7 @@ int main(int argc, char** argv) {
 
   // createEntityFinder
   EntityFinder finder;
+  QLeverCommunicator communicator("titan.informatik.privat", 9998);
   if (argc == 3) {
     finder.InitializeFromTextFile(argv[1]);
     finder.WriteToFile("test.dat");
@@ -116,6 +118,12 @@ int main(int argc, char** argv) {
           //TODO: convert ALL
           // and do this directly without detour in client
           contentString = ServerUtils::entitiesToJson(finder.wdNamesToEntities(vecOfNames), 100);
+        } else if (filename.substr(0, 3) == std::string("?r=")) {
+          contentType = "application/json";
+          auto query = ServerUtils::decodeURL(filename.substr(3));
+          auto result = communicator.GetQueryResult(query);
+          contentString = ServerUtils::entitiesToJson(finder.wdNamesToEntities(result.res), 100);
+
         } else {
         // redirect empty string (start page) to standard file
         if (!filename.length()) filename = "search.html";

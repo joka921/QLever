@@ -1,4 +1,4 @@
-CXX = g++ -g   -O0 -Wall -std=c++11 -L/home/kalmbacj/lib
+CXX = g++ -g   -O0 -Wall -std=c++14 -L/home/kalmbacj/lib
 MAIN_BINARIES = $(basename $(wildcard *Main.cpp))
 TEST_BINARIES = $(basename $(wildcard *Test.cpp))
 HEADER = $(wildcard *.h)
@@ -33,10 +33,10 @@ clean:
 	rm -f core
 
 %Main: %Main.o $(OBJECTS)
-	$(CXX) -o $@ $^ -lboost_system -lboost_serialization
+	$(CXX) -o $@ $^ -lboost_system -lboost_serialization -lcurl
 
 %Test: %Test.o $(OBJECTS)
-	$(CXX) -o $@ $^ -lgtest -lgtest_main -lpthread -lboost_system -lboost_serialization
+	$(CXX) -o $@ $^ -lgtest -lgtest_main -lpthread -lboost_system -lboost_serialization -lcurl
 
 %.o: %.cpp $(HEADER)
 	$(CXX) -c $<

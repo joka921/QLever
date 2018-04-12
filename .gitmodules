@@ -4,3 +4,9 @@
 [submodule "third_party/googletest"]
 	path = third_party/googletest
 	url = https://github.com/google/googletest.git
+[submodule "httpclient-cpp"]
+	path = httpclient-cpp
+	url = https://github.com/embeddedmz/httpclient-cpp.git
+[submodule "picojson"]
+	path = picojson
+	url = https://github.com/kazuho/picojson.git

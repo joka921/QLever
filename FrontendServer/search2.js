@@ -17,7 +17,7 @@ function removeEmptyTriples() {
    triples = document.getElementById("triples").children;
    var triplesToBeDeleted = [];
    var invalidTripleFound = 0;
-   var sparql ="SELECT ?x0 ?x1 ?x2 ?x3 WHERE \{ ";
+   var sparql = ""
   for (var i = 0; i < triples.length; i++) {
     var name = triples[i].getAttribute("id");
     if (!name.startsWith("triple")) {
@@ -27,6 +27,7 @@ function removeEmptyTriples() {
     var els = triples[i].children;
     var oneDefined = 0;
     var oneUndefined = 0;
+    var usedVariables= {}
     for (var k = 0; k < els.length; k++) {
       if (els[k].getAttribute("class").startsWith("deleteTr")) {
         continue;
@@ -36,6 +37,9 @@ function removeEmptyTriples() {
       if (els[k].getAttribute("wdName")) {
         oneDefined = 1;
         sparql = sparql +" " + wdName + "";
+        if (wdName.startsWith("?")) {
+          usedVariables[wdName] = true;
+        }
       } else {
         oneUndefined = 1;
         els[k].style.backgroundColor="FF0000";
@@ -55,8 +59,26 @@ function removeEmptyTriples() {
   for (var j = 0; j < triplesToBeDeleted.length; j++) {
     removeTriple(triplesToBeDeleted[j]);
   }
+  sparqlHead = "SELECT";
+  selectedVars = {}
+  checkboxes = $('input[id^="selectedX"]');
+  var selectedVarFound = false;
+  for (var c in checkboxes) {
+    c = checkboxes[c]
+    if (c.checked == true &&usedVariables[c.value] == true) {
+      sparqlHead += " "  + c.value;
+      selectedVarFound = true;
+
+    }
+  }
+  sparqlHead += " WHERE \{ ";
+  sparql = sparqlHead + sparql;
   sparql += "\}";
-  if (!invalidTripleFound) {
+  if (invalidTripleFound) {
+    showErrorInResline("Incomplete Triples were found (see red markings", "queryRes");
+  } else if (!selectedVarFound) {
+    showErrorInResline("You have to select at least one variable which also occurs in triples", "queryRes");
+  } else {
     // TODO: also filter empty queries!!!
     executeSparqlQuery(sparql);
   }
@@ -67,40 +89,36 @@ function executeSparqlQuery(query) {
     var host = window.location.host;
     // TODO: not- hardcoded port (what is the easiest way ??)
     var port = window.location.port - 1;
-    var url = "http://titan.informatik.privat:9998" + "/?query=" + query;
+    var url = "http://" + host +  "?r=" + query;
     console.log("URL: " + url);
     $.getJSON(url, function(data) {retJson = data
       console.log(retJson);
-    if (retJson["status"] == "OK") {
-      var flattend = [].concat.apply([], retJson["res"]);
-      resultForPassing = "http://" + host + "/?c=" + flattend.join(' ');
-      $.getJSON(resultForPassing, function(resData) {
-	console.log(resData);
-	showEntitiesInResline(resData, "queryRes");
-      });
-    }
-
-    /*
-    $.getJSON("http://localhost:9999/?c=%3CP189%3E", function(resData) {
-      console.log(resData);
-      showEntitiesInResline(resData, "queryRes");
-    });
-    */
+      showEntitiesInResline(retJson, "queryRes");
     });
 }
 
 // ______________________________________________________
-function showEntitiesInResline(retJson, basename) {
+function showEntitiesInResline(json, basename) {
   $("#" + basename).empty();
+  retJson = json["entities"];
   for (var i = 0; i < retJson.length; i++) {
-    var cssClass = retJson[i]["type"] == "P" ? "resLinePredicate" : "resLineSubject";
+
+    var cssClass = retJson[i]["type"] == "1" ? "resLinePredicate" : "resLineSubject";
     $("#" + basename).append("<div class =\"" + cssClass +"\" id=res" + basename + i + " >");
     //$("#res"+ basename + i).append("<div class = \"wdName\" id=wdId" + basename + i + " draggable=\"true\" ondragstart=\"drag(event)\" wdName=\"" + retJson[i]["wdName"] + "\ readableName=\"" + retJson[i]["name"] + "\" >");
     $("#res"+ basename + i).append("<div class = \"wdName\" id=wdName" + basename + i + " draggable=\"true\" ondragstart=\"drag(event)\" wdName=\"" + retJson[i]["wdName"] + "\" readableName=\"" + retJson[i]["name"] + "\" >");
     //$("#res" + basename + i).append("<div class = \"wdDesc\" id=wdDesc" + basename + i + " > ");
-    var text = retJson[i]["wdName"] + "\n" + retJson[i]["name"] + "\n" + retJson[i]["desc"];
+    var text = retJson[i]["wdName"] + "\n" + retJson[i]["name"] + "\n" + retJson[i]["description"];
       console.log(text);
     $("#wdName" + basename + i).text(text);
     //$("#wdDesc" + basename + i).text(retJson[i]["desc"]);
   }
+}
+
+// _________________________________________________________
+function showErrorInResline(error, basename) {
+  $("#" + basename).empty();
+  var cssClass = "resLinePredicate"
+  $("#" + basename).append("<div class =\"" + cssClass +"\" id=\"error" + basename +"\" >");
+  $("#error" + basename).text(error);
 }

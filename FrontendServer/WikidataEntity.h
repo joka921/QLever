@@ -4,6 +4,9 @@
 #include <string>
 #include <vector>
 #include <iostream>
+#include <cereal/cereal.hpp>
+#include <cereal/archives/json.hpp>
+
 
 using std::string;
 
@@ -22,6 +25,7 @@ class WikidataEntity {
   // read line that python preprocessor outputs
   // TODO: document format when finished
   WikidataEntity(const string& line);
+
 
   // _____________________________________
   static bool IsPropertyName(const std::string& name) {
@@ -48,6 +52,11 @@ class WikidataEntityShort {
 
 
   string toString() {return wdName + "\t" + name + "\t" + description;}
+
+  template<class Archive>
+    void serialize(Archive& ar, std::uint32_t const version) {
+      ar(CEREAL_NVP(wdName), CEREAL_NVP(name), CEREAL_NVP(description), CEREAL_NVP(type));
+    }
 
 };
 

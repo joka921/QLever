@@ -14,3 +14,10 @@ WikidataEntity::WikidataEntity(const std::string& line) {
   }
 }
 
+// ____________________________________________________________________--
+/*
+template<class Archive>
+void WikidataEntityShort::serialize(Archive& ar, std::uint32_t const version) {
+  ar(wdName, name, description, type);
+}
+*/
