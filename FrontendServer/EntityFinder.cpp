@@ -148,8 +148,17 @@ size_t EntityFinder::getIdxFromWdName(const std::string& wdName) {
   return idx;
 }
 
+// _______________________________________________________________________________
+std::vector<std::vector<WikidataEntityShort>> EntityFinder::wdNamesToEntities(const std::vector<std::vector<string>>& wdNames) {
+  std::vector<std::vector<WikidataEntityShort>> res;
+  for (const auto& vec : wdNames) {
+    res.push_back(wdNamesToEntities(vec));
+  }
+  return res;
+
+}
 // ___________________________________________________________________
-std::vector<WikidataEntityShort> EntityFinder::wdNamesToEntities(std::vector<string> wdNames) {
+std::vector<WikidataEntityShort> EntityFinder::wdNamesToEntities(const std::vector<string>& wdNames) {
   std::vector<WikidataEntityShort> ret;
   for (const auto& el : wdNames) {
     auto idx = getIdxFromWdName(el);

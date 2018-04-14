@@ -7,32 +7,19 @@
 #include <cereal/archives/json.hpp>
 #include <cereal/types/vector.hpp>
 
-// _______________________________________________________________
+// ______________________________________________________________________________
 std::string ServerUtils::entitiesToJson(const std::vector<WikidataEntityShort>& entities, size_t num) {
+  std::stringstream stream;
+  {
+    cereal::JSONOutputArchive archive(stream);
+    archive(CEREAL_NVP(entities));
+  }
 
-  string contentString = "[";
-  // append word_id of best match
-  size_t cnt = 0;
-  for (const auto& el : entities) {
-    if (cnt >= num) break;
-    contentString.append("{\"name\": \"");
-    contentString.append(escapeJson(el.name));
-    contentString.append("\", \"desc\": \"");
-    contentString.append(ServerUtils::escapeJson(el.description));
-    contentString.append("\", \"wdName\": \"");
-    contentString.append(ServerUtils::escapeJson(el.wdName));
-    contentString.append("\", \"type\": \"");
-    string typeString = el.type == EntityType::Property ? "P" : "Q";
-    contentString.append(typeString);
-    contentString.append("\"},");
-    cnt++;
-  }
-  // remove last comma if results were found (at least it consists of
-  // an opening [
-  if (contentString.length() > 1) {
-    contentString = contentString.substr(0, contentString.length() - 1);
-  }
-  contentString.append("]");
+  return stream.str();
+}
+// _______________________________________________________________
+std::string ServerUtils::entitiesToJson(const std::vector<std::vector<WikidataEntityShort>>& entities, size_t num) {
+
   std::stringstream stream;
   {
     cereal::JSONOutputArchive archive(stream);

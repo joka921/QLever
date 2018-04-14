@@ -87,10 +87,11 @@ class EntityFinder {
   void InitializeFromTextFile(const std::string& filename);
   void WriteToFile(const std::string& filename);
   static EntityFinder ReadFromFile(const std::string& filename);
- 
+
   std::vector<WikidataEntityShort> findEntitiesByPrefix(const std::string& prefix, SearchMode mode = SearchMode::All);
 
-  std::vector<WikidataEntityShort> wdNamesToEntities(std::vector<string> wdNames);
+  std::vector<std::vector<WikidataEntityShort>> wdNamesToEntities(const std::vector<std::vector<string>>& wdNames);
+  std::vector<WikidataEntityShort> wdNamesToEntities(const std::vector<string>& wdNames);
 
 
 

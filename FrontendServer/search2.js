@@ -93,7 +93,7 @@ function executeSparqlQuery(query) {
     console.log("URL: " + url);
     $.getJSON(url, function(data) {retJson = data
       console.log(retJson);
-      showEntitiesInResline(retJson, "queryRes");
+      showResults(retJson, "queryRes");
     });
 }
 
@@ -115,6 +115,32 @@ function showEntitiesInResline(json, basename) {
       console.log(text);
     $("#wdName" + basename + i).text(text);
     //$("#wdDesc" + basename + i).text(retJson[i]["desc"]);
+  }
+}
+
+// ______________________________________________________
+function showResults(json, basename) {
+  $("#" + basename).empty();
+  retJson = json["entities"];
+  var tableId = "restable";
+  $("#" + basename).append("<table id=\"" + tableId + "\"></table>");
+  var nRows = 0;
+  retJson = json["entities"];
+  for (var i = 0; i < retJson.length; i++) {
+    var rId = tableId + i
+    $("#" + tableId).append("<tr id=\"" + rId +"\"></td>");
+    for (var j = 0; j < retJson[i].length; j++) {
+      var eId = rId + "c" + j;
+      var el = retJson[i][j];
+
+
+      var cssClass = el["type"] == "1" ? "resLinePredicate" : "resLineSubject";
+      $("#" + rId).append("<td id=\"" + eId + "\"></td>");
+      var text = el["wdName"] + "\n" + el["name"] + "\n" + el["description"];
+        console.log(text);
+      $("#" + eId).text(text);
+      //$("#wdDesc" + basename + i).text(retJson[i]["desc"]);
+     }
   }
 }
 
