@@ -69,6 +69,10 @@ function drag(ev) {
     var crt = ev.target.cloneNode(true);
         crt.id = crt.id + "dummy"
         crt.style.backgroundColor = "#C2E0EF"
+
+        var rect = $(".subject")[0];
+        crt.style.width = rect.clientWidth;
+        crt.style.height = rect.clientHeight;
         
 	crt.style.position = "absolute"; crt.style.top = "0px"; crt.style.right = "0px";
         crt.style.zIndex = "-2";

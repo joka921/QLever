@@ -63,11 +63,13 @@ function removeEmptyTriples() {
   selectedVars = {}
   checkboxes = $('input[id^="selectedX"]');
   var selectedVarFound = false;
+  var relevantVariables = []
   for (var c in checkboxes) {
     c = checkboxes[c]
     if (c.checked == true &&usedVariables[c.value] == true) {
       sparqlHead += " "  + c.value;
       selectedVarFound = true;
+      relevantVariables.push(c.value);
 
     }
   }
@@ -80,12 +82,12 @@ function removeEmptyTriples() {
     showErrorInResline("You have to select at least one variable which also occurs in triples", "queryRes");
   } else {
     // TODO: also filter empty queries!!!
-    executeSparqlQuery(sparql);
+    executeSparqlQuery(sparql, relevantVariables);
   }
 }
 
 // ______________________________________________________
-function executeSparqlQuery(query) {
+function executeSparqlQuery(query, selectedVars) {
     var host = window.location.host;
     // TODO: not- hardcoded port (what is the easiest way ??)
     var port = window.location.port - 1;
@@ -93,7 +95,7 @@ function executeSparqlQuery(query) {
     console.log("URL: " + url);
     $.getJSON(url, function(data) {retJson = data
       console.log(retJson);
-      showResults(retJson, "queryRes");
+      showResults(retJson, "queryRes", selectedVars);
     });
 }
 
@@ -119,13 +121,19 @@ function showEntitiesInResline(json, basename) {
 }
 
 // ______________________________________________________
-function showResults(json, basename) {
+function showResults(json, basename, selectedVars) {
   $("#" + basename).empty();
   retJson = json["entities"];
   var tableId = "restable";
   $("#" + basename).append("<table id=\"" + tableId + "\"></table>");
-  var nRows = 0;
   retJson = json["entities"];
+  $("#" + tableId).append("<tr id=\"" + tableId +"h\"></tr>");
+  for (var i = 0; i < selectedVars.length; i++) {
+    var rId = tableId + "h" + i
+    $("#" + tableId + "h").append("<td id=\"" + rId + "\"></td>");
+    $("#" + rId).text(selectedVars[i])
+  }
+
   for (var i = 0; i < retJson.length; i++) {
     var rId = tableId + i
     $("#" + tableId).append("<tr id=\"" + rId +"\"></td>");

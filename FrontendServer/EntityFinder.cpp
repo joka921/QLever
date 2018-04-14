@@ -168,8 +168,8 @@ std::vector<WikidataEntityShort> EntityFinder::wdNamesToEntities(const std::vect
       vec = &PropertyToIdxVec;
       nameVec = &nameDescVecPred;
     }
-    std::string name = "";
-    std::string desc = "";
+    std::string name = "name";
+    std::string desc = "Description not yet implemented";
     if (idx < vec->size()) {
       // convert from the "wikidata-name-idx" to the internal (unique) index
       idx = (*vec)[idx];
@@ -179,7 +179,7 @@ std::vector<WikidataEntityShort> EntityFinder::wdNamesToEntities(const std::vect
       }
     }
     //TODO: read from descfile
-    ret.emplace_back(el, name, name);
+    ret.emplace_back(el, name, desc);
   }
   return ret;
 }
