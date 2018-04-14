@@ -31,4 +31,4 @@
 .idea
 
 # vim swap files
-.swp
+*.swp
