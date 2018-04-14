@@ -21,7 +21,7 @@
 
 
 #left{
-  width: 40%;
+  width: 30%;
   height: 100%;
   float: left;
 }
@@ -29,7 +29,8 @@
 #right {
   width: 400pt;
   height: 80%;
-  float: right;
+  float: left;
+  margin-left: 20pt;
 }
 
 #mapHeader {
@@ -54,7 +55,7 @@
 }
 
 .triple {
-  margin-top: 4pt;
+  margin-top: 10pt;
   width: 400pt;
   height: 30pt;
 }
@@ -69,6 +70,9 @@
   height: 100%;
   background-color: #C2E0EF;
   float:left;
+  border-width: 3px;
+  border-style: solid;
+  border-color:transparent;
 }
 
 .property {
@@ -77,6 +81,9 @@
   background-color: #00FF00;
   float:left;
   margin-left: 2%;
+  border-width: 3px;
+  border-style: solid;
+  border-color:transparent;
 }
 .object {
   width: 28%;
@@ -84,6 +91,9 @@
   background-color: #C2E0EF;
   float:left;
   margin-left: 2%;
+  border-width: 3px;
+  border-style: solid;
+  border-color:transparent;
 }
 
 .deleteTripleButton{
@@ -113,8 +123,7 @@
 }
 
 .marked{
-  border-style: solid;
-  border-width: 3px;
+  border-color: black;
 }
 
 #coverup {
@@ -125,4 +134,8 @@
     top: 0;
     right: 0;
     z-index: -1;
+}
+
+.description {
+  font-size: 8pt
 }

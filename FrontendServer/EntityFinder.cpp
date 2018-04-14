@@ -173,13 +173,13 @@ std::vector<WikidataEntityShort> EntityFinder::wdNamesToEntities(const std::vect
     if (idx < vec->size()) {
       // convert from the "wikidata-name-idx" to the internal (unique) index
       idx = (*vec)[idx];
-      if (idx >= 0) {
+      if (idx <= nameVec->size()) {
         // if there is an entity matching, then also include name and description
         name = (*nameVec)[idx];
       }
     }
     //TODO: read from descfile
-    ret.emplace_back(el, (*nameVec)[idx], (*nameVec)[idx]);
+    ret.emplace_back(el, name, name);
   }
   return ret;
 }
