@@ -105,9 +105,12 @@ function showEntitiesInResline(json, basename) {
 
     var cssClass = retJson[i]["type"] == "1" ? "resLinePredicate" : "resLineSubject";
     $("#" + basename).append("<div class =\"" + cssClass +"\" id=res" + basename + i + " >");
-    //$("#res"+ basename + i).append("<div class = \"wdName\" id=wdId" + basename + i + " draggable=\"true\" ondragstart=\"drag(event)\" wdName=\"" + retJson[i]["wdName"] + "\ readableName=\"" + retJson[i]["name"] + "\" >");
-    $("#res"+ basename + i).append("<div class = \"wdName\" id=wdName" + basename + i + " draggable=\"true\" ondragstart=\"drag(event)\" wdName=\"" + retJson[i]["wdName"] + "\" readableName=\"" + retJson[i]["name"] + "\" >");
-    //$("#res" + basename + i).append("<div class = \"wdDesc\" id=wdDesc" + basename + i + " > ");
+    $("#res"+ basename + i).append("<div class = \"wdName\" id=wdName" + basename + i +
+                                   " draggable=\"true\" ondragstart=\"drag(event)\"" +
+
+                                   "ondragend=\"endDrag(event)\""  +
+                                   "wdName=\"" + retJson[i]["wdName"] + "\" readableName=\"" + retJson[i]["name"] + "\"" +
+                                   "description=\"" + retJson[i]["description"] +"\">");
     var text = retJson[i]["wdName"] + "\n" + retJson[i]["name"] + "\n" + retJson[i]["description"];
       console.log(text);
     $("#wdName" + basename + i).text(text);
@@ -121,4 +124,15 @@ function showErrorInResline(error, basename) {
   var cssClass = "resLinePredicate"
   $("#" + basename).append("<div class =\"" + cssClass +"\" id=\"error" + basename +"\" >");
   $("#error" + basename).text(error);
+}
+
+// _________________________________________________________
+function markPossibleDragTarget(event) {
+  $("#" + event.target.id).addClass("marked");
+}
+
+
+// ________________________________________________________
+function unmarkPossibleDragTarget(event) {
+  $("#" + event.target.id).removeClass("marked");
 }

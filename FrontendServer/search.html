@@ -35,26 +35,35 @@
     </div>
     <div id="right">
       <div id="triples">
-      <div class="triple" id="variables">
-        <div class="variable" id="x0" wdName="?x0" draggable="true"
-          ondragstart="drag(event)" readableName="?x0">?x0
-          <input type="checkbox" id="selectedX0" value="?x0">
+        <div class="triple" id="variables">
+          <div class="variable" id="x0" wdName="?x0" draggable="true"
+            ondragstart="drag(event)" readableName="?x0">?x0
+            <input type="checkbox" id="selectedX0" value="?x0">
+          </div>
+          <div class="variable" id="x1" wdName="?x1" draggable="true"
+            ondragstart="drag(event)" readableName="?x1">?x1 
+            <input type="checkbox" id="selectedX1" value="?x1">
+          </div>
+          <div class="variable" id="x2" wdName="?x2" draggable="true" ondragstart="drag(event)" readableName="?x2" >?x2
+            <input type="checkbox" id="selectedX2" value="?x2">
+          </div>
+          <div class="variable" id="x3" wdName="?x3" draggable="true" ondragstart="drag(event)" readableName="?x3" >?x3
+            <input type="checkbox" id="selectedX3" value="?x3">
         </div>
-        <div class="variable" id="x1" wdName="?x1" draggable="true"
-          ondragstart="drag(event)" readableName="?x1">?x1 
-          <input type="checkbox" id="selectedX1" value="?x1">
-        </div>
-        <div class="variable" id="x2" wdName="?x2" draggable="true" ondragstart="drag(event)" readableName="?x2" >?x2
-          <input type="checkbox" id="selectedX2" value="?x2">
-        </div>
-        <div class="variable" id="x3" wdName="?x3" draggable="true" ondragstart="drag(event)" readableName="?x3" >?x3
-          <input type="checkbox" id="selectedX3" value="?x3">
-      </div>
         </div>
       <div class="triple" id="triple0">
-        <div class="subject" ondrop="drop(event)" ondragover="allowDrop(event)"> </div>
-        <div class="property" ondrop="drop(event)" ondragover="allowDrop(event)"> </div>
-        <div class="object" ondrop="drop(event)" ondragover="allowDrop(event)"> </div>
+        <div class="subject" id="subject0" ondrop="drop(event)" ondragover="allowDrop(event)"
+          ondragenter="markPossibleDragTarget(event)"
+          ondragleave="unmarkPossibleDragTarget(event)"
+          onclick="showDetails(this)"> </div>
+        <div class="property" id="property0" ondrop="drop(event)" ondragover="allowDrop(event)"
+          ondragenter="markPossibleDragTarget(event)"
+          ondragleave="unmarkPossibleDragTarget(event)" 
+          onclick="showDetails(this)"> </div>
+        <div class="object" id="object0" ondrop="drop(event)" ondragover="allowDrop(event)"
+          ondragenter="markPossibleDragTarget(event)"
+          ondragleave="unmarkPossibleDragTarget(event)"
+          onclick="showDetails(this)"> </div>
         <button class="deleteTripleButton" onclick="removeTriple(0)"> - </button>
       </div>
       </div>
@@ -64,7 +73,10 @@
       <div class="triple">
         <button class="addTripleButton"
           onclick="removeEmptyTriples()">SendQuery(notWorking) </button>
+      </div>
+      <div class="tripleDesc"><div class="resClass" id="detailRes"></div></div>
     <div id="queryRes" class="resClass"></div>
     </div>
+    <div id="coverup"> </div>
   </body>
 </html>

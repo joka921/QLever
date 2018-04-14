@@ -13,7 +13,6 @@
 .resClass {
   float: left;
   width: 100%;
-  height: 250pt;
 }
 
 #query {
@@ -59,6 +58,12 @@
   width: 400pt;
   height: 30pt;
 }
+
+.tripleDesc {
+  margin-top: 4pt;
+  width: 400pt;
+}
+
 .subject {
   width: 27%;
   height: 100%;
@@ -105,4 +110,19 @@
 
 .wdName{
   white-space:pre-wrap
+}
+
+.marked{
+  border-style: solid;
+  border-width: 3px;
+}
+
+#coverup {
+    background: white;
+    width: 7770px;
+    height: 300px;
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: -1;
 }
