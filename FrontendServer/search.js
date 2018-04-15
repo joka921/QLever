@@ -1,10 +1,10 @@
 var retJson;
-
-
 var myStyle = [];
 
+// Global variables
 var numTriples = 1;
 var nextIndexTriple = 1;
+var variableUsages = {};
 
 
 
@@ -95,11 +95,22 @@ function drop(ev) {
     var data = ev.dataTransfer.getData("text");
     var wdName = ev.dataTransfer.getData("wdName");
     var desc = ev.dataTransfer.getData("description");
+    var wdNameOld = ev.target.getAttribute("wdName");
+
+    if (wdNameOld && wdNameOld.startsWith("?")) {
+      removeVariableUsage(wdNameOld, ev.target.id)
+    }
     ev.target.setAttribute("wdName", wdName);
     ev.target.setAttribute("description", desc);
     ev.target.innerHTML="";
     ev.target.innerHTML = data;
-    removeDummyElement(ev)
+    removeDummyElement(ev);
+    // keep track of variableUsages in case of renamings
+    if (wdName.slice(0,1) == "?") {
+      addVariableUsage(wdName, ev.target.id)
+    }
+
+
 }
 
 // _________________________________________________________________________

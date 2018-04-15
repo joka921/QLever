@@ -37,18 +37,36 @@
       <div id="triples">
         <div class="triple" id="variables">
           <div class="variable" id="x0" wdName="?x0" draggable="true"
-            ondragstart="drag(event)" readableName="?x0">?x0
+            ondragstart="drag(event)" ondblclick="renameVariable(this)" readableName="?x0">
+            <div id="x0Label">?x0</div>
+            <input id="x0Input" class="variableRenamer"
+                                onchange="restrictVariableRename(this)"
+                                oninput="restrictVariableRename(this)"
+                                onkeydown="handleEnterEscape(event)" 
+                                onfocusout="renameVariableFinished(this)">
+            <div>
+              Selected:
             <input type="checkbox" id="selectedX0" value="?x0">
+            </div>
           </div>
           <div class="variable" id="x1" wdName="?x1" draggable="true"
             ondragstart="drag(event)" readableName="?x1">?x1 
+            <div>
+              Selected:
             <input type="checkbox" id="selectedX1" value="?x1">
+            </div>
           </div>
           <div class="variable" id="x2" wdName="?x2" draggable="true" ondragstart="drag(event)" readableName="?x2" >?x2
+            <div>
+              Selected:
             <input type="checkbox" id="selectedX2" value="?x2">
+            </div>
           </div>
           <div class="variable" id="x3" wdName="?x3" draggable="true" ondragstart="drag(event)" readableName="?x3" >?x3
+            <div>
+              Selected:
             <input type="checkbox" id="selectedX3" value="?x3">
+            </div>
         </div>
         </div>
       <div class="triple" id="triple0">

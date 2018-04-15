@@ -57,7 +57,7 @@
 .triple {
   margin-top: 10pt;
   width: 400pt;
-  height: 30pt;
+  height: 33pt;
 }
 
 .tripleDesc {
@@ -146,4 +146,14 @@ table, th, td {
 
 .hideCursor {
   cursor: none
+}
+
+input {
+  /* TODO: only for Selected checkboxes */
+  vertical-align: middle
+}
+
+.variableRenamer {
+  width:  100%;
+  display:none;
 }

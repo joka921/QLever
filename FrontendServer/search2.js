@@ -170,3 +170,80 @@ function markPossibleDragTarget(event) {
 function unmarkPossibleDragTarget(event) {
   $("#" + event.target.id).removeClass("marked");
 }
+
+// ________________________________________________________
+function renameVariable(el) {
+  idLabel = el.id + "Label";
+  idInput = el.id + "Input";
+  var label = $("#" + idLabel);
+  var input = $("#" + idInput);
+  label.css('display', 'none');
+  input.css('display', 'inline-block');
+  input.val(label.text());
+  input.focus();
+}
+
+// _______________________________________________________
+function renameVariableFinished(el) {
+  var id = el.id.slice(0, 2);
+  var idInput = el.id;
+  var idLabel = id + "Label";
+  var label = $("#" + idLabel);
+  var input = $("#" + idInput);
+  var outer = $("#" + id);
+  var oldVal = outer.attr("wdName");
+  label.css('display', 'inline-block');
+  input.css('display', 'none');
+  label.text(input.val());
+  outer.attr("readableName", input.val());
+  outer.attr("wdName", input.val());
+  updateVariableNameInternally(oldVal, input.val());
+
+}
+
+// ____________________________________________________
+function restrictVariableRename(el) {
+  var rem = ""
+  if (el.value.slice(0, 1) != "?") {
+    rem = el.value;
+  } else {
+    rem = el.value.substring(1);
+  }
+
+  el.value = "?" + rem.replace(/[^a-z0-9]/g, "");
+}
+function handleEnterEscape(ev) {
+  if (ev.keyCode == 13 || ev.keyCode == 27) {
+    ev.target.blur();
+  }
+}
+
+// __________________________________________________
+function addVariableUsage(wdName, targetId) {
+  if (!(wdName in variableUsages)) {
+    variableUsages[wdName] = [];
+  }
+  variableUsages[wdName].push(targetId);
+}
+
+// ________________________________________________
+function removeVariableUsage(wdName, targetId) {
+  if (wdName in variableUsages) {
+    var index = variableUsages[wdName].indexOf(targetId);
+    if (index !== -1) variableUsages[wdName].splice(index, 1);
+  }
+}
+
+// _________________________________________________
+function updateVariableNameInternally(oldName, newName) {
+  if (oldName in variableUsages) {
+    for (var idx = 0; idx < variableUsages[oldName].length; idx++) {
+      var id = variableUsages[oldName][idx]
+      var el = $("#" + id);
+      el.text(newName);
+      el.attr("wdName", newName);
+    }
+    variableUsages[newName] = variableUsages[oldName];
+    delete variableUsages[oldName];
+  }
+}
