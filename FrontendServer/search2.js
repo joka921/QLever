@@ -1,5 +1,9 @@
-  var resultForPassing=""
-// ___________________________________________________________________________________
+// COPYRIGHT 2016 University of Freiburg
+// Author Johannes Kalmbach <johannes.kalmbach@gmail.com>
+
+/* A helper function which shows the actual source code of the current html
+ * page including dynamic changes made by javascript etc 
+ */
 function viewSource(){
     var source = "<html>";
     source += document.getElementsByTagName('html')[0].innerHTML;
@@ -12,7 +16,11 @@ function viewSource(){
     if(window.focus) sourceWindow.focus();
 }  
 
-// ____________________________________________________________________________________
+/* TODO: this function has a really bad name and does too many things at once
+ * Check if all triples are valid (either completely filled or empty)
+ * Delete empty triples, create sparql query and execute it
+ * (too much for one function, as said)
+ */
 function removeEmptyTriples() {
    triples = document.getElementById("triples").children;
    var triplesToBeDeleted = [];
@@ -86,23 +94,27 @@ function removeEmptyTriples() {
   }
 }
 
-// ______________________________________________________
+/* Send the sparql query back to the server and trigger the result showing
+ * TODO: currently we have to keep track of the selected variables, but those
+ * should come from the query result (TODO in backend)
+ */
 function executeSparqlQuery(query, selectedVars) {
     var host = window.location.host;
     // TODO: not- hardcoded port (what is the easiest way ??)
     var port = window.location.port - 1;
     var url = "http://" + host +  "?r=" + query;
-    console.log("URL: " + url);
-    $.getJSON(url, function(data) {retJson = data
-      console.log(retJson);
-      showResults(retJson, "queryRes", selectedVars);
+    $.getJSON(url, function(data) {
+      showResults(data, "queryRes", selectedVars);
     });
 }
 
-// ______________________________________________________
+/* show the Wikidata entities in argument json in the <div> whose id is argument
+ * basename
+ * TODO: name also is not optimal and code is not nicely looking
+ */
 function showEntitiesInResline(json, basename) {
   $("#" + basename).empty();
-  retJson = json["entities"];
+  var retJson = json["entities"];
   for (var i = 0; i < retJson.length; i++) {
 
     var cssClass = retJson[i]["type"] == "1" ? "resLinePredicate" : "resLineSubject";
@@ -116,14 +128,16 @@ function showEntitiesInResline(json, basename) {
     var text = retJson[i]["wdName"] + "\n" + retJson[i]["name"] + "\n" + retJson[i]["description"];
       console.log(text);
     $("#wdName" + basename + i).text(text);
-    //$("#wdDesc" + basename + i).text(retJson[i]["desc"]);
   }
 }
 
-// ______________________________________________________
+/* show the Result of a sparql query denoted by json within the tag with id
+ * "basename". We also have to know the selectedVars of the Query (has to be
+ * removed, todo is in other function already)
+ */
 function showResults(json, basename, selectedVars) {
   $("#" + basename).empty();
-  retJson = json["entities"];
+  var retJson = json["entities"];
   var tableId = "restable";
   $("#" + basename).append("<table id=\"" + tableId + "\"></table>");
   retJson = json["entities"];
@@ -152,7 +166,9 @@ function showResults(json, basename, selectedVars) {
   }
 }
 
-// _________________________________________________________
+/* show a query related error (error message as string) in the tag with id
+ * basename
+ */
 function showErrorInResline(error, basename) {
   $("#" + basename).empty();
   var cssClass = "resLinePredicate"
@@ -160,18 +176,21 @@ function showErrorInResline(error, basename) {
   $("#error" + basename).text(error);
 }
 
-// _________________________________________________________
+/* add the css class "marked" to the target of the dragdrop event "event"*/
 function markPossibleDragTarget(event) {
   $("#" + event.target.id).addClass("marked");
 }
 
 
-// ________________________________________________________
+/* undo effect of function markPossibleDragTarget */
 function unmarkPossibleDragTarget(event) {
   $("#" + event.target.id).removeClass("marked");
 }
 
-// ________________________________________________________
+/* TODO: bad function name, this does not actually rename
+ * show the textinput field which allows renaming of the variable which is
+ * stored in object "el". (these have class "variable" in the html)
+ */
 function renameVariable(el) {
   idLabel = el.id + "Label";
   idInput = el.id + "Input";
@@ -183,7 +202,9 @@ function renameVariable(el) {
   input.focus();
 }
 
-// _______________________________________________________
+/* Everything we have to do after a variable rename is finished. el is the input
+ * tag used for variable renaming
+ */
 function renameVariableFinished(el) {
   var id = el.id.slice(0, 2);
   var idInput = el.id;
@@ -201,7 +222,8 @@ function renameVariableFinished(el) {
 
 }
 
-// ____________________________________________________
+/* ensures that only valid variable names (start with ? and then alphanumeric)
+ * are entered into textinput field "el" */
 function restrictVariableRename(el) {
   var rem = ""
   if (el.value.slice(0, 1) != "?") {
@@ -212,13 +234,18 @@ function restrictVariableRename(el) {
 
   el.value = "?" + rem.replace(/[^a-z0-9]/g, "");
 }
+
+/* makes sure that the input field corresponding to keystroke event "ev" also
+ * loses focus on Enter and Escape keys */
 function handleEnterEscape(ev) {
   if (ev.keyCode == 13 || ev.keyCode == 27) {
     ev.target.blur();
   }
 }
 
-// __________________________________________________
+/* register that the variable with name "wdName" is now used in the triple
+ * subject, property or object with id "targetId". Necessary for correctly
+ * renaming of variables which are already in use */
 function addVariableUsage(wdName, targetId) {
   if (!(wdName in variableUsages)) {
     variableUsages[wdName] = [];
@@ -226,7 +253,9 @@ function addVariableUsage(wdName, targetId) {
   variableUsages[wdName].push(targetId);
 }
 
-// ________________________________________________
+/* register that variable with name "wdName" is no longer used in tripe sub,
+ * pred or obj with id "targetId". Necessary for correct renaming of variables
+ * which are already in use */
 function removeVariableUsage(wdName, targetId) {
   if (wdName in variableUsages) {
     var index = variableUsages[wdName].indexOf(targetId);
@@ -234,7 +263,9 @@ function removeVariableUsage(wdName, targetId) {
   }
 }
 
-// _________________________________________________
+/* make sure that after a variable renaming all the occurences of this variable
+ * are also being renamed correctly
+ */
 function updateVariableNameInternally(oldName, newName) {
   if (oldName in variableUsages) {
     for (var idx = 0; idx < variableUsages[oldName].length; idx++) {
