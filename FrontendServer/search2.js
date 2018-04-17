@@ -137,10 +137,9 @@ function showEntitiesInResline(json, basename) {
  */
 function showResults(json, basename, selectedVars) {
   $("#" + basename).empty();
-  var retJson = json["entities"];
   var tableId = "restable";
   $("#" + basename).append("<table id=\"" + tableId + "\"></table>");
-  retJson = json["entities"];
+  var retJson = json["res"];
   $("#" + tableId).append("<tr id=\"" + tableId +"h\"></tr>");
   for (var i = 0; i < selectedVars.length; i++) {
     var rId = tableId + "h" + i
@@ -156,7 +155,9 @@ function showResults(json, basename, selectedVars) {
       var el = retJson[i][j];
 
 
-      var cssClass = el["type"] == "1" ? "resLinePredicate" : "resLineSubject";
+      //TODO include this again
+      //var cssClass = el["type"] == "1" ? "resLinePredicate" : "resLineSubject";
+      var cssClass = "resLineSubject";
       $("#" + rId).append("<td id=\"" + eId + "\"></td>");
       var text = el["wdName"] + "\n" + el["name"] + "\n" + el["description"];
         console.log(text);

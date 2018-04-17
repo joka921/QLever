@@ -121,8 +121,7 @@ int main(int argc, char** argv) {
         } else if (filename.substr(0, 3) == std::string("?r=")) {
           contentType = "application/json";
           auto query = ServerUtils::decodeURL(filename.substr(3));
-          auto result = communicator.GetQueryResult(query);
-          contentString = ServerUtils::entitiesToJson(finder.wdNamesToEntities(result.res), 100);
+          contentString = communicator.GetQueryResult(query, &finder);
 
         } else {
         // redirect empty string (start page) to standard file

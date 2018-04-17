@@ -14,6 +14,20 @@ WikidataEntity::WikidataEntity(const std::string& line) {
   }
 }
 
+// ________________________________________________
+picojson::object WikidataEntityShort::ConvertToPicojsonObject() {
+  picojson::value val;
+  picojson::object tempOb;
+
+  tempOb["wdName"] = picojson::value(wdName);
+  tempOb["name"] = picojson::value(name);
+  tempOb["description"] = picojson::value(description);
+  //tempOb["type"] = picojson::value(type);
+
+  //val.set<picojson::object>(tempOb);
+  return tempOb;
+}
+
 // ____________________________________________________________________--
 /*
 template<class Archive>

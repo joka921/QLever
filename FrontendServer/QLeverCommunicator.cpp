@@ -3,6 +3,7 @@
 #include <sstream>
 
 #include "../picojson/picojson.h"
+#include "EntityFinder.h"
 
 // __________________________________________________________________________________
 QLeverCommunicator::QLeverCommunicator(const std::string& serverAddress, unsigned int port)
@@ -27,38 +28,39 @@ std::string QLeverCommunicator::getRawQLeverResponse(const std::string& query) {
 }
 
 // __________________________________________________________________
-QLeverResult QLeverCommunicator::parseJSON(const std::string& json) {
-  QLeverResult res;
-  res.status = "Invalid Json returned from QLever";
+std::string QLeverCommunicator::parseJSON(const std::string& json, const EntityFinder* finder) {
+  std::string res;
+  //TODO:: default must be proper json response with error code etc.
+  res = "";
   picojson::value v;
   std::stringstream stream(json);
   stream >> v;
   if (! v.is<picojson::object>()) {
     return res;
   }
-  auto m = v.get<picojson::object>();
-  const auto& it = m.find("res");
+  auto& m = v.get<picojson::object>();
+  auto it = m.find("res");
   if (it == m.end()) return res;
 
   if (! it->second.is<picojson::array>()) return res;
-  const auto& r = it->second.get<picojson::array>();
+  auto& r = it->second.get<picojson::array>();
 
   // r is now the vector which hold one result vector each
-  for (const auto& el : r) {
+  for (auto& el : r) {
     if (! el.is<picojson::array>()) return res;
-    auto single = el.get<picojson::array>();
-    res.res.emplace_back();
-    for (const auto& wdNameV : single) {
+    auto& single = el.get<picojson::array>();
+    for (auto& wdNameV : single) {
       if (!wdNameV.is<std::string>()) return res;
       const auto& wdName = wdNameV.get<std::string>();
-      res.res.back().push_back(wdName);
+      auto entity = finder->wdNamesToEntities(wdName);
+      wdNameV.set(entity.ConvertToPicojsonObject());
     }
   }
-  return res;
+  return v.serialize();
 }
 
 
 // ____________________________________________________________________
-QLeverResult QLeverCommunicator::GetQueryResult(const std::string& query) {
-  return parseJSON(getRawQLeverResponse(query));
+std::string QLeverCommunicator::GetQueryResult(const std::string& query, const EntityFinder* finder) {
+  return parseJSON(getRawQLeverResponse(query), finder);
 }

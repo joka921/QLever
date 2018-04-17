@@ -6,6 +6,7 @@
 #include <iostream>
 #include <cereal/cereal.hpp>
 #include <cereal/archives/json.hpp>
+#include "../picojson/picojson.h"
 
 
 using std::string;
@@ -52,6 +53,7 @@ class WikidataEntityShort {
 
 
   string toString() {return wdName + "\t" + name + "\t" + description;}
+  picojson::object ConvertToPicojsonObject();
 
   template<class Archive>
     void serialize(Archive& ar, std::uint32_t const version) {

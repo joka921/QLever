@@ -140,7 +140,7 @@ std::vector<WikidataEntityShort> EntityFinder::findEntitiesByPrefix( const std::
  }
 
 // ________________________________________________________________________
-size_t EntityFinder::getIdxFromWdName(const std::string& wdName) {
+size_t EntityFinder::getIdxFromWdName(const std::string& wdName) const {
   // start with "<Q" or "<P", then number
   std::stringstream s(wdName.substr(2));
   size_t idx;
@@ -182,6 +182,28 @@ std::vector<WikidataEntityShort> EntityFinder::wdNamesToEntities(const std::vect
     ret.emplace_back(el, name, desc);
   }
   return ret;
+}
+
+WikidataEntityShort EntityFinder::wdNamesToEntities(const std::string& el) const {
+    auto idx = getIdxFromWdName(el);
+    auto* vec = &EntityToIdxVec;
+    auto* nameVec = &nameDescVec;
+    if (WikidataEntity::IsPropertyName(el)) {
+      vec = &PropertyToIdxVec;
+      nameVec = &nameDescVecPred;
+    }
+    std::string name = "name";
+    std::string desc = "Description not yet implemented";
+    if (idx < vec->size()) {
+      // convert from the "wikidata-name-idx" to the internal (unique) index
+      idx = (*vec)[idx];
+      if (idx <= nameVec->size()) {
+        // if there is an entity matching, then also include name and description
+        name = (*nameVec)[idx];
+      }
+    }
+    //TODO: read from descfile
+    return WikidataEntityShort(el, name, desc);
 }
 
 // ______________________________________________________________________________
