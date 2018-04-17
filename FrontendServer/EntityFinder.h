@@ -79,7 +79,7 @@ class EntityFinder {
   std::vector<std::pair<std::string, unsigned>> aliasVec;
   std::vector<std::pair<std::string, unsigned>> aliasVecPred;
 //  std::unordered_map<std::string, std::vector<unsigned>> wordMap;
-  size_t getIdxFromWdName(const std::string& wdName);
+  size_t getIdxFromWdName(const std::string& wdName) const;
 
 
 // public:
@@ -92,6 +92,7 @@ class EntityFinder {
 
   std::vector<std::vector<WikidataEntityShort>> wdNamesToEntities(const std::vector<std::vector<string>>& wdNames);
   std::vector<WikidataEntityShort> wdNamesToEntities(const std::vector<string>& wdNames);
+  WikidataEntityShort wdNamesToEntities(const std::string& wdNames) const;
 
 
 
