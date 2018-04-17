@@ -13,3 +13,6 @@
 [submodule "cereal"]
 	path = cereal
 	url = https://github.com/USCiLab/cereal.git
+[submodule "FrontendServer/curl"]
+	path = FrontendServer/curl
+	url = https://github.com/curl/curl.git

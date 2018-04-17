@@ -4,8 +4,8 @@
 #include <string>
 #include <vector>
 #include <iostream>
-#include <cereal/cereal.hpp>
-#include <cereal/archives/json.hpp>
+#include "../cereal/include/cereal/cereal.hpp"
+#include "../cereal/include/cereal/archives/json.hpp"
 
 
 using std::string;
