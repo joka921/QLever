@@ -115,21 +115,19 @@ std::vector<WikidataEntityShort> EntityFinder::findEntitiesByPrefix( const std::
   auto* vec = &aliasVec;
   auto* descVec = &descOffsetVec;
   auto* nameVec = &nameDescVec;
+  auto type = EntityType::Subject;
   if (mode == SearchMode::Properties) {
     vec = &aliasVecPred;
     descVec = &descOffsetVecPred;
     wdVec = &wdNameVecPred;
     nameVec = &nameDescVecPred;
+    type = EntityType::Property;
   }
    auto res = std::lower_bound(vec->begin(), vec->end(), prefix, boundPred);
    std::vector<WikidataEntityShort> ret;
    while (res != vec->end() && std::equal(prefix.begin(), prefix.end(), (*res).first.begin())) {
      auto idx = (*res).second;
-     if (descFile.is_open()) {
-       descFile.seekg((*descVec)[idx]);
-     }
-     std::string desc;
-     std::getline(descFile, desc);
+     auto desc = readSingleDescription(&descFile, idx, type);
      ret.push_back(WikidataEntityShort((*wdVec)[idx], (*nameVec)[idx], desc));
      std::cout << ret.size() << std::endl;
      if (ret.size() > 20) return ret;
@@ -138,6 +136,17 @@ std::vector<WikidataEntityShort> EntityFinder::findEntitiesByPrefix( const std::
    std::cout << "found " << ret.size() << std::endl;
    return ret;
  }
+
+// ________________________________________________________________________
+std::string EntityFinder::readSingleDescription(std::ifstream* descFile, size_t internalIdx, EntityType type) const {
+  auto* descVec = type==EntityType::Subject ? &descOffsetVec : &descOffsetVecPred;
+   if (descFile->is_open()) {
+     descFile->seekg((*descVec)[internalIdx]);
+   }
+   std::string desc;
+   std::getline(*descFile, desc);
+   return desc;
+}
 
 // ________________________________________________________________________
 size_t EntityFinder::getIdxFromWdName(const std::string& wdName) const {
@@ -184,22 +193,27 @@ std::vector<WikidataEntityShort> EntityFinder::wdNamesToEntities(const std::vect
   return ret;
 }
 
+// ________________________________________________________________________________
 WikidataEntityShort EntityFinder::wdNamesToEntities(const std::string& el) const {
+    std::ifstream descFile(descriptionFilename);
     auto idx = getIdxFromWdName(el);
     auto* vec = &EntityToIdxVec;
     auto* nameVec = &nameDescVec;
+    auto type = EntityType::Subject;
     if (WikidataEntity::IsPropertyName(el)) {
       vec = &PropertyToIdxVec;
       nameVec = &nameDescVecPred;
+      type = EntityType::Property;
     }
     std::string name = "name";
-    std::string desc = "Description not yet implemented";
+    std::string desc = "desc file not found";
     if (idx < vec->size()) {
       // convert from the "wikidata-name-idx" to the internal (unique) index
       idx = (*vec)[idx];
       if (idx <= nameVec->size()) {
         // if there is an entity matching, then also include name and description
         name = (*nameVec)[idx];
+        desc = readSingleDescription(&descFile, idx, type);
       }
     }
     //TODO: read from descfile

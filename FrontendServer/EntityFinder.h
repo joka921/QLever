@@ -75,6 +75,7 @@ class EntityFinder {
 
   // sorted vector where aliases are assigned to indices in the 2 vectors above
   // TODO: public actually only here for debugging
+  std::string readSingleDescription(std::ifstream* descFile, size_t internalIdx, EntityType type ) const;
  public:
   std::vector<std::pair<std::string, unsigned>> aliasVec;
   std::vector<std::pair<std::string, unsigned>> aliasVecPred;
