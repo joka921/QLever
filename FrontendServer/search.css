@@ -157,3 +157,19 @@ input {
   width:  100%;
   display:none;
 }
+
+.entityName {
+  font-weight: 600;
+  font-size: 110%
+  float: left;
+}
+
+.wdName {
+  font-size: 80%;
+  float: right;
+}
+
+.entityDescription {
+  font-size: 90%;
+  clear: left;
+}

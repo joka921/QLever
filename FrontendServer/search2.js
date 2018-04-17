@@ -104,7 +104,7 @@ function executeSparqlQuery(query, selectedVars) {
     var port = window.location.port - 1;
     var url = "http://" + host +  "?r=" + query;
     $.getJSON(url, function(data) {
-      showResults(data, "queryRes", selectedVars);
+      showResults(data, "queryRes");
     });
 }
 
@@ -119,15 +119,7 @@ function showEntitiesInResline(json, basename) {
 
     var cssClass = retJson[i]["type"] == "1" ? "resLinePredicate" : "resLineSubject";
     $("#" + basename).append("<div class =\"" + cssClass +"\" id=res" + basename + i + " >");
-    $("#res"+ basename + i).append("<div class = \"wdName\" id=wdName" + basename + i +
-                                   " draggable=\"true\" ondragstart=\"drag(event)\"" +
-
-                                   "ondragend=\"endDrag(event)\""  +
-                                   "wdName=\"" + retJson[i]["wdName"] + "\" readableName=\"" + retJson[i]["name"] + "\"" +
-                                   "description=\"" + retJson[i]["description"] +"\">");
-    var text = retJson[i]["wdName"] + "\n" + retJson[i]["name"] + "\n" + retJson[i]["description"];
-      console.log(text);
-    $("#wdName" + basename + i).text(text);
+    showSingleEntity("res" + basename + i, retJson[i]);
   }
 }
 
@@ -135,12 +127,26 @@ function showEntitiesInResline(json, basename) {
  * "basename". We also have to know the selectedVars of the Query (has to be
  * removed, todo is in other function already)
  */
-function showResults(json, basename, selectedVars) {
+function showResults(json, basename) {
   $("#" + basename).empty();
+  if (json["status"] != "OK") {
+    $("#" + basename).text("QLever backend sent an error : " + json["status"]);
+    return;
+  }
+  // TODO: more elegant layout for this
+  $("#" + basename).append("Query: ");
+  $("#" + basename).append(escapeHtml(json["query"]));
+  $("#" + basename).append("<br />Number of result triples: ");
+  $("#" + basename).append(escapeHtml(json["resultsize"]));
+
+
+  
+
   var tableId = "restable";
   $("#" + basename).append("<table id=\"" + tableId + "\"></table>");
   var retJson = json["res"];
   $("#" + tableId).append("<tr id=\"" + tableId +"h\"></tr>");
+  var selectedVars = json["selected"]
   for (var i = 0; i < selectedVars.length; i++) {
     var rId = tableId + "h" + i
     $("#" + tableId + "h").append("<td id=\"" + rId + "\"></td>");
@@ -159,9 +165,10 @@ function showResults(json, basename, selectedVars) {
       //var cssClass = el["type"] == "1" ? "resLinePredicate" : "resLineSubject";
       var cssClass = "resLineSubject";
       $("#" + rId).append("<td id=\"" + eId + "\"></td>");
-      var text = el["wdName"] + "\n" + el["name"] + "\n" + el["description"];
-        console.log(text);
-      $("#" + eId).text(text);
+      showSingleEntity(eId, el);
+      //var text = el["wdName"] + "\n" + el["name"] + "\n" + el["description"];
+        //console.log(text);
+      //$("#" + eId).text(text);
       //$("#wdDesc" + basename + i).text(retJson[i]["desc"]);
      }
   }
@@ -278,4 +285,32 @@ function updateVariableNameInternally(oldName, newName) {
     variableUsages[newName] = variableUsages[oldName];
     delete variableUsages[oldName];
   }
+}
+
+// ____________________________________________________________________
+function showSingleEntity(parentId, entity) {
+  var newId = parentId +"inner";
+  // make entity draggable
+  $("#" + parentId).append("<div id=\"" + newId + "\" " + 
+                               " draggable=\"true\" ondragstart=\"drag(event)\"" +
+                               "ondragend=\"endDrag(event)\""  +
+                               "wdName=\"" + entity["wdName"] + "\" readableName=\"" + entity["name"] + "\"" +
+                               "description=\"" + entity["description"] +"\">");
+  parentId = newId
+  var wdId = parentId + "wd";
+  var nameId = parentId + "nm";
+  var descId = parentId + "desc";
+  $("#" + parentId).append("<span class=\"entityName\" id=\"" + nameId +"\"></span>");
+  $("#" + parentId).append("<span class=\"wdName\" id=\"" + wdId +"\"></span>");
+  $("#" + parentId).append("<div class=\"entityDescription\" id=\"" + descId +"\"></div>");
+  
+  $("#" + wdId).text(entity["wdName"]);
+  $("#" + nameId).text(entity["name"]);
+  $("#" + descId).text(entity["description"]);
+  
+}
+
+// ______________________________________________________________________
+function escapeHtml(input) {
+  return input.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
