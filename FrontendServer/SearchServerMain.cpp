@@ -164,7 +164,7 @@ int main(int argc, char** argv) {
       response.append(contentString);
 
       // transmit http response
-      std::cout << response << std::endl;
+      //std::cout << response << std::endl;
       boost::system::error_code wErr;
       basio::write(sck, basio::buffer(response),
           basio::transfer_all(), wErr);

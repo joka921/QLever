@@ -5,6 +5,7 @@
 #include <sstream>
 #include <unordered_map>
 #include <algorithm>
+#include <chrono>
 
 // ______________________________________________________________________
 void EntityFinder::InitializeFromTextFile(const std::string& filename) {
@@ -103,7 +104,8 @@ void EntityFinder::InitializeFromTextFile(const std::string& filename) {
 
 // __________________________________________________________________
 std::vector<WikidataEntityShort> EntityFinder::findEntitiesByPrefix( const std::string& prefixA, SearchMode mode)
-     {
+{
+  auto startTime = std::chrono::high_resolution_clock::now();
   std::string prefix = prefixA;
   std::ifstream descFile(descriptionFilename);
   std::transform(prefix.begin(), prefix.end(), prefix.begin(), ::tolower);
@@ -125,15 +127,19 @@ std::vector<WikidataEntityShort> EntityFinder::findEntitiesByPrefix( const std::
   }
    auto res = std::lower_bound(vec->begin(), vec->end(), prefix, boundPred);
    std::vector<WikidataEntityShort> ret;
+   auto findTime = std::chrono::high_resolution_clock::now();
    while (res != vec->end() && std::equal(prefix.begin(), prefix.end(), (*res).first.begin())) {
      auto idx = (*res).second;
      auto desc = readSingleDescription(&descFile, idx, type);
      ret.push_back(WikidataEntityShort((*wdVec)[idx], (*nameVec)[idx], desc));
-     std::cout << ret.size() << std::endl;
-     if (ret.size() > 20) return ret;
+     //std::cout << ret.size() << std::endl;
+     if (ret.size() > 20) break;
      res++;
    }
+   auto translateTime = std::chrono::high_resolution_clock::now();
    std::cout << "found " << ret.size() << std::endl;
+   std::cout << "took" << std::chrono::duration_cast<std::chrono::milliseconds>(findTime - startTime).count() << " ms to find" << std::endl;
+   std::cout << "took" << std::chrono::duration_cast<std::chrono::milliseconds>(translateTime - findTime).count() << " ms to translate to readable" << std::endl;
    return ret;
  }
 
