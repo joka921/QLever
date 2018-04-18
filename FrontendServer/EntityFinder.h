@@ -70,8 +70,12 @@ class EntityFinder {
   std::vector<std::streampos> descOffsetVec;
   std::vector<std::streampos> descOffsetVecPred;
   // only used during serialization
-  std::vector<std::string> nameDescVec; // Name and description
-  std::vector<std::string> nameDescVecPred; // Name and description
+  std::vector<std::string> nameVec; // readable names
+  std::vector<std::string> nameVecPred; // readable names for predicates/properties
+
+  std::vector<std::string> descVec; // descriptions
+  std::vector<std::string> descVecPred;
+
 
   // sorted vector where aliases are assigned to indices in the 2 vectors above
   // TODO: public actually only here for debugging
