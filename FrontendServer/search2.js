@@ -74,7 +74,7 @@ function removeEmptyTriples() {
   var relevantVariables = []
   for (var c in checkboxes) {
     c = checkboxes[c]
-    if (c.checked == true &&usedVariables[c.value] == true) {
+    if (c.checked == true &&usedVariables[c.parentNode.parentNode.getAttribute("wdName")] == true) {
       sparqlHead += " "  + c.value;
       selectedVarFound = true;
       relevantVariables.push(c.value);
@@ -84,6 +84,8 @@ function removeEmptyTriples() {
   sparqlHead += " WHERE \{ ";
   sparql = sparqlHead + sparql;
   sparql += "\}";
+  // clear for new errors etc
+  $("#queryRes").empty();
   if (invalidTripleFound) {
     showErrorInResline("Incomplete Triples were found (see red markings", "queryRes");
   } else if (!selectedVarFound) {
