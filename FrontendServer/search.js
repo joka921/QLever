@@ -39,7 +39,9 @@ function getEntitySearchResults() {
     var url = "http://" + host + "/?t=" + searchtype + "?q=" + query;
     console.log("URL: " + url);
     $.getJSON(url, function(data) {
-      showEntitiesInResline(data, "searchRes");
+      if (data["entities"]) {
+        showEntitiesInResline(data, "searchRes");
+      }
     });
   }
 
@@ -84,7 +86,6 @@ function drag(ev) {
     // for details see https://kryogenix.org/code/browser/custom-drag-image.html
     var crt = ev.target.cloneNode(true);
     crt.id = crt.id + "dummy"
-    crt.style.backgroundColor = "#C2E0EF"
 
     var rect = $(".subject")[0];
     crt.style.width = rect.clientWidth;
@@ -96,13 +97,14 @@ function drag(ev) {
     ev.dataTransfer.setDragImage(crt, 0, 0);
 
     // mark the origin of the drag
-    markPossibleDragTarget(ev);
+    //markPossibleDragTarget(ev);
 
     // set all the data of the entity to be transmitted
     ev.dataTransfer.setData("text", ev.target.getAttribute("readableName"));
     ev.dataTransfer.setData("dummyId", crt.id);
     ev.dataTransfer.setData("wdName", ev.target.getAttribute("wdName"));
     ev.dataTransfer.setData("description", ev.target.getAttribute("description"));
+    ev.dataTransfer.setData("wdType", ev.target.getAttribute("wdType"));
 
 }
 
@@ -115,6 +117,7 @@ function drop(ev) {
     var data = ev.dataTransfer.getData("text");
     var wdName = ev.dataTransfer.getData("wdName");
     var desc = ev.dataTransfer.getData("description");
+    var wdType = ev.dataTransfer.getData("wdType");
     var wdNameOld = ev.target.getAttribute("wdName");
 
     // if the target used to hold a variable, unregister this
@@ -123,7 +126,16 @@ function drop(ev) {
     }
     ev.target.setAttribute("wdName", wdName);
     ev.target.setAttribute("description", desc);
+    ev.target.setAttribute("wdType", wdType);
     ev.target.innerHTML = data;
+
+    if (!isTypeMatch(ev)) {
+      $("#" + ev.target.id).addClass("stripes");
+      $("#" + ev.target.id).attr("wrongWdType", 1);
+    } else {
+      $("#" + ev.target.id).removeClass("stripes");
+      $("#" + ev.target.id).attr("wrongWdType", 0);
+    }
 
     // element which was only there for the drag image
     removeDummyElement(ev);
@@ -155,25 +167,12 @@ function showDetails(el) {
   }
 
   $("#detailRes").empty();
-  showDetailedEntity("detailRes", el.getAttribute("wdName"), el.innerText,
-                     el.getAttribute("description"), 0)
+  var entity = {}
+  entity["type"] = el.getAttribute("wdType");
+  entity["wdName"] = el.getAttribute("wdName");
+  entity["name"] = el.innerText;
+  entity["description"] = el.getAttribute("description");
+  showSingleEntity("detailRes", entity);
+
 }
 
-/* show the detailed description of a single entity
- * Arguments: target -> id of the tag in which to show
- *            wd, name, desc -> information about the entity
- *            i -> an index which has to be unique over all entities shown in
- *                 target
- */ 
-function showDetailedEntity(target, wd, name, desc, i) {
-    var cssClass = "resLinePredicate";
-    var basename = target;
-    $("#" + basename).append("<div class =\"" + cssClass +"\" id=res" + basename + i + " >");
-    $("#res"+ basename + i).append("<div class = \"wdName\" id=wdName" + basename + i +
-                                   " draggable=\"true\" ondragstart=\"drag(event)\"" +
-                                   "ondragend=\"endDrag(event)\""  +
-                                   "wdName=\"" + wd + "\" readableName=\"" + name + "\" >");
-
-    var text = wd + "\n" + name + "\n" + desc;
-    $("#wdName" + basename + i).text(text);
-}

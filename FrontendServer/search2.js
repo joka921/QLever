@@ -187,12 +187,37 @@ function showErrorInResline(error, basename) {
 /* add the css class "marked" to the target of the dragdrop event "event"*/
 function markPossibleDragTarget(event) {
   $("#" + event.target.id).addClass("marked");
+  var wdType = event.dataTransfer.getData("wdType");
+  var targetType = $("#" + event.target.id).hasClass("property") ? 1 : 0;
+  if (!isTypeMatch(event) && !targetAlreadyWrongType(event)) {
+    $("#" + event.target.id).addClass("stripes");
+  } else if (isTypeMatch(event) && targetAlreadyWrongType(event)) {
+    $("#" + event.target.id).removeClass("stripes");
+  }
 }
 
 
 /* undo effect of function markPossibleDragTarget */
 function unmarkPossibleDragTarget(event) {
   $("#" + event.target.id).removeClass("marked");
+  if (!isTypeMatch(event) && !targetAlreadyWrongType(event)) {
+    $("#" + event.target.id).removeClass("stripes");
+  } else if (isTypeMatch(event) && targetAlreadyWrongType(event)) {
+    $("#" + event.target.id).addClass("stripes");
+  }
+}
+
+function targetAlreadyWrongType(event) {
+  return $("#" + event.target.id).attr("wrongWdType") == 1;
+}
+
+function isTypeMatch(event) {
+  var wdType = event.dataTransfer.getData("wdType");
+  // this means "variable" and those can currently be placed anywhere
+  // without complaints
+  if (wdType > 1) return true;
+  var targetType = $("#" + event.target.id).hasClass("property") ? 1 : 0;
+  return (targetType == wdType);
 }
 
 /* TODO: bad function name, this does not actually rename
@@ -291,10 +316,13 @@ function updateVariableNameInternally(oldName, newName) {
 function showSingleEntity(parentId, entity) {
   var newId = parentId +"inner";
   // make entity draggable
-  $("#" + parentId).append("<div id=\"" + newId + "\" " + 
+  var cssClass = entity["type"] == "1" ? "resLinePredicate" : "resLineSubject";
+  $("#" + parentId).append("<div id=\"" + newId + "\" " +
+                               "class=\"" + cssClass + "\" " +
                                " draggable=\"true\" ondragstart=\"drag(event)\"" +
                                "ondragend=\"endDrag(event)\""  +
                                "wdName=\"" + entity["wdName"] + "\" readableName=\"" + entity["name"] + "\"" +
+                               "wdType=\"" + entity["type"] + "\""  +
                                "description=\"" + entity["description"] +"\">");
   parentId = newId
   var wdId = parentId + "wd";

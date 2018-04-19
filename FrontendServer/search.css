@@ -47,11 +47,17 @@
   background-color: #C2E0EF;
   margin-top: 4pt;
   cursor: pointer;
+  border-width: 3px;
+  border-style: solid;
+  border-color:transparent;
 }
 .resLinePredicate{
   background-color: #00FF00;
   margin-top: 4pt;
   cursor: pointer;
+  border-width: 3px;
+  border-style: solid;
+  border-color:transparent;
 }
 
 .triple {
@@ -69,10 +75,11 @@
   width: 27%;
   height: 100%;
   background-color: #C2E0EF;
+
   float:left;
   border-width: 3px;
   border-style: solid;
-  border-color:transparent;
+  border-color: #FFFFFF;
 }
 
 .property {
@@ -94,6 +101,17 @@
   border-width: 3px;
   border-style: solid;
   border-color:transparent;
+}
+
+.stripes {
+  background: repeating-linear-gradient(
+    45deg,
+    #C2E0EF,
+    #C2E0EF 15px,
+    #00FF00 1px,
+    #00FF00 30px,
+    #C2E0EF 10px
+            );
 }
 
 .deleteTripleButton{
