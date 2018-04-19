@@ -73,11 +73,13 @@ function removeEmptyTriples() {
   var selectedVarFound = false;
   var relevantVariables = []
   for (var c in checkboxes) {
-    c = checkboxes[c]
-    if (c.checked == true &&usedVariables[c.parentNode.parentNode.getAttribute("wdName")] == true) {
+    c = checkboxes[c];
+    var currentVariableName = c.parentNode.parentNode.getAttribute("wdName");
+
+    if (c.checked == true &&usedVariables[currentVariableName] == true) {
       sparqlHead += " "  + c.value;
       selectedVarFound = true;
-      relevantVariables.push(c.value);
+      relevantVariables.push(currentVariableName);
 
     }
   }
