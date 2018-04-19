@@ -71,15 +71,15 @@ function removeEmptyTriples() {
   selectedVars = {}
   checkboxes = $('input[id^="selectedX"]');
   var selectedVarFound = false;
-  var relevantVariables = []
   for (var c in checkboxes) {
     c = checkboxes[c];
-    var currentVariableName = c.parentNode.parentNode.getAttribute("wdName");
+    // javascript thing: with c.checked we verify that we indeed have found a
+    // checkbox and avoid type errors
+    var currentVariableName = c.checked ? c.parentNode.parentNode.getAttribute("wdName") : "";
 
     if (c.checked == true &&usedVariables[currentVariableName] == true) {
-      sparqlHead += " "  + c.value;
+      sparqlHead += " "  + currentVariableName;
       selectedVarFound = true;
-      relevantVariables.push(currentVariableName);
 
     }
   }
@@ -94,7 +94,7 @@ function removeEmptyTriples() {
     showErrorInResline("You have to select at least one variable which also occurs in triples", "queryRes");
   } else {
     // TODO: also filter empty queries!!!
-    executeSparqlQuery(sparql, relevantVariables);
+    executeSparqlQuery(sparql);
   }
 }
 
@@ -102,7 +102,7 @@ function removeEmptyTriples() {
  * TODO: currently we have to keep track of the selected variables, but those
  * should come from the query result (TODO in backend)
  */
-function executeSparqlQuery(query, selectedVars) {
+function executeSparqlQuery(query) {
     var host = window.location.host;
     // TODO: not- hardcoded port (what is the easiest way ??)
     var port = window.location.port - 1;
