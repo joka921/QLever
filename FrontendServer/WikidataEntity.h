@@ -15,6 +15,9 @@ using std::string;
 enum class EntityType {
   Subject, Property};
 
+// Converter Function
+std::string EntityTypeToString(const EntityType& type); 
+
 // a simple class handling metadata of a wikidata entity
 class WikidataEntity {
  public:

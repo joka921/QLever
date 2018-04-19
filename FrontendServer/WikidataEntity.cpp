@@ -22,10 +22,18 @@ picojson::object WikidataEntityShort::ConvertToPicojsonObject() {
   tempOb["wdName"] = picojson::value(wdName);
   tempOb["name"] = picojson::value(name);
   tempOb["description"] = picojson::value(description);
-  //tempOb["type"] = picojson::value(type);
+  tempOb["type"] = picojson::value(EntityTypeToString(type));
 
   //val.set<picojson::object>(tempOb);
   return tempOb;
+}
+
+// Converter Function
+std::string EntityTypeToString(const EntityType& type) {
+  if (type == EntityType::Subject) {
+    return "0";
+  }
+  return "1";
 }
 
 // ____________________________________________________________________--
