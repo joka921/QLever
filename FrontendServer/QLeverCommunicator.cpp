@@ -45,6 +45,10 @@ std::string QLeverCommunicator::parseJSON(const std::string& json, const EntityF
   if (! it->second.is<picojson::array>()) return res;
   auto& r = it->second.get<picojson::array>();
 
+  // TODO: this is really bad. We only truncate here for the demo
+  // TODO TODO TODO handle this better (save results and return them on request)
+  if (r.size() > 20) r.resize(20);
+
   // r is now the vector which hold one result vector each
   for (auto& el : r) {
     if (! el.is<picojson::array>()) return res;
