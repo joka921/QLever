@@ -117,7 +117,8 @@ int main(int argc, char** argv) {
           auto vecOfNames = ServerUtils::split(listOfNames, ' ');
           //TODO: convert ALL
           // and do this directly without detour in client
-          contentString = ServerUtils::entitiesToJson(finder.wdNamesToEntities(vecOfNames), 100);
+          // TODO: probably not needed
+          //contentString = ServerUtils::entitiesToJson(finder.wdNamesToEntities(vecOfNames), 100);
         } else if (filename.substr(0, 3) == std::string("?r=")) {
           contentType = "application/json";
           auto query = ServerUtils::decodeURL(filename.substr(3));

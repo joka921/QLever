@@ -7,12 +7,13 @@
 #include <cereal/archives/json.hpp>
 #include <cereal/types/vector.hpp>
 
+
 // ______________________________________________________________________________
-std::string ServerUtils::entitiesToJson(const std::vector<WikidataEntityShort>& entities, size_t num) {
+std::string ServerUtils::entitiesToJson(const EntitySearchResult& entities, size_t num) {
   std::stringstream stream;
   {
     cereal::JSONOutputArchive archive(stream);
-    archive(CEREAL_NVP(entities));
+    archive(cereal::make_nvp("entities", entities.entities));
   }
 
   return stream.str();

@@ -14,6 +14,7 @@
 #include <boost/serialization/utility.hpp>
 
 #include "WikidataEntity.h"
+#include "EntitySearchResult.h"
 
 enum class SearchMode {
   All, Subjects, Properties, Invalid};
@@ -84,7 +85,7 @@ class EntityFinder {
   std::vector<std::pair<std::string, unsigned>> aliasVec;
   std::vector<std::pair<std::string, unsigned>> aliasVecPred;
 //  std::unordered_map<std::string, std::vector<unsigned>> wordMap;
-  size_t getIdxFromWdName(const std::string& wdName) const;
+  static size_t getIdxFromWdName(const std::string& wdName);
 
 
 // public:
@@ -93,7 +94,7 @@ class EntityFinder {
   void WriteToFile(const std::string& filename);
   static EntityFinder ReadFromFile(const std::string& filename);
 
-  std::vector<WikidataEntityShort> findEntitiesByPrefix(const std::string& prefix, SearchMode mode = SearchMode::All);
+  EntitySearchResult findEntitiesByPrefix(const std::string& prefix, SearchMode mode = SearchMode::All);
 
   std::vector<std::vector<WikidataEntityShort>> wdNamesToEntities(const std::vector<std::vector<string>>& wdNames);
   std::vector<WikidataEntityShort> wdNamesToEntities(const std::vector<string>& wdNames);

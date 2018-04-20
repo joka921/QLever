@@ -54,6 +54,9 @@ class WikidataEntityShort {
     : wdName(wd), name(nameT), description(desc) {
     type = WikidataEntity::IsPropertyName(wdName) ? EntityType::Property : EntityType::Subject;}
 
+  // default constructor needed for resize etc
+  WikidataEntityShort() = default;
+
 
   string toString() {return wdName + "\t" + name + "\t" + description;}
   picojson::object ConvertToPicojsonObject();

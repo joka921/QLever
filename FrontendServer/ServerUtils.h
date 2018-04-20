@@ -8,11 +8,12 @@
 
 #include "WikidataEntity.h"
 #include "EntityFinder.h"
+#include "EntitySearchResult.h"
 
 class ServerUtils {
  public:
   static std::string entitiesToJson(const std::vector<std::vector<WikidataEntityShort>>& entities, size_t num);
-  static std::string entitiesToJson(const std::vector<WikidataEntityShort>& entities, size_t num);
+  static std::string entitiesToJson(const EntitySearchResult& entities, size_t num);
   static std::string escapeJson(const std::string& wordNarrow);
   static std::pair<std::string, SearchMode> parseQuery(const std::string& query);
   static std::string decodeURL(std::string encoded);

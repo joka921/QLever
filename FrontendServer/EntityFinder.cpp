@@ -104,7 +104,7 @@ void EntityFinder::InitializeFromTextFile(const std::string& filename) {
 }
 
 // __________________________________________________________________
-std::vector<WikidataEntityShort> EntityFinder::findEntitiesByPrefix( const std::string& prefixA, SearchMode mode)
+EntitySearchResult EntityFinder::findEntitiesByPrefix( const std::string& prefixA, SearchMode mode)
 {
   auto startTime = std::chrono::high_resolution_clock::now();
   std::string prefix = prefixA;
@@ -112,6 +112,8 @@ std::vector<WikidataEntityShort> EntityFinder::findEntitiesByPrefix( const std::
   std::transform(prefix.begin(), prefix.end(), prefix.begin(), ::tolower);
   auto boundPred = [](const std::pair<std::string, unsigned>&  p1,
                      const std::string& p2) { return p1.first < p2;};
+  auto upperBoundPred = [](const std::string& p1, const std::pair<std::string, unsigned>&  p2) 
+  { return p1 < p2.first.substr(std::min(p2.first.size(), p1.size()));};
 
   //TODO: some meaningful mixing of subjects and properties for searchmode "all"
   auto* wdVec = &wdNameVec;
@@ -126,18 +128,40 @@ std::vector<WikidataEntityShort> EntityFinder::findEntitiesByPrefix( const std::
     nVec = &nameVecPred;
     type = EntityType::Property;
   }
+   EntitySearchResult ret;
    auto res = std::lower_bound(vec->begin(), vec->end(), prefix, boundPred);
-   std::vector<WikidataEntityShort> ret;
+   if (res == vec->end() || !std::equal(prefix.begin(), prefix.end(), (*res).first.begin())) {
+     // no real results found
+     ret.totalResults = 0;
+     return ret;
+   }
+
+   auto upper = std::upper_bound(res, vec->end(), prefix, upperBoundPred);
    auto findTime = std::chrono::high_resolution_clock::now();
-   while (res != vec->end() && std::equal(prefix.begin(), prefix.end(), (*res).first.begin())) {
+   ret.totalResults = upper - res;
+   std::cout << prefix << std::endl;
+   std::cout << "found " << upper - res << std::endl;
+   //TODO parametrize this and experiment
+   size_t maxRelevant = 1000;
+   if (upper - res > maxRelevant) {
+     // only get first 20 results
+     // TODO parametrize the 1000 and the 20
+     upper = res + maxRelevant;
+   }
+   while (res != upper) {
      auto idx = (*res).second;
-     ret.push_back(WikidataEntityShort((*wdVec)[idx], (*nVec)[idx], (*dVec)[idx]));
+     ret.entities.push_back(WikidataEntityShort((*wdVec)[idx], (*nVec)[idx], (*dVec)[idx]));
      //std::cout << ret.size() << std::endl;
-     if (ret.size() > 20) break;
      res++;
    }
+   auto sortPred = [](const WikidataEntityShort& w1, const WikidataEntityShort& w2)
+                      { return getIdxFromWdName(w1.wdName) < getIdxFromWdName(w2.wdName);};
+   std::sort(ret.entities.begin(), ret.entities.end(), sortPred);
+   if (ret.entities.size() > 20) {
+     ret.entities.resize(20);
+   }
+
    auto translateTime = std::chrono::high_resolution_clock::now();
-   std::cout << "found " << ret.size() << std::endl;
    std::cout << "took" << std::chrono::duration_cast<std::chrono::milliseconds>(findTime - startTime).count() << " ms to find" << std::endl;
    std::cout << "took" << std::chrono::duration_cast<std::chrono::milliseconds>(translateTime - findTime).count() << " ms to translate to readable" << std::endl;
    return ret;
@@ -157,7 +181,7 @@ std::string EntityFinder::readSingleDescription(std::ifstream* descFile, size_t 
 */
 
 // ________________________________________________________________________
-size_t EntityFinder::getIdxFromWdName(const std::string& wdName) const {
+size_t EntityFinder::getIdxFromWdName(const std::string& wdName) {
   // start with "<Q" or "<P", then number
   std::stringstream s(wdName.substr(2));
   size_t idx;
