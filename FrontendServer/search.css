@@ -15,13 +15,24 @@
   width: 100%;
 }
 
+#searchRes {
+  float: left;
+  width: 47%;
+}
+
+#searchResPred {
+  float: left;
+  width: 47%;
+  margin-left: 2%;
+}
+
 #query {
   width: 100%
 }
 
 
 #left{
-  width: 30%;
+  width: 40%;
   height: 100%;
   float: left;
 }
