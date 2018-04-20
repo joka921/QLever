@@ -6,41 +6,46 @@ def extract_claims(claims):
     for prop in claims:
         for claim in claims[prop]:
             arr = claim["mainsnak"]  # here the information about a single claim
-            #is stored
+            try:
+                #is stored
 
-            #only use values for now
-            #TODO: check if this shall be imp0roved for QLever
-            if arr["snaktype"] != "value":
+                #only use values for now
+                #TODO: check if this shall be imp0roved for QLever
+                if arr["snaktype"] != "value":
+                    continue
+                property_string = "<" + arr["property"] + ">"
+                object_string = ""
+                if arr["datatype"] == "string":
+                    object_string = '"' + arr["datavalue"]["value"] + '"'
+                elif arr["datatype"] == "quantity":
+                    #TODO Wikidata also provides upper and lower bounds etc.
+                    # does QLever support these things?
+                    object_string = '"' + arr["datavalue"]["value"]["amount"] + '"'
+                    #TODO also support units (represented as wikidata entities)
+                elif arr["datatype"] == "time":
+                    #TODO also much more info in Wikidata
+                    object_string = '"' + arr["datavalue"]["value"]["time"] + '"'
+                elif arr["datatype"] == "globecoordinate":
+                    #TODO also much more info in Wikidata
+                    object_string = '"' + arr["datavalue"]["value"]["latitude"] + " " 
+                    object_string += arr["datavalue"]["longitude"] + '"'
+
+                elif arr["datatype"] == "wikibase-item" and arr["datavalue"]["type"] == "wikibase-entityid":
+                    entity_type = arr["datavalue"]["value"]["entity-type"]
+                    if (entity_type == "property"):
+                        object_string = "<P" + str(arr["datavalue"]["value"]["numeric-id"]) + ">"
+                    elif (entity_type == "item"):
+                        object_string = "<Q" + str(arr["datavalue"]["value"]["numeric-id"]) + ">"
+                    else:
+                        print("wrong entity type: {} in claim {}".format(entity_type, arr))
+
+                if object_string != "":  # otherwise there was a not supported type
+                    ret.append(property_string + "\t" + object_string)
+            except KeyError:
+                print("key error in claim:")
+                print(arr)
+                print()
                 continue
-            property_string = "<" + arr["property"] + ">"
-            object_string = ""
-            if arr["datatype"] == "string":
-                object_string = '"' + arr["datavalue"]["value"] + '"'
-            elif arr["datatype"] == "quantity":
-                #TODO Wikidata also provides upper and lower bounds etc.
-                # does QLever support these things?
-                object_string = '"' + arr["datavalue"]["amount"] + '"'
-                #TODO also support units (represented as wikidata entities)
-            elif arr["datatype"] == "time":
-                #TODO also much more info in Wikidata
-                object_string = '"' + arr["datavalue"]["time"] + '"'
-            elif arr["datatype"] == "globecoordinate":
-                #TODO also much more info in Wikidata
-                object_string = '"' + arr["datavalue"]["latitude"] + " " +
-                arr["datavalue"]["longitude"] '"'
-
-            elif arr["datatype"] == "wikibase-item" and arr["datavalue"]["type"] == "wikibase-entityid":
-                entity_type = arr["datavalue"]["value"]["entity-type"]
-                if (entity_type == "property"):
-                    object_string = "<P" + str(arr["datavalue"]["value"]["numeric-id"]) + ">"
-                elif (entity_type == "item"):
-                    object_string = "<Q" + str(arr["datavalue"]["value"]["numeric-id"]) + ">"
-                else:
-                    print("wrong entity type: {} in claim
-                            {}".format(entity_type, arr))
-
-            if object_string != "":  # otherwise there was a not supported type
-                ret.append(property_string + "\t" + object_string)
     return ret
 
 
