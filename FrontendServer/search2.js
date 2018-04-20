@@ -134,7 +134,7 @@ function showEntitiesInResline(json, basename) {
 function showResults(json, basename) {
   $("#" + basename).empty();
   if (json["status"] != "OK") {
-    $("#" + basename).text("QLever backend sent an error : " + json["status"]);
+    $("#" + basename).text("QLever backend sent an error : " + json["exception"]);
     return;
   }
   // TODO: more elegant layout for this

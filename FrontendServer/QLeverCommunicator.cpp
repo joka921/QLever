@@ -31,7 +31,7 @@ std::string QLeverCommunicator::getRawQLeverResponse(const std::string& query) {
 std::string QLeverCommunicator::parseJSON(const std::string& json, const EntityFinder* finder) {
   std::string res;
   //TODO:: default must be proper json response with error code etc.
-  res = "";
+  res = "{\"status\":\"ERROR\", \"exception\":\"Error while parsing json from QLever Backend\"}";
   picojson::value v;
   std::stringstream stream(json);
   stream >> v;
@@ -39,6 +39,12 @@ std::string QLeverCommunicator::parseJSON(const std::string& json, const EntityF
     return res;
   }
   auto& m = v.get<picojson::object>();
+  auto statusIt = m.find("status");
+  if (statusIt == m.end()) return res;
+  if (! statusIt->second.is<std::string>()) return res;
+  const auto& status = statusIt->second.get<std::string>();
+  if (status != "OK") return json;
+  if (statusIt == m.end()) return res;
   auto it = m.find("res");
   if (it == m.end()) return res;
 

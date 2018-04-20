@@ -77,6 +77,7 @@ function removeTriple(idx) {
 // __________________________________________________________________________
 function allowDrop(ev) {
     ev.preventDefault();
+    markPossibleDragTarget(ev);
 }
 
 /* handle the start of a drag&drop operation*/
@@ -94,7 +95,7 @@ function drag(ev) {
     crt.style.zIndex = "-2";
     crt.innerText=ev.target.getAttribute("readableName");
     document.body.appendChild(crt);
-    ev.dataTransfer.setDragImage(crt, 0, 0);
+    ev.dataTransfer.setDragImage(crt, rect.clientWidth/2, rect.clientHeight /2);
 
     // mark the origin of the drag
     //markPossibleDragTarget(ev);
