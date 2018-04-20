@@ -113,7 +113,7 @@ EntitySearchResult EntityFinder::findEntitiesByPrefix( const std::string& prefix
   auto boundPred = [](const std::pair<std::string, unsigned>&  p1,
                      const std::string& p2) { return p1.first < p2;};
   auto upperBoundPred = [](const std::string& p1, const std::pair<std::string, unsigned>&  p2) 
-  { return p1 < p2.first.substr(std::min(p2.first.size(), p1.size()));};
+  { return p1 < p2.first.substr(0, std::min(p2.first.size(), p1.size()));};
 
   //TODO: some meaningful mixing of subjects and properties for searchmode "all"
   auto* wdVec = &wdNameVec;
@@ -142,23 +142,34 @@ EntitySearchResult EntityFinder::findEntitiesByPrefix( const std::string& prefix
    std::cout << prefix << std::endl;
    std::cout << "found " << upper - res << std::endl;
    //TODO parametrize this and experiment
-   size_t maxRelevant = 1000;
+   size_t maxRelevant = 30000;
+
    if (upper - res > maxRelevant) {
      // only get first 20 results
      // TODO parametrize the 1000 and the 20
      upper = res + maxRelevant;
    }
+
+   std::vector<std::pair<size_t,size_t>> onlyIdxVec;
+   onlyIdxVec.reserve(upper - res);
    while (res != upper) {
      auto idx = (*res).second;
-     ret.entities.push_back(WikidataEntityShort((*wdVec)[idx], (*nVec)[idx], (*dVec)[idx]));
+     onlyIdxVec.push_back(std::make_pair(getIdxFromWdName((*wdVec)[idx]), idx));
+     //ret.entities.push_back(WikidataEntityShort((*wdVec)[idx], (*nVec)[idx], (*dVec)[idx]));
      //std::cout << ret.size() << std::endl;
      res++;
    }
-   auto sortPred = [](const WikidataEntityShort& w1, const WikidataEntityShort& w2)
-                      { return getIdxFromWdName(w1.wdName) < getIdxFromWdName(w2.wdName);};
-   std::sort(ret.entities.begin(), ret.entities.end(), sortPred);
-   if (ret.entities.size() > 20) {
-     ret.entities.resize(20);
+   auto sortPred = [](const std::pair<size_t, size_t>& w1, const std::pair<size_t, size_t>& w2)
+                      { return w1.first < w2.first;};
+   auto equalPred = [](const std::pair<size_t, size_t>& w1, const std::pair<size_t, size_t>& w2)
+                      { return w1.first == w2.first;};
+   std::sort(onlyIdxVec.begin(), onlyIdxVec.end(), sortPred);
+   auto upperUnique = std::unique(onlyIdxVec.begin(), onlyIdxVec.end(), equalPred);
+   auto uniqueSize = upperUnique - onlyIdxVec.begin();
+
+   for (int i = 0; i < 20 && i < uniqueSize; ++i) {
+     auto idx = onlyIdxVec[i].second;
+     ret.entities.push_back(WikidataEntityShort((*wdVec)[idx], (*nVec)[idx], (*dVec)[idx]));
    }
 
    auto translateTime = std::chrono::high_resolution_clock::now();
