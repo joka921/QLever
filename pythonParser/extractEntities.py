@@ -16,10 +16,29 @@ def extract_claims(claims):
             object_string = ""
             if arr["datatype"] == "string":
                 object_string = '"' + arr["datavalue"]["value"] + '"'
+            elif arr["datatype"] == "quantity":
+                #TODO Wikidata also provides upper and lower bounds etc.
+                # does QLever support these things?
+                object_string = '"' + arr["datavalue"]["amount"] + '"'
+                #TODO also support units (represented as wikidata entities)
+            elif arr["datatype"] == "time":
+                #TODO also much more info in Wikidata
+                object_string = '"' + arr["datavalue"]["time"] + '"'
+            elif arr["datatype"] == "globecoordinate":
+                #TODO also much more info in Wikidata
+                object_string = '"' + arr["datavalue"]["latitude"] + " " +
+                arr["datavalue"]["longitude"] '"'
+
             elif arr["datatype"] == "wikibase-item" and arr["datavalue"]["type"] == "wikibase-entityid":
-                #TODO: it might also be that the object is a Property!! handle
-                #this has to be handled!
-                object_string = "<Q" + str(arr["datavalue"]["value"]["numeric-id"]) + ">"
+                entity_type = arr["datavalue"]["value"]["entity-type"]
+                if (entity_type == "property"):
+                    object_string = "<P" + str(arr["datavalue"]["value"]["numeric-id"]) + ">"
+                elif (entity_type == "item"):
+                    object_string = "<Q" + str(arr["datavalue"]["value"]["numeric-id"]) + ">"
+                else:
+                    print("wrong entity type: {} in claim
+                            {}".format(entity_type, arr))
+
             if object_string != "":  # otherwise there was a not supported type
                 ret.append(property_string + "\t" + object_string)
     return ret
@@ -61,7 +80,8 @@ def extract_entities(infile, outfile):
                             try:
                                 data_raw = json.loads(line[:-2])
                             except json.decoder.JSONDecodeError:
-                                print("error")
+                                print("error in json decoder, line:")
+                                print(line[:-2])
                                 continue
                             data = data_raw
                             wd_id = data["id"]
@@ -92,9 +112,11 @@ def extract_entities(infile, outfile):
                             for el in claim_list:
                                 print(wd_id+"\t" + el + "\t.", file = f_triples)
                             count += 1
-                            if (count % 10000 ==0):
+                            if (count % 30000 ==0):
                                 print(count)
                         except:
+                            print("error in parsing, line:")
+                            print(line[:-2])
                             continue
 
 if __name__ == "__main__":
