@@ -194,6 +194,11 @@ std::string EntityFinder::readSingleDescription(std::ifstream* descFile, size_t 
 // ________________________________________________________________________
 size_t EntityFinder::getIdxFromWdName(const std::string& wdName) {
   // start with "<Q" or "<P", then number
+  if (wdName.size() < 3 || wdName[0] != '<') {
+    // this is not a valid entity name, it is probably a string literal,
+    // a numeric value or something else, so it has no proper internal idx.
+    return -1;
+  }
   std::stringstream s(wdName.substr(2));
   size_t idx;
   s >> idx;
@@ -229,8 +234,11 @@ WikidataEntityShort EntityFinder::wdNamesToEntities(const std::string& el) const
       nVec = &nameVecPred;
       dVec = &descVecPred;
     }
-    std::string name = "name";
-    std::string desc = "Description not yet implemented";
+    // default values which make sense for everything that is NOT a
+    // wikidata-entity
+    std::string wdName = "";
+    std::string name = el;
+    std::string desc = "";
     if (idx < vec->size()) {
       // convert from the "wikidata-name-idx" to the internal (unique) index
       idx = (*vec)[idx];
@@ -238,9 +246,10 @@ WikidataEntityShort EntityFinder::wdNamesToEntities(const std::string& el) const
         // if there is an entity matching, then also include name and description
         name = (*nVec)[idx];
         desc = (*dVec)[idx];
+	wdName = el;
       }
     }
-    return WikidataEntityShort(el, name, desc);
+    return WikidataEntityShort(wdName, name, desc);
 }
 
 // ______________________________________________________________________________
