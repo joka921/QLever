@@ -23,7 +23,6 @@ std::string QLeverCommunicator::getRawQLeverResponse(const std::string& query) {
   std::string request ="http://" + _serverAddress + ":" + std::to_string(_port);  
   request += "/?query=" + query;
   _client.GetText(request, res, statusCode);
-  std::cout << res;
   return statusCode == 200 ? res : std::string("");
 }
 
