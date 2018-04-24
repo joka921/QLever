@@ -7,28 +7,31 @@ def snak_to_object_string(arr, value_id):
     if arr["datatype"] == "wikibase-item" and arr["datavalue"]["type"] == "wikibase-entityid":
         entity_type = arr["datavalue"]["value"]["entity-type"]
         if (entity_type == "property"):
-            object_string += "<P" + value_id + str(arr["datavalue"]["value"]["numeric-id"]) + ">"
+            object_string += "<P" + str(arr["datavalue"]["value"]["numeric-id"]) + ">"
         elif (entity_type == "item"):
-            object_string += "<Q" +value_id + str(arr["datavalue"]["value"]["numeric-id"]) + ">"
+            object_string += "<Q" + str(arr["datavalue"]["value"]["numeric-id"]) + ">"
         else:
             print("wrong entity type: {} in claim {}".format(entity_type, arr))
 
     elif arr["datatype"] == "string":
-        object_string += '"' + value_id+ arr["datavalue"]["value"] + '"'
+        object_string += '"' + arr["datavalue"]["value"] + '"'
     elif arr["datatype"] == "quantity":
         #TODO Wikidata also provides upper and lower bounds etc.
         # does QLever support these things?
-        object_string = '"'  + value_id + arr["datavalue"]["value"]["amount"] + '"'
+        object_string = '"'  + arr["datavalue"]["value"]["amount"] + '"'
         #TODO also support units (represented as wikidata entities)
     elif arr["datatype"] == "time":
         #TODO also much more info in Wikidata
-        object_string = '"' + value_id+ arr["datavalue"]["value"]["time"] + '"'
+        object_string = '"' + arr["datavalue"]["value"]["time"] + '"'
     elif arr["datatype"] == "globecoordinate":
         #TODO also much more info in Wikidata
-        object_string = '"' + value_id+ arr["datavalue"]["value"]["latitude"] + " " 
+        object_string = '"' +  arr["datavalue"]["value"]["latitude"] + " " 
         object_string += arr["datavalue"]["longitude"] + '"'
     
     return object_string
+
+def format_triple(sub, pred, ob):
+    return sub + "\t" + pred + "\t" + ob + "\t."
 
 #Global variable, BAD probably
 value_count = 1
@@ -37,6 +40,12 @@ def extract_claims(wdId, claims):
     ret =([],[]) # first all the entity properties 
     for prop in claims:
         num_claims = len(claims[prop])
+        preferred_found = False
+        
+        #if no statement is preferred, all are considered truthy
+        #until we don't know if preferred statement exists,
+        #store preferred versions here
+        maybe_preferred = []
         for claim in claims[prop]:
             arr = claim["mainsnak"]  # here the information about a single claim
             try:
@@ -47,13 +56,33 @@ def extract_claims(wdId, claims):
                 if arr["snaktype"] != "value":
                     continue
                 property_string = "<" + arr["property"] + ">"
-                value_id = "{" + str(value_count) + "}"
+                property_string_all = "<A" + arr["property"] + ">"
+                value_id = "<V" + str(value_count) + ">"
                 object_string = ""
                 constraint_string = ""
                 value_count += 1
                 object_string += snak_to_object_string(arr, value_id)
                 if object_string != "":  # otherwise there was a not supported type
-                    ret[0].append(property_string + "\t" + object_string)
+                    if claim["rank"] == "preferred":
+                        # TODO: this handles that there might be more than one
+                        # preferred statement, is this according to WD
+                        # specification?
+
+                        preferred_found = True
+                        # in this case all non preferred statements become
+                        # non-truthy
+                        maybe_preferred = []
+                        ret[0].append(format_triple(wdId, property_string_all,
+                                      value_id))
+                    elif not preferred_found:
+                        maybe_preferred.append(format_triple(wdId, property_string_all,
+                                      value_id))
+
+
+                    ret[0].append(format_triple(wdId, property_string,
+                        value_id))
+                    ret[0].append(format_triple(value_id, "<PValue>",
+                        object_string))
             except KeyError:
                 print("key error in claim:")
                 print(arr)
@@ -76,13 +105,14 @@ def extract_claims(wdId, claims):
                             object_string = "" 
                             object_string += snak_to_object_string(arr, "")
                             if object_string != "":  # otherwise there was a not supported type
-                                ret[1].append( "<" + value_id + ">" + "\t" + property_string + "\t" +
-                                        object_string + "\t.")
+                                ret[0].append(format_triple(value_id,
+                                    property_string, object_string))
                         except KeyError:
                             print("key error in qualifier:")
                             print(arr)
                             print()
                             continue
+        ret[0].extend(maybe_preferred)
     return ret
 
 
@@ -152,12 +182,14 @@ def extract_entities(infile, outfile):
                             #handle the claims and statements
                             claim_list = extract_claims(wd_id, data["claims"])
                             for el in claim_list[0]:
-                                print(wd_id+"\t" + el + "\t.", file=f_triples)
+                                print(el, file=f_triples)
                             for el in claim_list[1]:
                                 print(el, file=f_complex)
                             count += 1
                             if (count % 5000 == 0):
                                 print(count)
+                            if  count == 1000:
+                                break
                         except IndexError:
                             print("error in parsing, line:")
                             #print(line[:-2])
