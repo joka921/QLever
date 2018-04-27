@@ -20,14 +20,17 @@ void EntityFinder::InitializeFromTextFile(const std::string& filename) {
     auto* dVec = &descVec;
     auto* nVec = &nameVec;
     auto* aVec = &aliasVec;
+    auto* sVec = &numSitelinkVec;
     if (WikidataEntity::IsPropertyName(entity.name)) {
       wdVec = &wdNameVecPred;
       dVec = &descVecPred;
       nVec = &nameVecPred;
       aVec = &aliasVecPred;
+      sVec = &numSitelinkVecPred;
     }
 
     wdVec->push_back(entity.name);
+    sVec->push_back(entity.numSitelinks);
     if (entity.aliases.size() > 0) {
       nVec->push_back(entity.aliases[0]);
     } else {
@@ -114,18 +117,22 @@ EntitySearchResult EntityFinder::findEntitiesByPrefix( const std::string& prefix
                      const std::string& p2) { return p1.first < p2;};
   auto upperBoundPred = [](const std::string& p1, const std::pair<std::string, unsigned>&  p2) 
   { return p1 < p2.first.substr(0, std::min(p2.first.size(), p1.size()));};
+  auto upperBoundPredExact = [](const std::string& p1, const std::pair<std::string, unsigned>&  p2) 
+  { return p1 <= p2.first;};
 
   //TODO: some meaningful mixing of subjects and properties for searchmode "all"
   auto* wdVec = &wdNameVec;
   auto* vec = &aliasVec;
   auto* dVec = &descVec;
   auto* nVec = &nameVec;
+  auto* sVec = &numSitelinkVec;
   auto type = EntityType::Subject;
   if (mode == SearchMode::Properties) {
     vec = &aliasVecPred;
     dVec = &descVecPred;
     wdVec = &wdNameVecPred;
     nVec = &nameVecPred;
+    sVec = &numSitelinkVecPred;
     type = EntityType::Property;
   }
    EntitySearchResult ret;
@@ -137,39 +144,62 @@ EntitySearchResult EntityFinder::findEntitiesByPrefix( const std::string& prefix
    }
 
    auto upper = std::upper_bound(res, vec->end(), prefix, upperBoundPred);
+   auto upperExact = std::lower_bound(res, upper, prefix + ' ', boundPred);
    auto findTime = std::chrono::high_resolution_clock::now();
-   ret.totalResults = upper - res;
+   auto numPrefixMatches = ret.totalResults = upper - res;
+   auto numExactMatches = upperExact - res;
    std::cout << prefix << std::endl;
    std::cout << "found " << upper - res << std::endl;
    //TODO parametrize this and experiment
-   size_t maxRelevant = 30000;
+   size_t maxRelevant = 100000;
+   
 
-   if (upper - res > maxRelevant) {
-     // only get first 20 results
-     // TODO parametrize the 1000 and the 20
+   if (numPrefixMatches > maxRelevant) {
      upper = res + maxRelevant;
+     if (numExactMatches > maxRelevant) {
+       upperExact = res + maxRelevant;
+     }
    }
 
    std::vector<std::pair<size_t,size_t>> onlyIdxVec;
-   onlyIdxVec.reserve(upper - res);
+   std::vector<std::pair<size_t,size_t>> onlyIdxVecExact;
+   onlyIdxVec.reserve(upper - upperExact);
+   onlyIdxVecExact.reserve(upperExact - res);
+   while (res != upperExact) {
+     auto idx = (*res).second;
+     onlyIdxVecExact.push_back(std::make_pair((*sVec)[idx], idx));
+     res++;
+   }
    while (res != upper) {
      auto idx = (*res).second;
-     onlyIdxVec.push_back(std::make_pair(getIdxFromWdName((*wdVec)[idx]), idx));
+     onlyIdxVec.push_back(std::make_pair((*sVec)[idx], idx));
      //ret.entities.push_back(WikidataEntityShort((*wdVec)[idx], (*nVec)[idx], (*dVec)[idx]));
      //std::cout << ret.size() << std::endl;
      res++;
    }
+   // TODO: this way we do not eliminate hits, but we also do not eliminate
+   // all duplicates
    auto sortPred = [](const std::pair<size_t, size_t>& w1, const std::pair<size_t, size_t>& w2)
-                      { return w1.first < w2.first;};
+                      { return w1.first > w2.first;};
    auto equalPred = [](const std::pair<size_t, size_t>& w1, const std::pair<size_t, size_t>& w2)
-                      { return w1.first == w2.first;};
+                      { return w1.second == w2.second;};
+   // reversed order, because we want high number of sitelinks first
    std::sort(onlyIdxVec.begin(), onlyIdxVec.end(), sortPred);
-   auto upperUnique = std::unique(onlyIdxVec.begin(), onlyIdxVec.end(), equalPred);
+   std::sort(onlyIdxVecExact.begin(), onlyIdxVecExact.end(), sortPred);
+   auto upperUnique = onlyIdxVec.end(); //std::unique(onlyIdxVec.begin(), onlyIdxVec.end(), equalPred);
+   auto upperUniqueExact = onlyIdxVecExact.end(); //std::unique(onlyIdxVecExact.begin(), onlyIdxVecExact.end(), equalPred);
    auto uniqueSize = upperUnique - onlyIdxVec.begin();
+   auto uniqueSizeExact = upperUniqueExact - onlyIdxVecExact.begin();
 
-   for (int i = 0; i < 20 && i < uniqueSize; ++i) {
+   for (int i = 0; i < 40 && i < uniqueSizeExact; ++i) {
+     auto idx = onlyIdxVecExact[i].second;
+     auto numLinks = onlyIdxVecExact[i].first;
+     ret.entities.push_back(WikidataEntityShort((*wdVec)[idx], (*nVec)[idx], (*dVec)[idx] + std::to_string(numLinks)));
+   }
+   for (int i = ret.entities.size(); i < 40 && i < uniqueSize; ++i) {
      auto idx = onlyIdxVec[i].second;
-     ret.entities.push_back(WikidataEntityShort((*wdVec)[idx], (*nVec)[idx], (*dVec)[idx]));
+     auto numLinks = onlyIdxVec[i].first;
+     ret.entities.push_back(WikidataEntityShort((*wdVec)[idx], (*nVec)[idx], (*dVec)[idx] + std::to_string(numLinks)));
    }
 
    auto translateTime = std::chrono::high_resolution_clock::now();
@@ -289,6 +319,9 @@ void EntityFinder::serialize(Archive& ar, const unsigned int version){
   ar & nameVecPred;
   ar & aliasVec;
   ar & aliasVecPred;
+  ar & numSitelinkVec;
+  ar & numSitelinkVecPred;
+
 }
 
 

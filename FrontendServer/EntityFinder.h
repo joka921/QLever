@@ -60,6 +60,9 @@ class EntityFinder {
   std::vector<std::string> wdNameVec; // Name in Wikidata, e.gl "Q23"
   std::vector<std::string> wdNameVecPred; // Name in Wikidata, e.gl "Q23"
 
+  std::vector<unsigned> numSitelinkVec;
+  std::vector<unsigned> numSitelinkVecPred;
+
   // in wikidata dumps, the entries are not ordered, so we have to keep track of
   // their indices
   //  if EntityToIdxVec[x] = y then entity "Qx" can be found at idx y, same for

@@ -5,7 +5,9 @@ WikidataEntity::WikidataEntity(const std::string& line) {
 
   auto pos = line.find("\t");
   name = line.substr(0, pos);
-  auto newpos = pos;
+  auto newpos = line.find("\t", pos + 1);
+  numSitelinks = std::stoi(line.substr(pos + 1, newpos - pos));
+  pos = newpos;
   while (newpos != std::string::npos) {
     newpos = line.find("\t", pos + 1);
     auto alias = line.substr(pos + 1, newpos - pos);

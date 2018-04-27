@@ -24,6 +24,7 @@ class WikidataEntity {
   string name;
   string description;
   std::vector<string> aliases;
+  unsigned int numSitelinks;
     
   
   // read line that python preprocessor outputs

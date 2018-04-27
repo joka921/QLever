@@ -40,7 +40,7 @@ int main(int argc, char** argv) {
 
   // createEntityFinder
   EntityFinder finder;
-  QLeverCommunicator communicator("titan.informatik.privat", 9998);
+  QLeverCommunicator communicator("alicudi.informatik.privat", 9998);
   if (argc == 3) {
     finder.InitializeFromTextFile(argv[1]);
     finder.WriteToFile("test.dat");

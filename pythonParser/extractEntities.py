@@ -73,23 +73,25 @@ def extract_claims(wdId, claims):
                         # non-truthy
                         maybe_preferred = []
                         ret[0].append(format_triple(wdId, property_string_all,
-                                      value_id))
+                                      object_string))
                     elif not preferred_found:
                         maybe_preferred.append(format_triple(wdId, property_string_all,
-                                      value_id))
-
+                                      object_string))
 
                     ret[0].append(format_triple(wdId, property_string,
-                        value_id))
+                        object_string))
+                    """
                     ret[0].append(format_triple(value_id, "<PValue>",
                         object_string))
+                    """
             except KeyError:
                 print("key error in claim:")
                 print(arr)
                 print()
                 continue
 
-            if "qualifiers" in claim:
+            #if "qualifiers" in claim:
+            if False:
                 quals = claim["qualifiers"]
                 qual_list = []
                 for prop in quals:
@@ -140,11 +142,11 @@ def extract_english(arr):
 
 def extract_entities(infile, outfile):
     count = 0
-    with bz2.open(infile, 'rt') as f_in:
-        with open(outfile, 'w') as f_out:
-            with open(outfile + '.desc', 'w') as f_desc:
-                with open(outfile + '.triple', 'w') as f_triples, open(outfile +
-                        '.complexTriple', 'w') as f_complex:
+    with bz2.open(infile, 'rt', encoding='utf-8') as f_in:
+        with open(outfile, 'w', encoding='utf-8') as f_out:
+            with open(outfile + '.desc', 'w', encoding='utf-8') as f_desc:
+                with open(outfile + '.triple', 'w', encoding='utf-8') as f_triples, open(outfile +
+                        '.complexTriple', 'w', encoding='utf-8') as f_complex:
                     for line in f_in:
                         #if ANYTHING GOES WRONG, continue
                         #TODO: this is bad style and also catches
@@ -160,8 +162,17 @@ def extract_entities(infile, outfile):
                             wd_id = data["id"]
 
 
+
+
+
                             # add the "<..>" brackets needed by QLever
                             wd_id = "<" + wd_id + ">"
+
+                            num_sitelinks = 0
+                            if "sitelinks" in data:
+                                num_sitelinks = len(data["sitelinks"])
+                            print(wd_id + "\t<NUM_SITELINKS> \t \"" +
+                                    str(num_sitelinks) + "\"\t.", file=f_triples)
                             try:
                                 label = data["labels"]["en"]["value"]
                             except KeyError:
@@ -173,7 +184,7 @@ def extract_entities(infile, outfile):
                             desc_str = extract_english(data["descriptions"])
 
                             # check type of alias??
-                            out_str = wd_id + "\t" + label
+                            out_str = wd_id + "\t" + str(num_sitelinks) + "\t" + label
                             if (alias_str):
                                 out_str = out_str + "\t" + alias_str
                             print(out_str, file=f_out)
@@ -188,8 +199,10 @@ def extract_entities(infile, outfile):
                             count += 1
                             if (count % 5000 == 0):
                                 print(count)
-                            if  count == 1000:
+                            """
+                            if count == 1000:
                                 break
+                            """
                         except IndexError:
                             print("error in parsing, line:")
                             #print(line[:-2])
