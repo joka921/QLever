@@ -69,9 +69,9 @@ function removeEmptyTriples() {
     removeTriple(triplesToBeDeleted[j]);
   }
   sparqlHead = "SELECT";
-  selectedVars = {}
-  checkboxes = $('input[id^="selectedX"]');
   var selectedVarFound = false;
+  /*
+  checkboxes = $('input[id^="selectedX"]');
   for (var c in checkboxes) {
     c = checkboxes[c];
     // javascript thing: with c.checked we verify that we indeed have found a
@@ -82,6 +82,17 @@ function removeEmptyTriples() {
       sparqlHead += " "  + currentVariableName;
       selectedVarFound = true;
 
+    }
+  }
+  */
+
+  // get deterministic order
+  var selectedVars = selectedVarsToArray();
+  for (var i = 0; i < selectedVars.length; i++) {
+    curVar = selectedVars[i];
+    if (usedVariables[curVar] == true) {
+      sparqlHead += " "  + curVar;
+      selectedVarFound = true;
     }
   }
   sparqlHead += " WHERE \{ ";
@@ -95,7 +106,7 @@ function removeEmptyTriples() {
     showErrorInResline("You have to select at least one variable which also occurs in triples", "queryRes");
   } else {
     // TODO: also filter empty queries!!!
-    executeSparqlQuery(sparql);
+    executeSparqlQuery(sparql, selectedVars);
   }
 }
 
@@ -103,12 +114,12 @@ function removeEmptyTriples() {
  * TODO: currently we have to keep track of the selected variables, but those
  * should come from the query result (TODO in backend)
  */
-function executeSparqlQuery(query) {
+function executeSparqlQuery(query, selectedArray) {
     console.log(query);
     var host = window.location.host;
     // TODO: not- hardcoded port (what is the easiest way ??)
     var port = window.location.port - 1;
-    var settings = determineSettingString();
+    var settings = determineSettingString(selectedArray);
     var url = "http://" + host + settings +  "?r=" + query;
     $.getJSON(url, function(data) {
       showResults(data, "queryRes");
@@ -360,21 +371,48 @@ function composeTriple(sub, pred, ob) {
   return actual_triple;
 }
 
+// ______________________________________________________________
+function selectedVarsToArray() {
+  arr = []
+  for (var variable in selectedVariables) {
+    if (selectedVariables.hasOwnProperty(variable) && selectedVariables[variable]) {
+      arr.push(variable);
+    }
+  }
+  return arr;
+}
+
 // _____________________________________________________________________
 function handleSelectCheckbox(el) {
   var checked = el.checked;
   var wdName = el.parentNode.parentNode.getAttribute("wdName");
   selectedVariables[wdName] = checked;
+  // determine previously checked variable
+  var previouslyChecked=false;
+  children = $("#orderButtons :input");
+  for (var i = 0; i < children.length; i++) {
+    if (children[i].checked) {
+      previouslyChecked = children[i].id;
+      break;
+    }
+  }
   $("#orderButtons").empty();
   $("#orderButtons").append("Order by: ")
+  
   $("#orderButtons").append("<input type=\"radio\" id=\"orderNone\" name=\"orderVar\" value=\"\" checked=\"checked\">");
   $("#orderButtons").append("<label for=\"orderNone\">none</label>");
   var varFound = false;
-  for (var variable in selectedVariables) {
-    if (selectedVariables.hasOwnProperty(variable) && selectedVariables[variable]) {
-      varFound = true;
-      $("#orderButtons").append("<input type=\"radio\" id=\"order" + variable + "\" name=\"orderVar\" value=\"" + variable + "\">");
-      $("#orderButtons").append("<label for=\"order" + variable + "\">" + variable + "</label>");
+  var selectedVars = selectedVarsToArray();
+  for (var i = 0; i < selectedVars.length; i++) {
+    var variable = selectedVars[i];
+    
+    varFound = true;
+    var id = "order" + variable;
+    $("#orderButtons").append("<input type=\"radio\" id=\"" + id + "\" name=\"orderVar\" value=\"" + variable + "\">");
+    $("#orderButtons").append("<label for=\"" + id + "\">" + variable + "</label>");
+    if (id == previouslyChecked) {
+      document.getElementById(id).checked="checked";
+      //$("#" + id).attr("checked", "checked");
     }
   }
   if (!varFound) {
@@ -389,7 +427,7 @@ function handleSelectCheckbox(el) {
 }
 
 // _______________________________________________________________________
-function determineSettingString() {
+function determineSettingString(selectedArray) {
   var res = "?s=";
   var radioType = document.getElementsByName("orderAsc");
   for (var i = 0; i < radioType.length; i++) {
@@ -405,9 +443,28 @@ function determineSettingString() {
       break;
     }
   }
-  // TODO: actual handling of variable selected by radio button
-  // Problem: nondeterministic ordering in maps
-  res = res + "0";
+  radioType = document.getElementsByName("orderVar");
+  var orderVariableName="none";
+  for (var i = 0; i < radioType.length; i++) {
+    if (radioType[i].checked) {
+      orderVariableName = radioType[i].value;
+      break;
+    }
+  }
+  var variableFound = false;
+  var varIdx;
+  for (var i = 0; i < selectedArray.length; i++) {
+    if (orderVariableName == selectedArray[i]) {
+      varIdx = i;
+      variableFound = true;
+      break;
+    }
+  }
+  if (variableFound) {
+    res += varIdx;
+  } else {
+    res = "?s=ax0";  // means no ordering
+  }
+  
   return res;
-
 }
