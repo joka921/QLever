@@ -15,6 +15,11 @@ using std::string;
 enum class EntityType {
   Subject, Property};
 
+// ________________________________________________________________
+enum class OrderType {
+  None, NumSitelinks, Numeric, Alphabetical
+};
+
 // Converter Function
 std::string EntityTypeToString(const EntityType& type); 
 
@@ -49,18 +54,26 @@ class WikidataEntityShort {
   string wdName;
   string name;
   string description;
+  unsigned int numSitelinks;
   EntityType type;
 
-  WikidataEntityShort(const string& wd, const string& nameT, const string& desc)
-    : wdName(wd), name(nameT), description(desc) {
+  WikidataEntityShort(const string& wd, const string& nameT, const string& desc, unsigned int nSitelinks = 0)
+    : wdName(wd), name(nameT), description(desc), numSitelinks(nSitelinks) {
     type = WikidataEntity::IsPropertyName(wdName) ? EntityType::Property : EntityType::Subject;}
 
   // default constructor needed for resize etc
   WikidataEntityShort() = default;
 
+  static picojson::array nestedVecToArray(const std::vector<std::vector<WikidataEntityShort>>& vec);
+  
+  // _____________________________________________________________________________
+  static void sortVec(std::vector<std::vector<WikidataEntityShort>>& vec, size_t orderVarIdx, OrderType type, bool asc);
 
   string toString() {return wdName + "\t" + name + "\t" + description;}
-  picojson::object ConvertToPicojsonObject();
+  picojson::object ConvertToPicojsonObject() const;
+
+  // TODO: should probably not be here
+  static int literalToInt(const std::string& str);
 
   template<class Archive>
     void serialize(Archive& ar, std::uint32_t const version) {

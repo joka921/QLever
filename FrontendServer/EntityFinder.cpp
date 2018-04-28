@@ -259,16 +259,19 @@ WikidataEntityShort EntityFinder::wdNamesToEntities(const std::string& el) const
     auto* vec = &EntityToIdxVec;
     auto* nVec = &nameVec;
     auto* dVec = &descVec;
+    auto* sVec = &numSitelinkVec;
     if (WikidataEntity::IsPropertyName(el)) {
       vec = &PropertyToIdxVec;
       nVec = &nameVecPred;
       dVec = &descVecPred;
+      sVec = &numSitelinkVecPred;
     }
     // default values which make sense for everything that is NOT a
     // wikidata-entity
     std::string wdName = "";
     std::string name = el;
     std::string desc = "";
+    unsigned int numSitelinks = 0;
     if (idx < vec->size()) {
       // convert from the "wikidata-name-idx" to the internal (unique) index
       idx = (*vec)[idx];
@@ -276,10 +279,11 @@ WikidataEntityShort EntityFinder::wdNamesToEntities(const std::string& el) const
         // if there is an entity matching, then also include name and description
         name = (*nVec)[idx];
         desc = (*dVec)[idx];
+	numSitelinks = (*sVec)[idx];
 	wdName = el;
       }
     }
-    return WikidataEntityShort(wdName, name, desc);
+    return WikidataEntityShort(wdName, name, desc, numSitelinks);
 }
 
 // ______________________________________________________________________________

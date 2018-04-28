@@ -17,7 +17,7 @@ WikidataEntity::WikidataEntity(const std::string& line) {
 }
 
 // ________________________________________________
-picojson::object WikidataEntityShort::ConvertToPicojsonObject() {
+picojson::object WikidataEntityShort::ConvertToPicojsonObject() const {
   picojson::value val;
   picojson::object tempOb;
 
@@ -30,12 +30,75 @@ picojson::object WikidataEntityShort::ConvertToPicojsonObject() {
   return tempOb;
 }
 
+// ____________________________________________________
+picojson::array WikidataEntityShort::nestedVecToArray(const std::vector<std::vector<WikidataEntityShort>>& vec) {
+  picojson::array ret;
+  ret.reserve(vec.size());
+  for (const auto& v: vec) {
+    picojson::array inner(v.size());
+    for (size_t i = 0; i < v.size(); ++i) {
+      inner[i].set(v[i].ConvertToPicojsonObject());
+    }
+    ret.emplace_back();
+    ret.back().set(inner);
+  }
+  return ret;
+}
+
 // Converter Function
 std::string EntityTypeToString(const EntityType& type) {
   if (type == EntityType::Subject) {
     return "0";
   }
   return "1";
+}
+
+// _____________________________________________________________________________
+void WikidataEntityShort::sortVec(std::vector<std::vector<WikidataEntityShort>>& vec, size_t orderVarIdx, OrderType type, bool asc) {
+  // numSitelinks as default case
+  // TODO: make absolutely exception safe
+  auto sortPredSitelinks = [orderVarIdx] (const std::vector<WikidataEntityShort>& v1, const std::vector <WikidataEntityShort>& v2) 
+                                       { return v1[orderVarIdx].numSitelinks < v2[orderVarIdx].numSitelinks;};
+  auto sortPredNumeric = [orderVarIdx] (const std::vector<WikidataEntityShort>& v1, const std::vector <WikidataEntityShort>& v2) 
+                                       { return literalToInt(v1[orderVarIdx].name) < literalToInt(v2[orderVarIdx].name);};
+  auto sortPredAlphabetical = [orderVarIdx] (const std::vector<WikidataEntityShort>& v1, const std::vector <WikidataEntityShort>& v2) 
+                                       { return v1[orderVarIdx].name < v2[orderVarIdx].name;};
+
+  if (type == OrderType::NumSitelinks) {
+    if (asc) {
+      std::sort(vec.begin(), vec.end(), sortPredSitelinks);
+    } else {
+      std::sort(vec.rbegin(), vec.rend(), sortPredSitelinks);
+    }
+  } else if (type == OrderType::Numeric) {
+    if (asc) {
+      std::sort(vec.begin(), vec.end(), sortPredNumeric);
+    } else {
+      std::sort(vec.rbegin(), vec.rend(), sortPredNumeric);
+    }
+  } else if (type == OrderType::Alphabetical) {
+    if (asc) {
+      std::sort(vec.begin(), vec.end(), sortPredAlphabetical);
+    } else {
+      std::sort(vec.rbegin(), vec.rend(), sortPredAlphabetical);
+    }
+  }
+
+
+}
+
+// ____________________________________________________________________________
+int WikidataEntityShort::literalToInt(const std::string& str) {
+  auto sub = str.substr(1, str.size() - 2);
+  int result = 0;
+  try {
+    result = std::stoi(sub);
+   } catch (std::invalid_argument&) {
+     return 0;
+   } catch (std::out_of_range&) {
+     return 0;
+   }
+  return result;
 }
 
 // ____________________________________________________________________--

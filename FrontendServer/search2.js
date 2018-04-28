@@ -36,15 +36,16 @@ function removeEmptyTriples() {
     var oneDefined = 0;
     var oneUndefined = 0;
     var usedVariables= {}
+    triple_vals = []
     for (var k = 0; k < els.length; k++) {
       if (els[k].getAttribute("class").startsWith("deleteTr")) {
         continue;
       }
       console.log(els[k]);
       var wdName = els[k].getAttribute("wdName");
-      if (els[k].getAttribute("wdName")) {
+      if (wdName) {
         oneDefined = 1;
-        sparql = sparql +" " + wdName + "";
+	triple_vals.push(wdName);
         if (wdName.startsWith("?")) {
           usedVariables[wdName] = true;
         }
@@ -60,7 +61,7 @@ function removeEmptyTriples() {
       // mark incomplete already done above, TODO: remember original color
       invalidTripleFound = 1;
     } else {
-      sparql = sparql +" . ";
+      sparql = sparql + composeTriple(triple_vals[0], triple_vals[1], triple_vals[2]);
     }
   }
 
@@ -103,10 +104,12 @@ function removeEmptyTriples() {
  * should come from the query result (TODO in backend)
  */
 function executeSparqlQuery(query) {
+    console.log(query);
     var host = window.location.host;
     // TODO: not- hardcoded port (what is the easiest way ??)
     var port = window.location.port - 1;
-    var url = "http://" + host +  "?r=" + query;
+    var settings = determineSettingString();
+    var url = "http://" + host + settings +  "?r=" + query;
     $.getJSON(url, function(data) {
       showResults(data, "queryRes");
     });
@@ -345,4 +348,66 @@ function showSingleEntity(parentId, entity) {
 // ______________________________________________________________________
 function escapeHtml(input) {
   return input.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// _________________________________________________________________________
+function composeTriple(sub, pred, ob) {
+  //TODO only if all is clicked etc.
+  pred = "<A" + pred.substring(1)
+ // var ob_rep = "?" + ob;
+  var actual_triple = sub + " " + pred + " " + ob + " .\n";
+ // var value_triple = ob_rep + " <PValue> " + ob + " .\n";
+  return actual_triple;
+}
+
+// _____________________________________________________________________
+function handleSelectCheckbox(el) {
+  var checked = el.checked;
+  var wdName = el.parentNode.parentNode.getAttribute("wdName");
+  selectedVariables[wdName] = checked;
+  $("#orderButtons").empty();
+  $("#orderButtons").append("Order by: ")
+  $("#orderButtons").append("<input type=\"radio\" id=\"orderNone\" name=\"orderVar\" value=\"\" checked=\"checked\">");
+  $("#orderButtons").append("<label for=\"orderNone\">none</label>");
+  var varFound = false;
+  for (var variable in selectedVariables) {
+    if (selectedVariables.hasOwnProperty(variable) && selectedVariables[variable]) {
+      varFound = true;
+      $("#orderButtons").append("<input type=\"radio\" id=\"order" + variable + "\" name=\"orderVar\" value=\"" + variable + "\">");
+      $("#orderButtons").append("<label for=\"order" + variable + "\">" + variable + "</label>");
+    }
+  }
+  if (!varFound) {
+    $("#orderButtons").empty();
+    $("#orderButtonsType").css("display", "none");
+    $("#orderButtonsAsc").css("display", "none");
+  } else {
+    $("#orderButtonsType").css("display", "block");
+    $("#orderButtonsAsc").css("display", "block");
+    
+  }
+}
+
+// _______________________________________________________________________
+function determineSettingString() {
+  var res = "?s=";
+  var radioType = document.getElementsByName("orderAsc");
+  for (var i = 0; i < radioType.length; i++) {
+    if (radioType[i].checked) {
+      res = res + radioType[i].value;
+      break;
+    }
+  }
+  radioType = document.getElementsByName("orderType");
+  for (var i = 0; i < radioType.length; i++) {
+    if (radioType[i].checked) {
+      res = res + radioType[i].value;
+      break;
+    }
+  }
+  // TODO: actual handling of variable selected by radio button
+  // Problem: nondeterministic ordering in maps
+  res = res + "0";
+  return res;
+
 }

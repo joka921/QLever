@@ -17,6 +17,8 @@ var nextIndexTriple = 1;
 // of variables which are already in use
 var variableUsages = {};
 
+var selectedVariables = {};
+
 
 
 
@@ -56,6 +58,8 @@ function addTriple() {
   var i = nextIndexTriple;
   var end = "\" ondrop=\"drop(event)\" ondragover=\"allowDrop(event)\"" +
             "ondragenter=\"markPossibleDragTarget(event)\"" +
+            " draggable=\"true\" ondragstart=\"drag(event)\"" +
+            "ondragend=\"endDrag(event)\""  +
             "onclick=\"showDetails(this)\"" +
             "ondragleave=\"unmarkPossibleDragTarget(event)\" > </div>"
   $("#triples").append("<div class=\"triple\" id=\"triple" + nextIndexTriple +"\" >" +
@@ -133,6 +137,7 @@ function drop(ev) {
     ev.target.setAttribute("wdName", wdName);
     ev.target.setAttribute("description", desc);
     ev.target.setAttribute("wdType", wdType);
+    ev.target.setAttribute("readableName", data);
     ev.target.innerHTML = data;
 
     if (!isTypeMatch(ev)) {

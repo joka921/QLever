@@ -119,10 +119,16 @@ int main(int argc, char** argv) {
           // and do this directly without detour in client
           // TODO: probably not needed
           //contentString = ServerUtils::entitiesToJson(finder.wdNamesToEntities(vecOfNames), 100);
-        } else if (filename.substr(0, 3) == std::string("?r=")) {
-          contentType = "application/json";
-          auto query = ServerUtils::decodeURL(filename.substr(3));
-          contentString = communicator.GetQueryResult(query, &finder);
+        } else if (filename.substr(0, 3) == std::string("?s=")) {
+	  auto remainder = filename.substr(3);
+	  auto pos = remainder.find("?");
+	  auto settings = ServerUtils::parseSetting(remainder.substr(0, pos));
+	  std::cout << "setting string is valid? " << settings.isValid << std::endl;
+	  if (settings.isValid && remainder.substr(pos, 3) == std::string("?r=")) {
+	    contentType = "application/json";
+	    auto query = ServerUtils::decodeURL(remainder.substr(pos));
+	    contentString = communicator.GetQueryResult(query, &finder, settings);
+	  }
 
         } else {
         // redirect empty string (start page) to standard file

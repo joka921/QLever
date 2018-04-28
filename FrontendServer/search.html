@@ -43,7 +43,8 @@
                                 onfocusout="renameVariableFinished(this)">
             <div>
               Selected:
-            <input type="checkbox" id="selectedX0" value="?x0">
+            <input type="checkbox" id="selectedX0" value="?x0"
+						   onchange="handleSelectCheckbox(this)">
             </div>
           </div>
           <div class="variable" id="x1" wdName="?x1" draggable="true"
@@ -56,7 +57,7 @@
                                 onfocusout="renameVariableFinished(this)">
             <div>
               Selected:
-            <input type="checkbox" id="selectedX1" value="?x1">
+            <input type="checkbox" id="selectedX1" value="?x1" onchange="handleSelectCheckbox(this)">
             </div>
           </div>
           <div class="variable" id="x2" wdName="?x2" draggable="true" ondragstart="drag(event)"  ondblclick="renameVariable(this)" readableName="?x2"  wdType="2" >
@@ -68,7 +69,7 @@
                                 onfocusout="renameVariableFinished(this)">
             <div>
               Selected:
-            <input type="checkbox" id="selectedX2" value="?x2">
+            <input type="checkbox" id="selectedX2" value="?x2" onchange="handleSelectCheckbox(this)">
             </div>
           </div>
           <div class="variable" id="x3" wdName="?x3" draggable="true" ondragstart="drag(event)" ondblclick="renameVariable(this)" readableName="?x3"  wdType="2" >
@@ -80,7 +81,7 @@
                                 onfocusout="renameVariableFinished(this)">
             <div>
               Selected:
-            <input type="checkbox" id="selectedX3" value="?x3">
+            <input type="checkbox" id="selectedX3" value="?x3" onchange="handleSelectCheckbox(this)">
             </div>
         </div>
         </div>
@@ -88,14 +89,20 @@
         <div class="subject" id="subject0" ondrop="drop(event)" ondragover="allowDrop(event)"
           ondragenter="markPossibleDragTarget(event)"
           ondragleave="unmarkPossibleDragTarget(event)"
+	  draggable="true" ondragstart="drag(event)" 
+	  ondragend="endDrag(event)"  
           onclick="showDetails(this)"> </div>
         <div class="property" id="property0" ondrop="drop(event)" ondragover="allowDrop(event)"
           ondragenter="markPossibleDragTarget(event)"
           ondragleave="unmarkPossibleDragTarget(event)" 
+	  draggable="true" ondragstart="drag(event)" 
+	  ondragend="endDrag(event)"  
           onclick="showDetails(this)"> </div>
         <div class="object" id="object0" ondrop="drop(event)" ondragover="allowDrop(event)"
           ondragenter="markPossibleDragTarget(event)"
           ondragleave="unmarkPossibleDragTarget(event)"
+	  draggable="true" ondragstart="drag(event)" 
+	  ondragend="endDrag(event)"  
           onclick="showDetails(this)"> </div>
         <button class="deleteTripleButton" onclick="removeTriple(0)"> - </button>
       </div>
@@ -107,6 +114,26 @@
         <button class="addTripleButton"
           onclick="removeEmptyTriples()">SendQuery </button>
       </div>
+      <div class="tripleDesc" id="orderButtons" ></div>
+      <div class="tripleDesc" id="orderButtonsType" style="display:none;">
+        Ordering Type:
+        <input type="radio" name="orderType" value="s" id="typeSitelinks"
+	checked="checked">
+	<label for="typeSitelinks"> numSitelinks </label>
+        <input type="radio" name="orderType" value="n" id="typeNumeric">
+	<label for="typeNumeric"> Numeric </label>
+        <input type="radio" name="orderType" value="a" id="typeAlphabetical">
+	<label for="typeAlphabetical"> Alphabetical </label>
+
+      </div>
+      <div class="tripleDesc" id="orderButtonsAsc" style="display:none">
+        <input type="radio" name="orderAsc" id="ascASC" value="a" checked="checked">
+	<label for="ascASC"> Ascending </label>
+        <input type="radio" name="orderAsc" value="b" id="ascDESC">
+	<label for="ascDESC"> Descending </label>
+
+      </div>
+      <div class="tripleDesc" id="orderButtonsDesc" ></div>
       <div class="tripleDesc"><div class="resClass" id="detailRes"></div></div>
     <div id="queryRes" class="resClass"></div>
     </div>
