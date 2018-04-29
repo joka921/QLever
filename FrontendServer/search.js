@@ -36,14 +36,15 @@ function getEntitySearchResults() {
     var query = $("#query").val();
     var host = window.location.host;
     var port = window.location.port;
-    var url = "http://" + host + "/?t=" + "obj" + "?q=" + query;
+    host = host + window.location.pathname;
+    var url = "http://" + host  + "?t=" + "obj" + "?q=" + query;
     console.log("URL: " + url);
     $.getJSON(url, function(data) {
       if (data["entities"]) {
         showEntitiesInResline(data, "searchRes");
       }
     });
-    url = "http://" + host + "/?t=" + "prd" + "?q=" + query;
+    url = "http://" + host + "?t=" + "prd" + "?q=" + query;
     console.log("URL: " + url);
     $.getJSON(url, function(data) {
       if (data["entities"]) {

@@ -64,7 +64,7 @@ int main(int argc, char** argv) {
   // (I was not sure if it would be sufficient to filter anything
   // starting with "../" or "/"
   std::unordered_set<string> whitelist{
-    "search.css", "search.js", "search2.js", "search.html", "js_cookie.js"};
+    "search.css", "search.js", "search2.js", "search3.js", "search.html", "js_cookie.js"};
 
   while (true) {
     try {
@@ -161,9 +161,9 @@ int main(int argc, char** argv) {
 
       // build http response
       std::string response = contentStatus + "\r\n";
-      response.append("Content Length: ");
+      response.append("Content-Length:");
       response.append(std::to_string(contentString.length()));
-      response.append("\r\nContent Type:");
+      response.append("\r\nContent-Type:");
       // if necessary explicityly set encoding to utf8
       contentType.append(";charset=utf-8");
       response.append(contentType);
@@ -173,8 +173,11 @@ int main(int argc, char** argv) {
       // transmit http response
       //std::cout << response << std::endl;
       boost::system::error_code wErr;
+      std::cout << "Peer IP: " << sck.remote_endpoint().address().to_string() << std::endl;
+      std::cout << "Peer port: " << sck.remote_endpoint().port() << std::endl;
       basio::write(sck, basio::buffer(response),
           basio::transfer_all(), wErr);
+      std::cout << wErr.message() << std::endl;
     } catch (const std::exception& e) {
       std::cerr << e.what() << std::endl;
     }
