@@ -63,6 +63,7 @@ private:
 class Vocabulary {
 public:
   Vocabulary();
+  Vocabulary(const Vocabulary& other) = default;
 
   virtual ~Vocabulary();
 
