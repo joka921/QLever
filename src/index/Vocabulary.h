@@ -62,8 +62,10 @@ private:
 //! and provides additional methods for retrieval.
 class Vocabulary {
 public:
+  friend class VocabularyWithPrefixes;
   Vocabulary();
-  Vocabulary(const Vocabulary& other) = default;
+  // TODO: make copy constructor working!!
+  Vocabulary(const Vocabulary& other){} ;
 
   virtual ~Vocabulary();
 
@@ -77,6 +79,11 @@ public:
   //! Append a word to the vocabulary. Wraps the std::vector method.
   void push_back(const string& word) {
     _words.push_back(word);
+  }
+
+  //! Clear the vocabulary. Wraps the std::vector method.
+  void clear() {
+    _words.clear();
   }
 
   //! Get the word with the given id (as const, not as lvalue).

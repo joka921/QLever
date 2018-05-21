@@ -9,6 +9,8 @@
 #include "./Index.h"
 #include "../parser/NTriplesParser.h"
 #include "../util/Conversions.h"
+#include "./VocabularyWithPrefixes.h"
+#include "./VocabularyGenerator.h"
 
 using std::array;
 
@@ -71,13 +73,18 @@ void Index::createFromNTriplesFile(const string& ntFile,
                                    bool allPermutations, bool onDiskLiterals) {
   _onDiskBase = onDiskBase;
   string indexFilename = _onDiskBase + ".index";
+  /*
   size_t nofLines = passNTriplesFileForVocabulary(ntFile, onDiskLiterals);
   ExtVec v(nofLines);
   passNTriplesFileIntoIdVector(ntFile, v, onDiskLiterals);
+  */
+  ExtVec v = CreateVecAndVocabFromNTriples(ntFile, onDiskLiterals);
+  
   if (onDiskLiterals) {
-    _vocab.externalizeLiterals(onDiskBase + ".literals-index");
+    _vocabWithPrefixes.externalizeLiterals(onDiskBase + ".literals-index");
   }
-  _vocab.writeToFile(onDiskBase + ".vocabulary");
+  _vocabWithPrefixes.writeToFile(onDiskBase + ".vocabulary");
+  
   LOG(INFO) << "Sorting for PSO permutation..." << std::endl;
   stxxl::sort(begin(v), end(v), SortByPSO(), STXXL_MEMORY_TO_USE);
   LOG(INFO) << "Sort done." << std::endl;
@@ -178,6 +185,99 @@ void Index::passTsvFileIntoIdVector(const string& tsvFile, ExtVec& data,
   LOG(INFO) << "Pass done.\n";
 }
 
+// ___________________________________________________________________
+// Alternative and Terminating implementation
+size_t Index::passNTriplesFileForVocabulary(const string& ntFile,
+                                            bool onDiskLiterals, size_t linesPerPartial) {
+  LOG(INFO) << "Making pass over NTriples " << ntFile << " for vocabulary."
+            << std::endl;
+
+  std::vector<SparqlPrefix> prefixes;
+  prefixes.emplace_back("rdf", "http://www.w3.org/1999/02/22-rdf-syntax-ns#");
+  prefixes.emplace_back("xsd", "http://www.w3.org/2001/XMLSchema#");
+  prefixes.emplace_back("rdfs", "http://www.w3.org/2000/01/rdf-schema#");
+  prefixes.emplace_back("owl", "http://www.w3.org/2002/07/owl#");
+  prefixes.emplace_back("wikibase", "http://wikiba.se/ontology-beta#");
+  prefixes.emplace_back("wds", "http://www.wikidata.org/entity/statement/");
+  prefixes.emplace_back("wdata", "https://www.wikidata.org/wiki/Special:EntityData/");
+  prefixes.emplace_back("skos", "http://www.w3.org/2004/02/skos/core#");
+  prefixes.emplace_back("schema", "http://schema.org/");
+  prefixes.emplace_back("cc", "http://creativecommons.org/ns#");
+  prefixes.emplace_back("geo", "http://www.opengis.net/ont/geosparql#");
+  prefixes.emplace_back("prov", "http://www.w3.org/ns/prov#");
+  prefixes.emplace_back("wdref", "http://www.wikidata.org/reference/");
+  prefixes.emplace_back("wdv", "http://www.wikidata.org/reference/");
+  prefixes.emplace_back("wd", "http://www.wikidata.org/entity/");
+  prefixes.emplace_back("wdt", "http://www.wikidata.org/prop/direct/");
+  prefixes.emplace_back("wdtn", "http://www.wikidata.org/prop/direct-normalized/");
+  prefixes.emplace_back("p", "http://www.wikidata.org/prop/");
+  prefixes.emplace_back("ps", "http://www.wikidata.org/prop/statement/");
+  prefixes.emplace_back("psv", "http://www.wikidata.org/prop/statement/value/");
+  prefixes.emplace_back("psn", "http://www.wikidata.org/prop/statement/value-normalized/");
+  prefixes.emplace_back("pq", "http://www.wikidata.org/prop/qualifier/");
+  prefixes.emplace_back("pqv", "http://www.wikidata.org/prop/qualifier/value/");
+  prefixes.emplace_back("pqn", "http://www.wikidata.org/prop/qualifier/value-normalized/");
+  prefixes.emplace_back("pr", "http://www.wikidata.org/prop/reference/");
+  prefixes.emplace_back("prv", "http://www.wikidata.org/prop/reference/value/");
+  prefixes.emplace_back("prn", "http://www.wikidata.org/prop/reference/value-normalized/");
+  prefixes.emplace_back("wdno", "http://www.wikidata.org/prop/novalue/");
+  _vocabWithPrefixes = VocabularyWithPrefixes(prefixes);
+    
+  //mergeVocabulary("/nfs/raid5/kalmbacj/hugePartialVocab/partialVocabulary", 41);
+  array<string, 3> spo;
+  NTriplesParser p(ntFile);
+  ad_utility::HashSet<string> items;
+  size_t i = 0;
+  size_t numFiles = 0;
+  while (p.getLine(spo)) {
+    if (ad_utility::isXsdValue(spo[2])) {
+      spo[2] = ad_utility::convertValueLiteralToIndexWord(spo[2]);
+    }
+    if (onDiskLiterals && isLiteral(spo[2]) && shouldBeExternalized(spo[2])) {
+      spo[2] = string({EXTERNALIZED_LITERALS_PREFIX}) + spo[2];
+    }
+    
+    // Duplicated in pass for Id Vector, externalize to function
+    for (size_t k = 0; k < 3; ++k) {
+      auto pref = _vocabWithPrefixes.removeAndGetPrefix(spo[k]);
+      if (pref != "") {
+	spo[k] = pref + ":" + spo[k];
+	//LOG(INFO) << spo[k] << "\n";
+      }
+
+      items.insert(spo[k]);
+    }
+
+    ++i;
+    if (i % 10000000 == 0) {
+      std::cout << "Lines processed: " << i << '\n';
+    }
+
+    if (i % linesPerPartial == 0) {
+      LOG(INFO) << "Lines processed: " << i << '\n';
+      std::cout << "writing partial vocab no. " << numFiles << std::endl;
+      Vocabulary vocab;
+      _vocab.createFromSet(items);
+      _vocab.writeToFile(_onDiskBase + "partialVocabulary" + std::to_string(numFiles));
+      items.clear();
+      numFiles++;
+    }
+  }
+  // write Remainder
+  //
+  LOG(INFO) << "Lines processed: " << i << '\n';
+  std::cout << "writing partial vocab no. " << numFiles << std::endl;
+  Vocabulary vocab;
+  _vocab.createFromSet(items);
+  _vocab.writeToFile(_onDiskBase + "partialVocabulary" + std::to_string(numFiles));
+  items.clear();
+  numFiles++;
+  mergeVocabulary(_onDiskBase + "partialVocabulary", numFiles);
+  LOG(INFO) << "Pass done.\n";
+  return i;
+}
+
+/*
 // _____________________________________________________________________________
 size_t Index::passNTriplesFileForVocabulary(const string& ntFile,
                                             bool onDiskLiterals) {
@@ -207,7 +307,67 @@ size_t Index::passNTriplesFileForVocabulary(const string& ntFile,
   items.clear();
   return i;
 }
+*/
 
+// _____________________________________________________________________________
+void Index::passNTriplesFileIntoIdVector(const string& ntFile, ExtVec& data,
+                                         bool onDiskLiterals, size_t linesPerPartial) {
+  LOG(INFO) << "Making pass over NTriples " << ntFile
+            << " and creating stxxl vector.\n";
+  array<string, 3> spo;
+  NTriplesParser p(ntFile);
+  LOG(INFO) << "Reading partial vocab ...\n";
+  google::sparse_hash_map<string, Id> vocabMap = vocabMapFromPartialIndexedFile(_onDiskBase + "partialVocabularywithIdx0") ;
+  LOG(INFO) << "done reading partial vocab\n";
+  size_t i = 0;
+  size_t numFiles = 0;
+  // write using vector_bufwriter
+  ExtVec::bufwriter_type writer(data);
+  while (p.getLine(spo)) {
+    if (ad_utility::isXsdValue(spo[2])) {
+      spo[2] = ad_utility::convertValueLiteralToIndexWord(spo[2]);
+    }
+    if (onDiskLiterals && isLiteral(spo[2]) && shouldBeExternalized(spo[2])) {
+      spo[2] = string({EXTERNALIZED_LITERALS_PREFIX}) + spo[2];
+    }
+
+    // Duplicated in pass for Id Vector, externalize to function
+    bool broken = false;
+    for (size_t k = 0; k < 3; ++k) {
+      auto pref = _vocabWithPrefixes.removeAndGetPrefix(spo[k]);
+      if (pref != "") {
+	spo[k] = pref + ":" + spo[k];
+      }
+      //LOG(INFO) << spo[k] << "\n";
+      if (vocabMap.find(spo[k]) == vocabMap.end()) {
+	LOG(INFO) << "not found in partial Vocab: " << spo[k] << '\n';
+	broken = true;
+      }
+    }
+    if (broken) continue;
+    writer << array<Id, 3>{{
+                               vocabMap.find(spo[0])->second,
+                               vocabMap.find(spo[1])->second,
+                               vocabMap.find(spo[2])->second
+                           }};
+    ++i;
+    if (i % 100000 == 0) {
+      LOG(INFO) << "Lines processed: " << i << '\n';
+    }
+
+    if (i % linesPerPartial == 0) {
+      numFiles++;
+      LOG(INFO) << "Lines processed: " << i << '\n';
+      std::cout << "reading partial vocab no. " << numFiles << std::endl;
+      vocabMap = vocabMapFromPartialIndexedFile(_onDiskBase + "partialVocabularywithIdx" + std::to_string(numFiles));
+      LOG(INFO) << "done reading partial vocab\n";
+    }
+  }
+  writer.finish();
+  LOG(INFO) << "Pass done.\n";
+}
+
+/*
 // _____________________________________________________________________________
 void Index::passNTriplesFileIntoIdVector(const string& ntFile, ExtVec& data,
                                          bool onDiskLiterals) {
@@ -239,6 +399,7 @@ void Index::passNTriplesFileIntoIdVector(const string& ntFile, ExtVec& data,
   writer.finish();
   LOG(INFO) << "Pass done.\n";
 }
+*/
 
 // _____________________________________________________________________________
 void Index::createPermutation(const string& fileName, Index::ExtVec const& vec,
@@ -1137,4 +1298,67 @@ void Index::setKbName(const string& name) {
   _sopMeta.setName(name);
   _ospMeta.setName(name);
   _opsMeta.setName(name);
+}
+
+// ______________________________________________________________________________
+Index::ExtVec Index::CreateVecAndVocabFromNTriples(const string& ntFile, bool onDiskLiterals) {
+  // TODO: only second half of pass
+  //size_t nofLines = passNTriplesFileForVocabulary(ntFile, onDiskLiterals, 100000000);
+  
+  auto numFiles = 42;
+  //mergeVocabulary(_onDiskBase + "partialVocabulary", numFiles);
+  std::vector<SparqlPrefix> prefixes;
+  prefixes.emplace_back("rdf", "http://www.w3.org/1999/02/22-rdf-syntax-ns#");
+  prefixes.emplace_back("xsd", "http://www.w3.org/2001/XMLSchema#");
+  prefixes.emplace_back("rdfs", "http://www.w3.org/2000/01/rdf-schema#");
+  prefixes.emplace_back("owl", "http://www.w3.org/2002/07/owl#");
+  prefixes.emplace_back("wikibase", "http://wikiba.se/ontology-beta#");
+  prefixes.emplace_back("wds", "http://www.wikidata.org/entity/statement/");
+  prefixes.emplace_back("wdata", "https://www.wikidata.org/wiki/Special:EntityData/");
+  prefixes.emplace_back("skos", "http://www.w3.org/2004/02/skos/core#");
+  prefixes.emplace_back("schema", "http://schema.org/");
+  prefixes.emplace_back("cc", "http://creativecommons.org/ns#");
+  prefixes.emplace_back("geo", "http://www.opengis.net/ont/geosparql#");
+  prefixes.emplace_back("prov", "http://www.w3.org/ns/prov#");
+  prefixes.emplace_back("wdref", "http://www.wikidata.org/reference/");
+  prefixes.emplace_back("wdv", "http://www.wikidata.org/reference/");
+  prefixes.emplace_back("wd", "http://www.wikidata.org/entity/");
+  prefixes.emplace_back("wdt", "http://www.wikidata.org/prop/direct/");
+  prefixes.emplace_back("wdtn", "http://www.wikidata.org/prop/direct-normalized/");
+  prefixes.emplace_back("p", "http://www.wikidata.org/prop/");
+  prefixes.emplace_back("ps", "http://www.wikidata.org/prop/statement/");
+  prefixes.emplace_back("psv", "http://www.wikidata.org/prop/statement/value/");
+  prefixes.emplace_back("psn", "http://www.wikidata.org/prop/statement/value-normalized/");
+  prefixes.emplace_back("pq", "http://www.wikidata.org/prop/qualifier/");
+  prefixes.emplace_back("pqv", "http://www.wikidata.org/prop/qualifier/value/");
+  prefixes.emplace_back("pqn", "http://www.wikidata.org/prop/qualifier/value-normalized/");
+  prefixes.emplace_back("pr", "http://www.wikidata.org/prop/reference/");
+  prefixes.emplace_back("prv", "http://www.wikidata.org/prop/reference/value/");
+  prefixes.emplace_back("prn", "http://www.wikidata.org/prop/reference/value-normalized/");
+  prefixes.emplace_back("wdno", "http://www.wikidata.org/prop/novalue/");
+  _vocabWithPrefixes = VocabularyWithPrefixes(prefixes);
+  size_t nofLines = 5000000000;
+  ExtVec v(nofLines);
+  //passNTriplesFileIntoIdVector(ntFile, v, onDiskLiterals, 100000000);
+  _vocabWithPrefixes.readFromPrefixedFile(_onDiskBase + "partialVocabularyfinalVocab");
+  return v;
+}
+
+// _______________________________________________________________________________________
+// TODO: namespace or something
+google::sparse_hash_map<string, Id> vocabMapFromPartialIndexedFile(const string& partialFile) {
+  std::ifstream file(partialFile);
+  google::sparse_hash_map<string, Id> vocabMap;
+  string line;
+  while (std::getline(file, line)) {
+    auto pos = line.find('\t');
+    if (pos == string::npos) {
+      //TODO: proper Exception
+      LOG(INFO) << "ERROR, no  tab (before index) found";
+    }
+    auto word = line.substr(0, pos);
+    auto id = std::stoull(line.substr(pos + 1));
+    vocabMap[word] = id;
+  }
+  return vocabMap;
 }

@@ -15,6 +15,7 @@
 #include "./TextMetaData.h"
 #include "./DocsDB.h"
 #include "../engine/ResultTable.h"
+#include "./VocabularyWithPrefixes.h"
 
 
 using std::string;
@@ -70,7 +71,7 @@ public:
   // Checks if the index is ready for use, i.e. it is properly intitialized.
   bool ready() const;
 
-  const Vocabulary& getVocab() const {
+  const VocabularyWithPrefixes& getVocab() const {
     return _vocab;
   };
 
@@ -274,7 +275,8 @@ public:
 
 private:
   string _onDiskBase;
-  Vocabulary _vocab;
+  VocabularyWithPrefixes _vocabWithPrefixes;
+  VocabularyWithPrefixes _vocab;
   Vocabulary _textVocab;
   IndexMetaData _psoMeta;
   IndexMetaData _posMeta;
@@ -302,10 +304,12 @@ private:
 
   size_t
   passNTriplesFileForVocabulary(const string& ntFile,
-                                bool onDiskLiterals = false);
+                                bool onDiskLiterals = false, size_t linesPerPartial = 100000000);
 
   void passNTriplesFileIntoIdVector(const string& ntFile, ExtVec& data,
-                                    bool onDiskLiterals = false);
+                                    bool onDiskLiterals = false, size_t linesPerPartial = 100000000);
+
+  ExtVec CreateVecAndVocabFromNTriples(const string& ntFile, bool onDiskLiterals);
 
   size_t passContextFileForVocabulary(const string& contextFile);
 
@@ -412,3 +416,6 @@ private:
 
   bool shouldBeExternalized(const string& object);
 };
+
+// TODO: bad, free function in header
+google::sparse_hash_map<string, Id> vocabMapFromPartialIndexedFile(const string& partialFile);
