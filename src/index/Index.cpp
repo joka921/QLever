@@ -83,6 +83,7 @@ void Index::createFromNTriplesFile(const string& ntFile,
   if (onDiskLiterals) {
     _vocabWithPrefixes.externalizeLiterals(onDiskBase + ".literals-index");
   }
+  _vocabWithPrefixes.outputForDebugging();
   _vocabWithPrefixes.writeToFile(onDiskBase + ".vocabulary");
   
   LOG(INFO) << "Sorting for PSO permutation..." << std::endl;
@@ -149,7 +150,7 @@ Index::passTsvFileForVocabulary(const string& tsvFile, bool onDiskLiterals) {
     }
   }
   LOG(INFO) << "Pass done.\n";
-  _vocab.createFromSet(items);
+  _tempVocab.createFromSet(items);
   return i;
 }
 
@@ -160,7 +161,7 @@ void Index::passTsvFileIntoIdVector(const string& tsvFile, ExtVec& data,
             << " and creating stxxl vector.\n";
   array<string, 3> spo;
   TsvParser p(tsvFile);
-  auto vocabMap = _vocab.asMap();
+  auto vocabMap = _tempVocab.asMap();
   size_t i = 0;
   // write using vector_bufwriter
   ExtVec::bufwriter_type writer(data);
@@ -257,8 +258,8 @@ size_t Index::passNTriplesFileForVocabulary(const string& ntFile,
       LOG(INFO) << "Lines processed: " << i << '\n';
       std::cout << "writing partial vocab no. " << numFiles << std::endl;
       Vocabulary vocab;
-      _vocab.createFromSet(items);
-      _vocab.writeToFile(_onDiskBase + "partialVocabulary" + std::to_string(numFiles));
+      vocab.createFromSet(items);
+      vocab.writeToFile(_onDiskBase + "partialVocabulary" + std::to_string(numFiles));
       items.clear();
       numFiles++;
     }
@@ -268,8 +269,8 @@ size_t Index::passNTriplesFileForVocabulary(const string& ntFile,
   LOG(INFO) << "Lines processed: " << i << '\n';
   std::cout << "writing partial vocab no. " << numFiles << std::endl;
   Vocabulary vocab;
-  _vocab.createFromSet(items);
-  _vocab.writeToFile(_onDiskBase + "partialVocabulary" + std::to_string(numFiles));
+  vocab.createFromSet(items);
+  vocab.writeToFile(_onDiskBase + "partialVocabulary" + std::to_string(numFiles));
   items.clear();
   numFiles++;
   mergeVocabulary(_onDiskBase + "partialVocabulary", numFiles);
@@ -962,6 +963,9 @@ void Index::scanOPS(Id object, Index::WidthTwoList* result) const {
 
 // _____________________________________________________________________________
 string Index::idToString(Id id) const {
+  return _vocab[id];
+  //TODO: PROGRAM THIS
+  /*
   if (id < _vocab.size()) {
     return _vocab[id];
   } else if (id == ID_NO_VALUE) {
@@ -973,6 +977,7 @@ string Index::idToString(Id id) const {
       return _vocab.getExternalVocab()[id];
     }
   }
+  */
 }
 
 // _____________________________________________________________________________
@@ -1303,10 +1308,11 @@ void Index::setKbName(const string& name) {
 // ______________________________________________________________________________
 Index::ExtVec Index::CreateVecAndVocabFromNTriples(const string& ntFile, bool onDiskLiterals) {
   // TODO: only second half of pass
-  //size_t nofLines = passNTriplesFileForVocabulary(ntFile, onDiskLiterals, 100000000);
+  size_t nofLines = passNTriplesFileForVocabulary(ntFile, onDiskLiterals, 100000000);
   
   auto numFiles = 42;
   //mergeVocabulary(_onDiskBase + "partialVocabulary", numFiles);
+  /*
   std::vector<SparqlPrefix> prefixes;
   prefixes.emplace_back("rdf", "http://www.w3.org/1999/02/22-rdf-syntax-ns#");
   prefixes.emplace_back("xsd", "http://www.w3.org/2001/XMLSchema#");
@@ -1338,8 +1344,9 @@ Index::ExtVec Index::CreateVecAndVocabFromNTriples(const string& ntFile, bool on
   prefixes.emplace_back("wdno", "http://www.wikidata.org/prop/novalue/");
   _vocabWithPrefixes = VocabularyWithPrefixes(prefixes);
   size_t nofLines = 5000000000;
+  */
   ExtVec v(nofLines);
-  //passNTriplesFileIntoIdVector(ntFile, v, onDiskLiterals, 100000000);
+  passNTriplesFileIntoIdVector(ntFile, v, onDiskLiterals, 100000000);
   _vocabWithPrefixes.readFromPrefixedFile(_onDiskBase + "partialVocabularyfinalVocab");
   return v;
 }

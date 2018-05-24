@@ -24,7 +24,6 @@ class VocabularyWithPrefixes {
 
   VocabularyWithPrefixes(vector<SparqlPrefix> prefixes)  {
     PreparePrefixes(std::move(prefixes));
-
   }
 
   void PreparePrefixes(vector<SparqlPrefix>&& prefixes);
@@ -34,8 +33,9 @@ class VocabularyWithPrefixes {
   void readFromFile(const string& fileName, const string& extLitsFileName);
 
   void writeToFile(const string& fileName) const;
+  string operator[](Id id) const;
 
-  size_t size() {return _size};
+  //size_t size() {return _size;};
 
   // _________________________________________
   bool getId(const string& word, Id* id) const;
@@ -51,8 +51,9 @@ class VocabularyWithPrefixes {
 
   // ___________________________________________________
   void externalizeLiterals(const string& fileName) {
-    _prefixedVocabulary[""].second.externalizeLiterals(fileName);
+    _prefixedVocabulary[std::string({EXTERNALIZED_LITERALS_PREFIX})].second.externalizeLiterals(fileName);
   }
+  void outputForDebugging();
 
  private:
   std::pair<string, string> splitPrefixed(const string& word);

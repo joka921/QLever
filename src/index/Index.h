@@ -277,6 +277,7 @@ private:
   string _onDiskBase;
   VocabularyWithPrefixes _vocabWithPrefixes;
   VocabularyWithPrefixes _vocab;
+  Vocabulary _tempVocab;
   Vocabulary _textVocab;
   IndexMetaData _psoMeta;
   IndexMetaData _posMeta;
