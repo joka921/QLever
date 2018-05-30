@@ -44,8 +44,19 @@ void VocabularyWithPrefixes::updatePrefixOffsets() {
   size_t curOffset = _prefixedVocabulary[""].second.size();
   for (auto& p : _prefixes) {
     _prefixedVocabulary[p._prefix].first = curOffset;
+    LOG(INFO) << "offset for Prefix " << p._prefix << " is " <<  _prefixedVocabulary[p._prefix].first  << '\n';
     curOffset += _prefixedVocabulary[p._prefix].second.size();
   }
+}
+
+Id VocabularyWithPrefixes::lower_bound(const string& word) const {
+  // TODO: check following claim
+  // apparently in the original code lower_bound is never used for externalized
+  // literals
+  auto wordCopy = word;
+  auto prefix = removeAndGetPrefix(wordCopy);
+  const auto& p = *(_prefixedVocabulary.find(prefix));
+  return p.second.second.lower_bound(wordCopy);
 }
 
 // ______________________________________________________________
@@ -64,12 +75,15 @@ bool VocabularyWithPrefixes::getId(const string& word, Id* id) const {
   }
     
   auto prefix = removeAndGetPrefix(wordCopy);
+  LOG(INFO) << "prefix is " << prefix << '\n';
   const auto& p = *(_prefixedVocabulary.find(prefix));
   bool success =  p.second.second.getId(wordCopy, id);
-  LOG(INFO) << "Id is " << *id << '\n';
   if (success) {
     auto offset = p.second.first;
     *id += offset;
+    LOG(INFO) << "Id including offset is " << *id << '\n';
+  } else {
+    //LOG(INFO) << "search for Id was not succesful" << *id << '\n';
   }
   return success;
 }
@@ -107,7 +121,10 @@ void VocabularyWithPrefixes::writeToFile(const string& fileName) const {
   // write file containing prefix information
   std::ofstream prefixFile(fileName + "#prefixes");
   for (const auto& pref : _prefixes) {
-    prefixFile << pref._prefix << '\t' << pref._uri << 'n';
+    // do not write Externalize-Prefix because it will be included automatically
+    if (pref._prefix != string({EXTERNALIZED_LITERALS_PREFIX})) {
+      prefixFile << pref._prefix << '\t' << pref._uri << '\n';
+    }
   }
 }
 
@@ -127,6 +144,13 @@ void VocabularyWithPrefixes::readFromFile(const string& fileName,
     p.second.second.readFromFile(fileName + p.first);
   }
 
+  if (extLitsFileName.size() > 0) {
+    LOG(INFO) << "Registering external vocabulary for literals.\n";
+    _prefixedVocabulary[string({EXTERNALIZED_LITERALS_PREFIX})].second._externalLiterals.initFromFile(extLitsFileName);
+    LOG(INFO) << "Done registering external vocabulary for literals.\n";
+  }
+
+  updatePrefixOffsets();
 }
 
 // _______________________________________________________________
@@ -207,11 +231,11 @@ string VocabularyWithPrefixes::operator[](Id id) const {
 
 // ___________________________________________________--
 void VocabularyWithPrefixes::outputForDebugging() {
-  size_t i = 0;
-  std::ofstream f("debuggin.txt");
+  size_t i = _prefixedVocabulary["p"].first;
+  std::ofstream f("/nfs/raid5/kalmbacj/debuggin.txt");
   while(true) {
     Id id;
-    getId((*this)[i], &id);
+    if (!getId((*this)[i], &id)) break;
     f << (*this)[i] << " " << i << " " << id << std::endl;
     i++;
   }

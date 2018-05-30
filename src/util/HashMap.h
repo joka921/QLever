@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include <google/dense_hash_map>
+#include <google/sparse_hash_map>
 
 #include "./DefaultKeyProvider.h"
 
@@ -12,7 +12,7 @@ namespace ad_utility {
 //! Wrapper for HashMaps to be used everywhere throughout code for
 //! the semantic search. This wrapper interface is not designed to
 //! be complete from the beginning. Feel free to extend it at need.
-//! The first version as of May 2011 uses google's dense_hash_map.
+//! The first version as of May 2011 uses google's sparse_hash_map.
 //! Backing-up implementations may be changed in the future.
 template<class K, class V,
     class HashFcn = SPARSEHASH_HASH<K>,   // defined in sparseconfig.h
@@ -24,13 +24,13 @@ public:
       K emptyKey = DefaultKeyProvider<K>::DEFAULT_EMPTY_KEY,
       K deletedKey = DefaultKeyProvider<K>::DEFAULT_DELETED_KEY) :
       _impl() {
-    _impl.set_empty_key(emptyKey);
+    //_impl.set_empty_key(emptyKey);
     _impl.set_deleted_key(deletedKey);
   }
 
-  typedef typename google::dense_hash_map<K, V,
+  typedef typename google::sparse_hash_map<K, V,
       HashFcn, EqualKey, Alloc>::iterator iterator;
-  typedef typename google::dense_hash_map<K, V,
+  typedef typename google::sparse_hash_map<K, V,
       HashFcn, EqualKey, Alloc>::const_iterator
       const_iterator;
 
@@ -103,7 +103,7 @@ public:
   }
 
 private:
-  google::dense_hash_map<K, V, HashFcn, EqualKey, Alloc> _impl;
+  google::sparse_hash_map<K, V, HashFcn, EqualKey, Alloc> _impl;
 };
 }
 

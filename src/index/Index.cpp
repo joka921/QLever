@@ -83,8 +83,10 @@ void Index::createFromNTriplesFile(const string& ntFile,
   if (onDiskLiterals) {
     _vocabWithPrefixes.externalizeLiterals(onDiskBase + ".literals-index");
   }
-  _vocabWithPrefixes.outputForDebugging();
+ // _vocabWithPrefixes.outputForDebugging();
   _vocabWithPrefixes.writeToFile(onDiskBase + ".vocabulary");
+  // Delete vocabulary to save RAM
+  _vocabWithPrefixes = VocabularyWithPrefixes();
   
   LOG(INFO) << "Sorting for PSO permutation..." << std::endl;
   stxxl::sort(begin(v), end(v), SortByPSO(), STXXL_MEMORY_TO_USE);
@@ -276,6 +278,7 @@ size_t Index::passNTriplesFileForVocabulary(const string& ntFile,
   mergeVocabulary(_onDiskBase + "partialVocabulary", numFiles);
   LOG(INFO) << "Pass done.\n";
   return i;
+
 }
 
 /*
@@ -586,8 +589,12 @@ void
 Index::createFromOnDiskIndex(const string& onDiskBase, bool allPermutations,
                              bool onDiskLiterals) {
   _onDiskBase = onDiskBase;
+  // TODO finish, when index is ready
   _vocab.readFromFile(onDiskBase + ".vocabulary",
                       onDiskLiterals ? onDiskBase + ".literals-index" : "");
+
+  // just for debugging
+  //_vocab.outputForDebugging();
   _psoFile.open(string(_onDiskBase + ".index.pso").c_str(), "r");
   _posFile.open(string(_onDiskBase + ".index.pos").c_str(), "r");
   AD_CHECK(_psoFile.isOpen() && _posFile.isOpen());
@@ -1309,9 +1316,11 @@ void Index::setKbName(const string& name) {
 Index::ExtVec Index::CreateVecAndVocabFromNTriples(const string& ntFile, bool onDiskLiterals) {
   // TODO: only second half of pass
   size_t nofLines = passNTriplesFileForVocabulary(ntFile, onDiskLiterals, 100000000);
+  //size_t nofLines = 4157785636;
   
-  auto numFiles = 42;
+  //auto numFiles = 42;
   //mergeVocabulary(_onDiskBase + "partialVocabulary", numFiles);
+  
   /*
   std::vector<SparqlPrefix> prefixes;
   prefixes.emplace_back("rdf", "http://www.w3.org/1999/02/22-rdf-syntax-ns#");
@@ -1343,11 +1352,13 @@ Index::ExtVec Index::CreateVecAndVocabFromNTriples(const string& ntFile, bool on
   prefixes.emplace_back("prn", "http://www.wikidata.org/prop/reference/value-normalized/");
   prefixes.emplace_back("wdno", "http://www.wikidata.org/prop/novalue/");
   _vocabWithPrefixes = VocabularyWithPrefixes(prefixes);
-  size_t nofLines = 5000000000;
+  //size_t nofLines = 5000000000;
+  //
   */
+  
   ExtVec v(nofLines);
   passNTriplesFileIntoIdVector(ntFile, v, onDiskLiterals, 100000000);
-  _vocabWithPrefixes.readFromPrefixedFile(_onDiskBase + "partialVocabularyfinalVocab");
+  //_vocabWithPrefixes.readFromPrefixedFile(_onDiskBase + "partialVocabularyfinalVocab");
   return v;
 }
 

@@ -36,6 +36,7 @@ class VocabularyWithPrefixes {
   string operator[](Id id) const;
 
   //size_t size() {return _size;};
+  
 
   // _________________________________________
   bool getId(const string& word, Id* id) const;
@@ -55,7 +56,41 @@ class VocabularyWithPrefixes {
   }
   void outputForDebugging();
 
+  Id getValueIdForLT(const string& indexWord) const {
+    Id lb = lower_bound(indexWord);
+    return lb;
+  }
+
+  Id getValueIdForLE(const string& indexWord) const {
+    Id lb = lower_bound(indexWord);
+    if ((*this)[lb] != indexWord && lb > 0) {
+      // If indexWord is not in the vocab, it may be that
+      // we ended up one too high. We don't want this to match in LE.
+      // The one before is actually lower than index word but that's fine
+      // b/c of the LE comparison.
+      --lb;
+    }
+    return lb;
+  }
+
+  Id getValueIdForGT(const string& indexWord) const {
+    Id lb = lower_bound(indexWord);
+    if ((*this)[lb] != indexWord && lb > 0) {
+      // If indexWord is not in the vocab, lb points to the next value.
+      // But if this happened, we know that there is nothing in between and it's
+      // fine to use one lower
+      --lb;
+    }
+    return lb;
+  }
+
+  Id getValueIdForGE(const string& indexWord) const {
+    Id lb = lower_bound(indexWord);
+    return lb;
+  }
+
  private:
+  Id lower_bound(const string& word) const;
   std::pair<string, string> splitPrefixed(const string& word);
   void updatePrefixOffsets();
   using vecMap = std::unordered_map<string, std::pair<size_t, Vocabulary>>;
