@@ -7,12 +7,12 @@
 #include <string>
 #include <vector>
 
+#include "../engine/Engine.h"
+#include "../index/Index.h"
+#include "../parser/ParseException.h"
+#include "../parser/SparqlParser.h"
 #include "../util/Socket.h"
 #include "../util/Timer.h"
-#include "../parser/SparqlParser.h"
-#include "../index/Index.h"
-#include "../engine/Engine.h"
-#include "../parser/ParseException.h"
 #include "./QueryExecutionContext.h"
 #include "./QueryExecutionTree.h"
 
@@ -23,24 +23,27 @@ using ad_utility::Socket;
 
 //! The HTTP Sever used.
 class Server {
-public:
-  explicit Server(const int port)
-      :
-      _serverSocket(), _port(port), _index(), _engine(), _initialized(false) {
-  }
+ public:
+  explicit Server(const int port, const int numThreads)
+      : _numThreads(numThreads),
+        _serverSocket(),
+        _port(port),
+        _index(),
+        _engine(),
+        _initialized(false) {}
 
   typedef ad_utility::HashMap<string, string> ParamValueMap;
 
   // Initialize the server.
   void initialize(const string& ontologyBaseName, bool useText,
-                  bool allPermutations = false,
-                  bool onDiskLiterals = false,
-                  bool optimizeOptionals = true);
+                  bool allPermutations = false, bool onDiskLiterals = false,
+                  bool optimizeOptionals = true, bool usePatterns = false);
 
   //! Loop, wait for requests and trigger processing.
   void run();
 
-private:
+ private:
+  const int _numThreads;
   Socket _serverSocket;
   int _port;
   Index _index;
@@ -48,6 +51,8 @@ private:
   bool _optimizeOptionals;
 
   bool _initialized;
+
+  void runAcceptLoop(QueryExecutionContext* qec);
 
   void process(Socket* client, QueryExecutionContext* qec) const;
 
@@ -78,7 +83,6 @@ private:
                              const ParseException& e) const;
 
   string composeStatsJson() const;
-
 
   mutable ad_utility::Timer _requestProcessingTimer;
 };
