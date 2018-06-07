@@ -18,6 +18,7 @@
 #include "./utils.h"
 #include "./ServerUtils.h"
 #include "./QLeverCommunicator.h"
+#include "./SearchServer.h"
 
 
 namespace basio = boost::asio;
@@ -40,15 +41,18 @@ int main(int argc, char** argv) {
 
   // createEntityFinder
   EntityFinder finder;
-  QLeverCommunicator communicator("alicudi.informatik.privat", 9998);
+  //QLeverCommunicator communicator("alicudi.informatik.privat", 9998);
   if (argc == 3) {
     finder.InitializeFromTextFile(argv[1]);
-    finder.WriteToFile("test.dat");
+    //finder.WriteToFile("test.dat");
   } else {
     finder = EntityFinder::ReadFromFile("test.dat");
     std::cout << finder.aliasVec.size()<< std::endl;
     std::cout << finder.aliasVec[0].first;
   }
+  SearchServer server(std::move(finder), port);
+  server.run();
+  /*
 
   // set up server endpoints etc
   basio::io_service ioService;
@@ -126,7 +130,8 @@ int main(int argc, char** argv) {
 	  std::cout << "setting string is valid? " << settings.isValid << std::endl;
 	  if (settings.isValid && remainder.substr(pos, 3) == std::string("?r=")) {
 	    contentType = "application/json";
-	    auto query = ServerUtils::decodeURL(remainder.substr(pos));
+	    //auto query = ServerUtils::decodeURL(remainder.substr(pos));
+	    auto query = remainder.substr(3);
 	    contentString = communicator.GetQueryResult(query, &finder, settings);
 	  }
 
@@ -182,4 +187,5 @@ int main(int argc, char** argv) {
       std::cerr << e.what() << std::endl;
     }
   }
+  */
 }

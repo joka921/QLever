@@ -81,28 +81,27 @@ std::pair<std::string, SearchMode> ServerUtils::parseQuery(const std::string& qu
 // Decode URLS from URL-Encoding to valid strings
 std::string ServerUtils::decodeURL(std::string encoded) {
   std::string output = "";
-  auto curPos = encoded.find("%");
+  auto curPos = encoded.find_first_of("%+");
   output.append(encoded.substr(0, curPos));
   while (curPos != encoded.npos) {
-    // we have found another "%", decode
-    int nextByte = 0;
-    // two chars after "%" are hex string of byte
-    std::string nextByteStr = encoded.substr(curPos + 1, 2);
-    // we have to go through an int, or the results will be wrong
-    std::istringstream(nextByteStr) >> std::hex >> nextByte;
-    output.push_back(static_cast<char>(nextByte));
-    auto posStart = curPos + 3;
+    auto posStart = curPos;
+    if (encoded[curPos] == '+') {
+      output.append(" ");
+      posStart += 1;
+    } else {
+      // we have found another "%", decode
+      int nextByte = 0;
+      // two chars after "%" are hex string of byte
+      std::string nextByteStr = encoded.substr(curPos + 1, 2);
+      // we have to go through an int, or the results will be wrong
+      std::istringstream(nextByteStr) >> std::hex >> nextByte;
+      output.push_back(static_cast<char>(nextByte));
+      posStart = curPos + 3;
+      output.append(encoded.substr(posStart, curPos - posStart));
+    }
     curPos = encoded.find("%", posStart);
-    output.append(encoded.substr(posStart, curPos - posStart));
   }
-
-  // decode "+" to " "
-  curPos = 0;
-  while (true) {
-    curPos = output.find("+", curPos);
-    if (curPos == output.npos) break;
-    output = output.replace(curPos, 1, " ");
-  }
+  std::cout << output << std::endl;
   return output;
 }
 

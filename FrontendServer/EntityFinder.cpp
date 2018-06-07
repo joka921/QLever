@@ -107,7 +107,7 @@ void EntityFinder::InitializeFromTextFile(const std::string& filename) {
 }
 
 // __________________________________________________________________
-EntitySearchResult EntityFinder::findEntitiesByPrefix( const std::string& prefixA, SearchMode mode)
+EntitySearchResult EntityFinder::findEntitiesByPrefix( const std::string& prefixA, SearchMode mode) 
 {
   auto startTime = std::chrono::high_resolution_clock::now();
   std::string prefix = prefixA;

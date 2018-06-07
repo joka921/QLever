@@ -1,4 +1,4 @@
-CXX = g++ -g   -O0 -Wall -std=c++14 -L/home/kalmbacj/lib
+CXX = g++    -O3  -Wall -std=c++14 -L/home/kalmbacj/lib -L curl/curlbuild/lib/
 MAIN_BINARIES = $(basename $(wildcard *Main.cpp))
 TEST_BINARIES = $(basename $(wildcard *Test.cpp))
 HEADER = $(wildcard *.h)
@@ -7,7 +7,7 @@ CPPLINT_PATH = ./cpplint.py
 CPPLINT_FILTERS = -runtime/references,-build/header_guard,-build/include
 
 PORT = 9999
-FILE = ../Wikidata/million.txt
+FILE = /nfs/raid5/kalmbacj/SplitParsing/withPreferredComplete
 
 .PRECIOUS: %.o
 
@@ -42,4 +42,4 @@ clean:
 	$(CXX) -c $<
 
 start: SearchServerMain
-	./SearchServerMain $(FILE) $(PORT)
+	./SearchServerMain $(FILE) $(PORT) 

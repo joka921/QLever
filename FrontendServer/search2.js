@@ -120,6 +120,7 @@ function executeSparqlQuery(query, selectedArray) {
     // TODO: not- hardcoded port (what is the easiest way ??)
     var settings = determineSettingString(selectedArray);
     var url = "http://" + host + settings +  "?r=" + query;
+    url=encodeURI(url);
     $.getJSON(url, function(data) {
       showResults(data, "queryRes");
     });
@@ -368,7 +369,9 @@ function escapeHtml(input) {
 // _________________________________________________________________________
 function composeTriple(sub, pred, ob) {
   //TODO only if all is clicked etc.
-  pred = "<A" + pred.substring(1)
+  if (!pred.startsWith("?")) {
+    pred = "<A" + pred.substring(1)
+  }
  // var ob_rep = "?" + ob;
   var actual_triple = sub + " " + pred + " " + ob + " .\n";
  // var value_triple = ob_rep + " <PValue> " + ob + " .\n";

@@ -18,7 +18,7 @@
 #include <cstdlib>
 #include <cstring>         // strerror, strlen, memcpy, strcpy
 #include <ctime>
-#include <curl/curl.h>
+#include "curl/include/curl/curl.h"
 #include <fstream>
 #include <functional>
 #include <iostream>
