@@ -8,6 +8,7 @@
 #include <iostream>
 
 #include "../util/Log.h"
+#include "../util/Exception.h"
 
 class PairCompare {
  public:
@@ -20,12 +21,15 @@ void mergeVocabulary(const std::string& basename, size_t numFiles) {
   std::vector<std::fstream> infiles;
   std::vector<std::vector<std::string>> vecs(numFiles);
   std::ofstream outfile(basename + ".vocabulary");
-  std::ofstream outfileExternal(basename + "externalTextFile");
+  AD_CHECK(outfile.is_open());
+  std::ofstream outfileExternal(basename + ".externalTextFile");
+  AD_CHECK(outfileExternal.is_open());
   std::vector<bool> endOfFile(numFiles, false);
   std::vector<std::streampos> posNextWord;
   std::vector<std::vector<std::string>::iterator> iterators;
   for (size_t i = 0; i < numFiles; i++) {
-    infiles.emplace_back(basename + "partialVocabulary" + std::to_string(i), std::ios_base::in | std::ios_base::out);
+    infiles.emplace_back(basename + PARTIAL_VOCAB_FILE_NAME + std::to_string(i), std::ios_base::in | std::ios_base::out);
+    AD_CHECK(infiles.back().is_open());
     endOfFile[i] = true;
     vecs[i].reserve(bufferSize);
 
@@ -73,8 +77,8 @@ void mergeVocabulary(const std::string& basename, size_t numFiles) {
       // always write Index (also in case of duplicates)
       // we already have increased total written, so for the duplicate
       // we have to subtract one again
-      infiles[top.second].write((char*)&totalWritten, sizeof(totalWritten));
-
+      auto minusOne = totalWritten - 1;
+      infiles[top.second].write((char*)&minusOne, sizeof(totalWritten));
     }
 
     // refill with top element from current vector
@@ -89,7 +93,7 @@ void mergeVocabulary(const std::string& basename, size_t numFiles) {
         auto i = top.second;
         std::string word;
         endOfFile[top.second] = true;
-        unsigned int len;
+        uint32_t len;
         if (infiles[i].read((char*)&len, sizeof(len))) {
           vecs[i].emplace_back();
           vecs[i].back().resize(len);
@@ -111,7 +115,7 @@ void mergeVocabulary(const std::string& basename, size_t numFiles) {
 google::sparse_hash_map<string, Id> vocabMapFromPartialIndexedFile(const string& partialFile) {
   std::ifstream file(partialFile, std::ios_base::binary);
   google::sparse_hash_map<string, Id> vocabMap;
-  unsigned int len;
+  uint32_t len;
   while (file.read((char*)&len, sizeof(len))) {
     std::string word;
     word.resize(len);

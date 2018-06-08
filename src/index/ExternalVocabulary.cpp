@@ -64,6 +64,7 @@ void ExternalVocabulary::buildFromTextFile(const string& textFileName,
                                          const string& outFileName) {
   _file.open(outFileName.c_str(), "w");
   std::ifstream infile(textFileName);
+  AD_CHECK(infile.is_open());
   vector<off_t> offsets;
   off_t currentOffset = 0;
   _size = 0;

@@ -91,7 +91,7 @@ Index::ExtVec Index::createExtVecAndVocabFromNTriples(const string& ntFile,
 					       bool onDiskLiterals) {
   size_t nofLines = passNTriplesFileForVocabulary(ntFile, onDiskLiterals, NUM_TRIPLES_PER_PARTIAL_VOCAB);
   if (onDiskLiterals) {
-    _vocab.externalizeLiteralsFromTextFile(onDiskBase + "externalTextFile", onDiskBase + ".literals-index");
+    _vocab.externalizeLiteralsFromTextFile(onDiskBase + ".externalTextFile", onDiskBase + ".literals-index");
   }
   // clear vocabulary to save ram (only information from partial binary files used from now on).
   _vocab = Vocabulary();
@@ -243,7 +243,7 @@ size_t Index::passNTriplesFileForVocabulary(const string& ntFile,
   while (p.getLine(spo)) {
     if (ad_utility::isXsdValue(spo[2])) {
       spo[2] = ad_utility::convertValueLiteralToIndexWord(spo[2]);
-    }    
+    }
     if (onDiskLiterals && isLiteral(spo[2]) && shouldBeExternalized(spo[2])) {
       spo[2] = string({EXTERNALIZED_LITERALS_PREFIX}) + spo[2];
     }    
@@ -255,15 +255,17 @@ size_t Index::passNTriplesFileForVocabulary(const string& ntFile,
 
     ++i;
     if (i % 10000000 == 0) {
-      std::cout << "Lines processed: " << i << '\n';
+      LOG(INFO) << "Lines processed: " << i << '\n';
     }
 
     if (i % linesPerPartial == 0) {
       LOG(INFO) << "Lines processed: " << i << '\n';
-      std::cout << "writing partial vocab no. " << numFiles << std::endl;
+      string partialFilename = _onDiskBase + PARTIAL_VOCAB_FILE_NAME + std::to_string(numFiles);
       Vocabulary vocab;
       vocab.createFromSet(items);
-      vocab.writeToBinaryFileForMerging(_onDiskBase + "partialVocabulary" + std::to_string(numFiles));
+      LOG(INFO) << "writing partial vocabular to " << partialFilename << std::endl;
+      vocab.writeToBinaryFileForMerging(partialFilename);
+      LOG(INFO) << "Done\n";
       items.clear();
       numFiles++;
     }
@@ -273,11 +275,11 @@ size_t Index::passNTriplesFileForVocabulary(const string& ntFile,
   LOG(INFO) << "Lines processed: " << i << '\n';
   if (items.size() > 0) {
     // write remainder
-    
-    std::cout << "writing partial vocab no. " << numFiles << std::endl;
+    string partialFilename = _onDiskBase + PARTIAL_VOCAB_FILE_NAME + std::to_string(numFiles);
+    LOG(INFO) << "writing partial vocabular to " << partialFilename << std::endl;
     Vocabulary vocab;
     vocab.createFromSet(items);
-    vocab.writeToBinaryFileForMerging(_onDiskBase + "partialVocabulary" + std::to_string(numFiles));
+    vocab.writeToBinaryFileForMerging(partialFilename);
     items.clear();
     numFiles++;
   }
@@ -331,8 +333,8 @@ void Index::passNTriplesFileIntoIdVector(const string& ntFile, ExtVec& data,
     if (i % linesPerPartial == 0) {
       numFiles++;
       LOG(INFO) << "Lines processed: " << i << '\n';
-      std::cout << "reading partial vocab no. " << numFiles << std::endl;
-      vocabMap = vocabMapFromPartialIndexedFile(_onDiskBase + "partialVocabulary" + std::to_string(numFiles));
+      LOG(INFO) << "reading partial vocab no. " << numFiles << std::endl;
+      vocabMap = vocabMapFromPartialIndexedFile(_onDiskBase + PARTIAL_VOCAB_FILE_NAME + std::to_string(numFiles));
       LOG(INFO) << "done reading partial vocab\n";
     }
   }
@@ -1412,6 +1414,7 @@ size_t Index::sizeEstimate(const string& sub, const string& pred,
 template <class T>
 void Index::writeAsciiListFile(const string& filename, const T& ids) const {
   std::ofstream f(filename.c_str());
+
   for (size_t i = 0; i < ids.size(); ++i) {
     f << ids[i] << ' ';
   }

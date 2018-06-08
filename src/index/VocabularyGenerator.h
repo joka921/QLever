@@ -11,10 +11,11 @@
 
 using std::string;
 // _______________________________________________________________
-// merge the partial vocabularies at basenamepartialVocabulary0 to basename +
-// partialVocabulary + numFiles-1
-// Directly Writes .vocabulary file at basename (no more need to pass through Vocabulary
-// class
+// merge the partial vocabularies at  binary files 
+// basename + PARTIAL_VOCAB_FILE_NAME + to_string(i)
+// where 0 <= i < numFiles
+// Directly Writes .vocabulary file at basename (no more need to pass 
+// through Vocabulary class
 // Writes file "externalTextFile" which can be used to directly write external
 // Literals
 void mergeVocabulary(const std::string& basename, size_t numFiles);
