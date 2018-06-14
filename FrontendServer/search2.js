@@ -68,7 +68,19 @@ function removeEmptyTriples() {
   for (var j = 0; j < triplesToBeDeleted.length; j++) {
     removeTriple(triplesToBeDeleted[j]);
   }
-  sparqlHead = "SELECT";
+  sparqlHead = `
+    PREFIX wd: <http://www.wikidata.org/entity/> 
+    PREFIX wds: <http://www.wikidata.org/entity/statement/>
+    PREFIX wdv: <http://www.wikidata.org/value/>
+    PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+    PREFIX wikibase: <http://wikiba.se/ontology#>
+    PREFIX p: <http://www.wikidata.org/prop/>
+    PREFIX ps: <http://www.wikidata.org/prop/statement/>
+    PREFIX pq: <http://www.wikidata.org/prop/qualifier/>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    PREFIX bd: <http://www.bigdata.com/rdf#>
+    `
+  sparqlHead += " SELECT";
   var selectedVarFound = false;
   /*
   checkboxes = $('input[id^="selectedX"]');
@@ -106,6 +118,7 @@ function removeEmptyTriples() {
     showErrorInResline("You have to select at least one variable which also occurs in triples", "queryRes");
   } else {
     // TODO: also filter empty queries!!!
+    sparql += " LIMIT 10"
     executeSparqlQuery(sparql, selectedVars);
   }
 }
@@ -119,8 +132,9 @@ function executeSparqlQuery(query, selectedArray) {
     var host = window.location.host + window.location.pathname;
     // TODO: not- hardcoded port (what is the easiest way ??)
     var settings = determineSettingString(selectedArray);
-    var url = "http://" + host + settings +  "?r=" + query;
-    url=encodeURI(url);
+    var url = "http://" + host + settings +  "?r=" + escape(query);
+    //url=escape(url);
+    console.log(url);
     $.getJSON(url, function(data) {
       showResults(data, "queryRes");
     });
@@ -339,6 +353,9 @@ function updateVariableNameInternally(oldName, newName) {
 function showSingleEntity(parentId, entity) {
   var newId = parentId +"inner";
   // make entity draggable
+  entity["wdName"] = escapeHtml(entity["wdName"])
+  entity["name"] = escapeHtml(entity["name"])
+  entity["description"] = escapeHtml(entity["description"])
   var cssClass = entity["type"] == "1" ? "resLinePredicate" : "resLineSubject";
   $("#" + parentId).append("<div id=\"" + newId + "\" " +
                                "class=\"" + cssClass + "\" " +
@@ -369,13 +386,23 @@ function escapeHtml(input) {
 // _________________________________________________________________________
 function composeTriple(sub, pred, ob) {
   //TODO only if all is clicked etc.
+  /*
   if (!pred.startsWith("?")) {
     pred = "<A" + pred.substring(1)
   }
+  */
  // var ob_rep = "?" + ob;
-  var actual_triple = sub + " " + pred + " " + ob + " .\n";
- // var value_triple = ob_rep + " <PValue> " + ob + " .\n";
+  var actual_triple = addPrefix(sub, "wd") + " " + addPrefix(pred, "wdt") + " " + addPrefix(ob, "wd") + " .\n";
   return actual_triple;
+}
+
+// __________________________________________________________________
+function addPrefix(entity, prefix) {
+  if (entity.startsWith("?")) {
+    return entity;
+  }
+  withoutBrackets = entity.substring(1, entity.length - 1);
+  return prefix + ":" + withoutBrackets;
 }
 
 // ______________________________________________________________
