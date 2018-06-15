@@ -50,8 +50,8 @@ add_executable(SparsehashTest SparsehashTest.cpp)
 target_link_libraries(SparsehashTest gtest_main -pthread)
 
 add_executable(VocabularyGeneratorTest VocabularyGeneratorTest.cpp)
-target_link_libraries(VocabularyGeneratorTest gtest_main index boost_system
-  boost_iostreams boost_filesystem -pthread)
+target_link_libraries(VocabularyGeneratorTest gtest_main index 
+  -pthread)
 
 add_library(tests
             SparqlParserTest
