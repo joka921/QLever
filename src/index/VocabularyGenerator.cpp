@@ -114,6 +114,7 @@ void mergeVocabulary(const std::string& basename, size_t numFiles) {
 // ____________________________________________________________________________________________
 google::sparse_hash_map<string, Id> vocabMapFromPartialIndexedFile(const string& partialFile) {
   std::ifstream file(partialFile, std::ios_base::binary);
+  AD_CHECK(file.is_open());
   google::sparse_hash_map<string, Id> vocabMap;
   uint32_t len;
   while (file.read((char*)&len, sizeof(len))) {

@@ -296,8 +296,9 @@ void Index::passNTriplesFileIntoIdVector(const string& ntFile, ExtVec& data,
             << " and creating stxxl vector.\n";
   array<string, 3> spo;
   NTriplesParser p(ntFile);
-  LOG(INFO) << "Reading partial vocab ...\n";
-  google::sparse_hash_map<string, Id> vocabMap = vocabMapFromPartialIndexedFile(_onDiskBase + "partialVocabulary0");
+  std::string vocabFilename(_onDiskBase + PARTIAL_VOCAB_FILE_NAME + std::to_string(0));
+  LOG(INFO) << "Reading partial vocab from " << vocabFilename << " ...\n";
+  google::sparse_hash_map<string, Id> vocabMap = vocabMapFromPartialIndexedFile(vocabFilename);
   LOG(INFO) << "done reading partial vocab\n"; 
   size_t i = 0;
   size_t numFiles = 0;
@@ -333,8 +334,9 @@ void Index::passNTriplesFileIntoIdVector(const string& ntFile, ExtVec& data,
     if (i % linesPerPartial == 0) {
       numFiles++;
       LOG(INFO) << "Lines processed: " << i << '\n';
-      LOG(INFO) << "reading partial vocab no. " << numFiles << std::endl;
-      vocabMap = vocabMapFromPartialIndexedFile(_onDiskBase + PARTIAL_VOCAB_FILE_NAME + std::to_string(numFiles));
+      vocabFilename = _onDiskBase + PARTIAL_VOCAB_FILE_NAME + std::to_string(numFiles);
+      LOG(INFO) << "Reading partial vocab from " << vocabFilename << " ...\n";
+      vocabMap = vocabMapFromPartialIndexedFile(vocabFilename);
       LOG(INFO) << "done reading partial vocab\n";
     }
   }
