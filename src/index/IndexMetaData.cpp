@@ -104,7 +104,8 @@ string IndexMetaData::statistics() const {
   os << "----------------------------------\n";
   os << "Index Statistics:\n";
   os << "----------------------------------\n\n";
-  os << "# Relations: " << _data.size() << '\n';
+  os << "# Relations (_data.size()): " << _data.size() << '\n';
+  os << "# Block Data: " << _blockData.size() << '\n';
   size_t totalElements = 0;
   size_t totalBytes = 0;
   size_t totalBlocks = 0;
