@@ -36,6 +36,7 @@ class BlockMetaData {
 class FullRelationMetaData {
  public:
   FullRelationMetaData();
+  
 
   FullRelationMetaData(Id relId, off_t startFullIndex, size_t nofElements,
                        double col1Mult, double col2Mult, bool isFunctional,
@@ -76,6 +77,16 @@ class FullRelationMetaData {
   friend ad_utility::File& operator<<(ad_utility::File& f,
                                       const FullRelationMetaData& rmd);
 
+  // operators needed for checking of emptyness
+  // inequality is the common case, so we implement this
+  bool operator!=(const FullRelationMetaData& other) const {
+    return _relId != other._relId ||_typeMultAndNofElements != other._typeMultAndNofElements || _startFullIndex != other._startFullIndex;
+  }
+
+  // __________________________________________________________________
+  bool operator==(const FullRelationMetaData& other) const {
+    return !(*this != other);
+  }
  private:
   // first byte: type
   // second byte: log(col1Multiplicity)
@@ -202,6 +213,7 @@ class IndexMetaData {
  private:
   off_t _offsetAfter;
   size_t _nofTriples;
+
   string _name;
 
   ad_utility::HashMap<Id, FullRelationMetaData> _data;

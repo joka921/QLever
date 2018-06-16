@@ -3,6 +3,7 @@
 // Author: Björn Buchhold (buchhold@informatik.uni-freiburg.de)
 
 #include "./IndexMetaData.h"
+#include "./MetaDataHandler.h"
 #include <stdio.h>
 #include <algorithm>
 #include <cmath>
