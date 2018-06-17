@@ -11,6 +11,7 @@
 #include "../util/File.h"
 #include "../util/HashMap.h"
 #include "./MetaDataTypes.h"
+#include "./MetaDataHandler.h"
 #include <stdio.h>
 #include <algorithm>
 #include <cmath>
@@ -28,7 +29,11 @@ using std::vector;
 template <class MapType>
 class IndexMetaDataTemplated {
  public:
-  IndexMetaDataTemplated();
+  IndexMetaDataTemplated(size_t numEls);
+  // default constructor. Must only be used, when we have an arbitrary 
+  // sized implementation of _data. Otherwise it has to be reconstructed before
+  // any use
+  IndexMetaDataTemplated() : IndexMetaDataTemplated(0){};
 
   void add(const FullRelationMetaData& rmd,
            const BlockBasedRelationMetaData& bRmd);
@@ -72,4 +77,4 @@ class IndexMetaDataTemplated {
   size_t getTotalBytesForRelation(const FullRelationMetaData& frmd) const;
 };
 
-using IndexMetaData =IndexMetaDataTemplated<ad_utility::HashMap<Id, FullRelationMetaData>>;
+using IndexMetaData = IndexMetaDataTemplated<MetaDataWrapperExtVec>;

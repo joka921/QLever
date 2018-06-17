@@ -12,13 +12,14 @@ ad_utility::File& operator<<(ad_utility::File& f, const IndexMetaDataTemplated<M
 // Implementations are here because everything is templated
 // _____________________________________________________________________________
 template <class MapType>
-IndexMetaDataTemplated<MapType>::IndexMetaDataTemplated() : _offsetAfter(0), _nofTriples(0), _name() {}
+IndexMetaDataTemplated<MapType>::IndexMetaDataTemplated(size_t numEls) : _offsetAfter(0), _nofTriples(0), _name(), _data(numEls) {}
 
 // _____________________________________________________________________________
 template <class MapType>
 void IndexMetaDataTemplated<MapType>::add(const FullRelationMetaData& rmd,
                         const BlockBasedRelationMetaData& bRmd) {
-  _data[rmd._relId] = rmd;
+  //_data[rmd._relId] = rmd;
+  _data.set(rmd._relId, rmd);
   off_t afterExpected =
       rmd.hasBlocks() ? bRmd._offsetAfter
                       : static_cast<off_t>(rmd._startFullIndex +
@@ -66,11 +67,19 @@ void IndexMetaDataTemplated<MapType>::createFromByteBuffer(unsigned char* buf) {
 // _____________________________________________________________________________
 template <class MapType>
 const RelationMetaData IndexMetaDataTemplated<MapType>::getRmd(Id relId) const {
+  /* ___________________________________
   auto it = _data.find(relId);
   AD_CHECK(it != _data.end());
   RelationMetaData ret(it->second);
   if (it->second.hasBlocks()) {
     ret._rmdBlocks = &_blockData.find(it->first)->second;
+  }
+  */
+  // explicit typing since I'm still restructuring
+  const FullRelationMetaData& full = _data.getAsserted(relId);
+  RelationMetaData ret(full);
+  if (full.hasBlocks()) {
+    ret._rmdBlocks = &_blockData.find(relId)->second;
   }
   return ret;
 }
@@ -90,10 +99,11 @@ ad_utility::File& operator<<(ad_utility::File& f, const IndexMetaDataTemplated<M
   size_t nofElements = imd._data.size();
   f.write(&nofElements, sizeof(nofElements));
   f.write(&imd._offsetAfter, sizeof(imd._offsetAfter));
-  for (auto it = imd._data.begin(); it != imd._data.end(); ++it) {
-    f << it->second;
-    if (it->second.hasBlocks()) {
-      auto itt = imd._blockData.find(it->second._relId);
+  for (auto it = imd._data.cbegin(); it != imd._data.cend(); ++it) {
+    const auto el = *it;
+    f << el.second;
+    if (el.second.hasBlocks()) {
+      auto itt = imd._blockData.find(el.second._relId);
       AD_CHECK(itt != imd._blockData.end());
       f << itt->second;
     }
@@ -119,10 +129,11 @@ string IndexMetaDataTemplated<MapType>::statistics() const {
   size_t totalElements = 0;
   size_t totalBytes = 0;
   size_t totalBlocks = 0;
-  for (auto it = _data.begin(); it != _data.end(); ++it) {
-    totalElements += it->second.getNofElements();
-    totalBytes += getTotalBytesForRelation(it->second);
-    totalBlocks += getNofBlocksForRelation(it->first);
+  for (auto it = _data.cbegin(); it != _data.cend(); ++it) {
+    auto el = *it;
+    totalElements += el.second.getNofElements();
+    totalBytes += getTotalBytesForRelation(el.second);
+    totalBlocks += getNofBlocksForRelation(el.first);
   }
   size_t totalPairIndexBytes = totalElements * 2 * sizeof(Id);
   os << "# Elements:  " << totalElements << '\n';
@@ -166,5 +177,5 @@ size_t IndexMetaDataTemplated<MapType>::getNofDistinctC1() const {
 }
 
 // explicit instatiations
-template class IndexMetaDataTemplated<ad_utility::HashMap<Id, FullRelationMetaData>>;
-template ad_utility::File& operator<<(ad_utility::File& f, const IndexMetaDataTemplated<ad_utility::HashMap<Id, FullRelationMetaData>>& imd);
+template class IndexMetaDataTemplated<MetaDataWrapperExtVec>;
+template ad_utility::File& operator<<(ad_utility::File& f, const IndexMetaDataTemplated<MetaDataWrapperExtVec>& imd);

@@ -486,8 +486,9 @@ string Server::composeStatsJson() const {
 
   os << "\"noftriples\": \"" << _index.getNofTriples() << "\",\n"
      << "\"textindex\": \"" << _index.getTextName() << "\",\n"
-     << "\"nofrecords\": \"" << _index.getNofTextRecords() << "\",\n"
-     << "\"nofwordpostings\": \"" << _index.getNofWordPostings() << "\",\n"
+     << "\"nofrecords\": \"" << _index.getNofTextRecords() << "\",\n";
+
+  os   << "\"nofwordpostings\": \"" << _index.getNofWordPostings() << "\",\n"
      << "\"nofentitypostings\": \"" << _index.getNofEntityPostings() << "\"\n"
      << "}\n";
   return os.str();
