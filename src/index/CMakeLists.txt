@@ -8,6 +8,7 @@ add_library(index
         StxxlSortFunctors.h
         TextMetaData.cpp TextMetaData.h
         DocsDB.cpp DocsDB.h
+	MetaDataTypes.cpp MetaDataTypes.h
 	MetaDataHandler.h
         FTSAlgorithms.cpp FTSAlgorithms.h)
 
