@@ -32,6 +32,8 @@ void Index::createFromTsvFile(const string& tsvFile, const string& onDiskBase,
     _vocab.externalizeLiterals(_onDiskBase + ".literals-index");
   }
   _vocab.writeToFile(onDiskBase + ".vocabulary");
+  // set for correct use in createPermutations
+  _totalVocabularySize = _vocab.sizeComplete();
   // PSO permutation
   LOG(INFO) << "Sorting for PSO permutation..." << std::endl;
   stxxl::sort(begin(v), end(v), SortByPSO(), STXXL_MEMORY_TO_USE);
@@ -94,6 +96,7 @@ Index::ExtVec Index::createExtVecAndVocabFromNTriples(const string& ntFile,
     _vocab.externalizeLiteralsFromTextFile(onDiskBase + ".externalTextFile", onDiskBase + ".literals-index");
   }
   // clear vocabulary to save ram (only information from partial binary files used from now on).
+  _totalVocabularySize = _vocab.sizeComplete();
   _vocab = Vocabulary();
   ExtVec v(nofLines);
   passNTriplesFileIntoIdVector(ntFile, v, onDiskLiterals, NUM_TRIPLES_PER_PARTIAL_VOCAB);
@@ -348,6 +351,9 @@ void Index::passNTriplesFileIntoIdVector(const string& ntFile, ExtVec& data,
 void Index::createPermutation(const string& fileName, Index::ExtVec const& vec,
                               IndexMetaData& metaData, size_t c0, size_t c1,
                               size_t c2) {
+  // set the meta data to the correct size. This does no harm if the underlying
+  // implementation is hashMap based and of arbitrary size;
+  metaData = IndexMetaData(_totalVocabularySize);
   if (vec.size() == 0) {
     LOG(WARN) << "Attempt to write an empty index!" << std::endl;
     return;

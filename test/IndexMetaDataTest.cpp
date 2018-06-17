@@ -153,7 +153,8 @@ TEST(IndexMetaDataTest, writeReadTest2) {
     BlockBasedRelationMetaData rmdB(afterLhs, afterRhs, bs);
     FullRelationMetaData rmdF2(rmdF);
     rmdF2._relId = 2;
-    IndexMetaData imd;
+    // argument has to be one more than hightes id
+    IndexMetaData imd(3);
     imd.add(rmdF, rmdB);
     imd.add(rmdF2, rmdB);
 
@@ -166,7 +167,7 @@ TEST(IndexMetaDataTest, writeReadTest2) {
                       (rmdF.bytesRequired() + rmdB.bytesRequired()) * 2;
     unsigned char* buf = new unsigned char[imdBytes];
     in.read(buf, imdBytes);
-    IndexMetaData imd2;
+    IndexMetaData imd2(3);
     imd2.createFromByteBuffer(buf);
     delete[] buf;
     remove("_testtmp.rmd");

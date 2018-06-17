@@ -264,6 +264,7 @@ class Index {
   string _onDiskBase;
   Vocabulary _vocab;
   Vocabulary _textVocab;
+  size_t _totalVocabularySize;
   IndexMetaData _psoMeta;
   IndexMetaData _posMeta;
   IndexMetaData _spoMeta;
@@ -314,7 +315,7 @@ class Index {
 
   void passContextFileIntoVector(const string& contextFile, TextVec& vec);
 
-  static void createPermutation(const string& fileName, const ExtVec& vec,
+  void createPermutation(const string& fileName, const ExtVec& vec,
                                 IndexMetaData& meta, size_t c0, size_t c1,
                                 size_t c2);
 
