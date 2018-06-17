@@ -11,6 +11,10 @@
 #include "../util/File.h"
 #include "../util/HashMap.h"
 #include "./MetaDataTypes.h"
+#include <stdio.h>
+#include <algorithm>
+#include <cmath>
+#include "../util/ReadableNumberFact.h"
 
 using std::array;
 using std::pair;
@@ -21,9 +25,10 @@ using std::vector;
 
 
 // ______________________________________________________________________
-class IndexMetaData {
+template <class MapType>
+class IndexMetaDataTemplated {
  public:
-  IndexMetaData();
+  IndexMetaDataTemplated();
 
   void add(const FullRelationMetaData& rmd,
            const BlockBasedRelationMetaData& bRmd);
@@ -52,15 +57,19 @@ class IndexMetaData {
 
   string _name;
 
-  ad_utility::HashMap<Id, FullRelationMetaData> _data;
+  MapType _data;
   ad_utility::HashMap<Id, BlockBasedRelationMetaData> _blockData;
 
+  
+  // this way all instantations will be friends with each other, but this should
+  // not be an issue.
+  template<class U>
   friend ad_utility::File& operator<<(ad_utility::File& f,
-                                      const IndexMetaData& rmd);
+                                      const IndexMetaDataTemplated<U>& rmd);
 
   size_t getNofBlocksForRelation(const Id relId) const;
 
   size_t getTotalBytesForRelation(const FullRelationMetaData& frmd) const;
 };
 
-ad_utility::File& operator<<(ad_utility::File& f, const IndexMetaData& imd);
+using IndexMetaData =IndexMetaDataTemplated<ad_utility::HashMap<Id, FullRelationMetaData>>;

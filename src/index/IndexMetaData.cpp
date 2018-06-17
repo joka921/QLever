@@ -4,16 +4,19 @@
 
 #include "./IndexMetaData.h"
 #include "./MetaDataHandler.h"
-#include <stdio.h>
-#include <algorithm>
-#include <cmath>
-#include "../util/ReadableNumberFact.h"
+
+// ____________________________________________________________________________
+template <class MapType>
+ad_utility::File& operator<<(ad_utility::File& f, const IndexMetaDataTemplated<MapType>& imd);
+
+// Implementations are here because everything is templated
+// _____________________________________________________________________________
+template <class MapType>
+IndexMetaDataTemplated<MapType>::IndexMetaDataTemplated() : _offsetAfter(0), _nofTriples(0), _name() {}
 
 // _____________________________________________________________________________
-IndexMetaData::IndexMetaData() : _offsetAfter(0), _nofTriples(0), _name() {}
-
-// _____________________________________________________________________________
-void IndexMetaData::add(const FullRelationMetaData& rmd,
+template <class MapType>
+void IndexMetaDataTemplated<MapType>::add(const FullRelationMetaData& rmd,
                         const BlockBasedRelationMetaData& bRmd) {
   _data[rmd._relId] = rmd;
   off_t afterExpected =
@@ -29,10 +32,12 @@ void IndexMetaData::add(const FullRelationMetaData& rmd,
 }
 
 // _____________________________________________________________________________
-off_t IndexMetaData::getOffsetAfter() const { return _offsetAfter; }
+template <class MapType>
+off_t IndexMetaDataTemplated<MapType>::getOffsetAfter() const { return _offsetAfter; }
 
 // _____________________________________________________________________________
-void IndexMetaData::createFromByteBuffer(unsigned char* buf) {
+template <class MapType>
+void IndexMetaDataTemplated<MapType>::createFromByteBuffer(unsigned char* buf) {
   size_t nameLength = *reinterpret_cast<size_t*>(buf);
   size_t nofBytesDone = sizeof(size_t);
   _name.assign(reinterpret_cast<char*>(buf + nofBytesDone), nameLength);
@@ -59,7 +64,8 @@ void IndexMetaData::createFromByteBuffer(unsigned char* buf) {
 }
 
 // _____________________________________________________________________________
-const RelationMetaData IndexMetaData::getRmd(Id relId) const {
+template <class MapType>
+const RelationMetaData IndexMetaDataTemplated<MapType>::getRmd(Id relId) const {
   auto it = _data.find(relId);
   AD_CHECK(it != _data.end());
   RelationMetaData ret(it->second);
@@ -70,12 +76,14 @@ const RelationMetaData IndexMetaData::getRmd(Id relId) const {
 }
 
 // _____________________________________________________________________________
-bool IndexMetaData::relationExists(Id relId) const {
+template <class MapType>
+bool IndexMetaDataTemplated<MapType>::relationExists(Id relId) const {
   return _data.count(relId) > 0;
 }
 
 // _____________________________________________________________________________
-ad_utility::File& operator<<(ad_utility::File& f, const IndexMetaData& imd) {
+template <class MapType>
+ad_utility::File& operator<<(ad_utility::File& f, const IndexMetaDataTemplated<MapType>& imd) {
   size_t nameLength = imd._name.size();
   f.write(&nameLength, sizeof(nameLength));
   f.write(imd._name.data(), nameLength);
@@ -94,7 +102,8 @@ ad_utility::File& operator<<(ad_utility::File& f, const IndexMetaData& imd) {
 }
 
 // _____________________________________________________________________________
-string IndexMetaData::statistics() const {
+template <class MapType>
+string IndexMetaDataTemplated<MapType>::statistics() const {
   std::ostringstream os;
   std::locale loc;
   ad_utility::ReadableNumberFacet facet(1);
@@ -128,7 +137,8 @@ string IndexMetaData::statistics() const {
 }
 
 // _____________________________________________________________________________
-size_t IndexMetaData::getNofBlocksForRelation(const Id id) const {
+template <class MapType>
+size_t IndexMetaDataTemplated<MapType>::getNofBlocksForRelation(const Id id) const {
   auto it = _blockData.find(id);
   if (it != _blockData.end()) {
     return it->second._blocks.size();
@@ -138,7 +148,8 @@ size_t IndexMetaData::getNofBlocksForRelation(const Id id) const {
 }
 
 // _____________________________________________________________________________
-size_t IndexMetaData::getTotalBytesForRelation(
+template <class MapType>
+size_t IndexMetaDataTemplated<MapType>::getTotalBytesForRelation(
     const FullRelationMetaData& frmd) const {
   auto it = _blockData.find(frmd._relId);
   if (it != _blockData.end()) {
@@ -149,7 +160,11 @@ size_t IndexMetaData::getTotalBytesForRelation(
 }
 
 // ______________________________________________
-size_t IndexMetaData::getNofDistinctC1() const {
+template <class MapType>
+size_t IndexMetaDataTemplated<MapType>::getNofDistinctC1() const {
     return _data.size();
 }
 
+// explicit instatiations
+template class IndexMetaDataTemplated<ad_utility::HashMap<Id, FullRelationMetaData>>;
+template ad_utility::File& operator<<(ad_utility::File& f, const IndexMetaDataTemplated<ad_utility::HashMap<Id, FullRelationMetaData>>& imd);
