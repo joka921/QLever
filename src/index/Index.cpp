@@ -892,7 +892,7 @@ void Index::createFromOnDiskIndex(const string& onDiskBase,
               << std::endl;
   }
   if (_usePatterns) {
-    IndexMetaData _patternsMeta;
+    IndexMetaData _patternsMeta(_totalVocabularySize);
     ad_utility::File _patternsFile;
 
     // patterns
