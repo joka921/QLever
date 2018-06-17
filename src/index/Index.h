@@ -325,7 +325,7 @@ class Index {
    * @param fileName The name of the file in which the data should be stored
    * @param vec The vectors of triples in spo order.
    */
-  static void createPatterns(const string& fileName, const ExtVec& vec,
+  void createPatterns(const string& fileName, const ExtVec& vec,
                              CompactStringVector<Id, Id>& hasRelation,
                              std::vector<PatternID>& hasPattern,
                              CompactStringVector<size_t, Id>& patterns,

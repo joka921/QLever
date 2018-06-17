@@ -411,7 +411,7 @@ void Index::createPatterns(const string& fileName, const ExtVec& vec,
     LOG(WARN) << "Attempt to write an empty index!" << std::endl;
     return;
   }
-  IndexMetaData meta;
+  IndexMetaData meta(_totalVocabularySize);
   typedef std::unordered_map<Pattern, size_t> PatternsCountMap;
 
   LOG(INFO) << "Creating patterns file..." << std::endl;
@@ -824,6 +824,7 @@ void Index::createFromOnDiskIndex(const string& onDiskBase,
   _onDiskBase = onDiskBase;
   _vocab.readFromFile(onDiskBase + ".vocabulary",
                       onDiskLiterals ? onDiskBase + ".literals-index" : "");
+  _totalVocabularySize = _vocab.sizeComplete();
   _psoFile.open(string(_onDiskBase + ".index.pso").c_str(), "r");
   _posFile.open(string(_onDiskBase + ".index.pos").c_str(), "r");
   AD_CHECK(_psoFile.isOpen() && _posFile.isOpen());
@@ -832,6 +833,7 @@ void Index::createFromOnDiskIndex(const string& onDiskBase,
   off_t metaTo = _psoFile.getLastOffset(&metaFrom);
   unsigned char* buf = new unsigned char[metaTo - metaFrom];
   _psoFile.read(buf, static_cast<size_t>(metaTo - metaFrom), metaFrom);
+  _psoMeta = IndexMetaData(_totalVocabularySize);
   _psoMeta.createFromByteBuffer(buf);
   delete[] buf;
   LOG(INFO) << "Registered PSO permutation: " << _psoMeta.statistics()
@@ -840,6 +842,7 @@ void Index::createFromOnDiskIndex(const string& onDiskBase,
   metaTo = _posFile.getLastOffset(&metaFrom);
   buf = new unsigned char[metaTo - metaFrom];
   _posFile.read(buf, static_cast<size_t>(metaTo - metaFrom), metaFrom);
+  _posMeta = IndexMetaData(_totalVocabularySize);
   _posMeta.createFromByteBuffer(buf);
   delete[] buf;
   LOG(INFO) << "Registered POS permutation: " << _posMeta.statistics()
@@ -855,6 +858,7 @@ void Index::createFromOnDiskIndex(const string& onDiskBase,
     metaTo = _spoFile.getLastOffset(&metaFrom);
     buf = new unsigned char[metaTo - metaFrom];
     _spoFile.read(buf, static_cast<size_t>(metaTo - metaFrom), metaFrom);
+    _spoMeta = IndexMetaData(_totalVocabularySize);
     _spoMeta.createFromByteBuffer(buf);
     delete[] buf;
     LOG(INFO) << "Registered SPO permutation: " << _spoMeta.statistics()
@@ -863,6 +867,7 @@ void Index::createFromOnDiskIndex(const string& onDiskBase,
     metaTo = _sopFile.getLastOffset(&metaFrom);
     buf = new unsigned char[metaTo - metaFrom];
     _sopFile.read(buf, static_cast<size_t>(metaTo - metaFrom), metaFrom);
+    _sopMeta = IndexMetaData(_totalVocabularySize);
     _sopMeta.createFromByteBuffer(buf);
     delete[] buf;
     LOG(INFO) << "Registered SOP permutation: " << _sopMeta.statistics()
@@ -871,6 +876,7 @@ void Index::createFromOnDiskIndex(const string& onDiskBase,
     metaTo = _ospFile.getLastOffset(&metaFrom);
     buf = new unsigned char[metaTo - metaFrom];
     _ospFile.read(buf, static_cast<size_t>(metaTo - metaFrom), metaFrom);
+    _ospMeta = IndexMetaData(_totalVocabularySize);
     _ospMeta.createFromByteBuffer(buf);
     delete[] buf;
     LOG(INFO) << "Registered OSP permutation: " << _ospMeta.statistics()
@@ -879,6 +885,7 @@ void Index::createFromOnDiskIndex(const string& onDiskBase,
     metaTo = _opsFile.getLastOffset(&metaFrom);
     buf = new unsigned char[metaTo - metaFrom];
     _opsFile.read(buf, static_cast<size_t>(metaTo - metaFrom), metaFrom);
+    _opsMeta = IndexMetaData(_totalVocabularySize);
     _opsMeta.createFromByteBuffer(buf);
     delete[] buf;
     LOG(INFO) << "Registered OPS permutation: " << _opsMeta.statistics()
