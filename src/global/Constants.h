@@ -2,7 +2,6 @@
 // Chair of Algorithms and Data Structures.
 // Author: Björn Buchhold (buchhold@informatik.uni-freiburg.de)
 #pragma once
-#include <string>
 
 static const int STXXL_MEMORY_TO_USE = 1024 * 1024 * 1024;
 static const int STXXL_DISK_SIZE_INDEX_BUILDER = 500 * 1000;
@@ -48,8 +47,3 @@ static const int DEFAULT_NOF_VALUE_INTEGER_DIGITS = 50;
 static const int DEFAULT_NOF_VALUE_EXPONENT_DIGITS = 20;
 static const int DEFAULT_NOF_VALUE_MANTISSA_DIGITS = 30;
 static const int DEFAULT_NOF_DATE_YEAR_DIGITS = 19;
-
-// How many lines are parsed at once during index creation.
-// Reduce to save RAM
-static const int NUM_TRIPLES_PER_PARTIAL_VOCAB = 100000000;
-static const std::string PARTIAL_VOCAB_FILE_NAME = ".partial_vocabulary";

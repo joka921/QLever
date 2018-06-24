@@ -15,6 +15,7 @@
 #include "./IndexMetaData.h"
 #include "./StxxlSortFunctors.h"
 #include "./TextMetaData.h"
+#include "./ConstantsIndexCreation.h"
 #include "./Vocabulary.h"
 
 using std::array;

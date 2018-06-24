@@ -91,7 +91,8 @@ Index::ExtVec Index::createExtVecAndVocabFromNTriples(const string& ntFile,
 					       bool onDiskLiterals) {
   size_t nofLines = passNTriplesFileForVocabulary(ntFile, onDiskLiterals, NUM_TRIPLES_PER_PARTIAL_VOCAB);
   if (onDiskLiterals) {
-    _vocab.externalizeLiteralsFromTextFile(onDiskBase + ".externalTextFile", onDiskBase + ".literals-index");
+    _vocab.externalizeLiteralsFromTextFile(onDiskBase + EXTERNAL_LITS_TEXT_FILE_NAME, 
+	                                   onDiskBase + ".literals-index");
   }
   // clear vocabulary to save ram (only information from partial binary files used from now on).
   _vocab = Vocabulary();
@@ -106,19 +107,6 @@ void Index::createFromNTriplesFile(const string& ntFile,
                                    bool allPermutations, bool onDiskLiterals) {
   _onDiskBase = onDiskBase;
   string indexFilename = _onDiskBase + ".index";
-  /*
-  size_t nofLines = passNTriplesFileForVocabulary(ntFile, onDiskLiterals, 10000);
-
-  if (onDiskLiterals) {
-    _vocab.externalizeLiteralsFromTextFile(onDiskBase + "externalTextFile", onDiskBase + ".literals-index");
-  }
-
-  // clear vocabulary to save ram (only iformation from partial binary files used from now on).
-  // TODO: this can be done directly when merging the partial vocabularies.
-  _vocab = Vocabulary();
-  ExtVec v(nofLines);
-  passNTriplesFileIntoIdVector(ntFile, v, onDiskLiterals, 10000);
-  */
 
   ExtVec v = createExtVecAndVocabFromNTriples(ntFile, onDiskBase, onDiskLiterals);
   LOG(INFO) << "Sorting for PSO permutation..." << std::endl;

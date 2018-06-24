@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <ctime>
 
+#include "../src/index/ConstantsIndexCreation.h"
 #include "../src/index/VocabularyGenerator.h"
 #include "../src/global/Constants.h"
 
@@ -166,5 +167,5 @@ TEST_F(MergeVocabularyTest, bla) {
   ASSERT_TRUE(areBinaryFilesEqual(_path1, _pathExp1));
   // check that (external) vocabulary has the right form.
   ASSERT_TRUE(areBinaryFilesEqual(_pathVocabExp, _basePath + ".vocabulary"));
-  ASSERT_TRUE(areBinaryFilesEqual(_pathExternalVocabExp, _basePath + ".externalTextFile"));
+  ASSERT_TRUE(areBinaryFilesEqual(_pathExternalVocabExp, _basePath + EXTERNAL_LITS_TEXT_FILE_NAME));
 }

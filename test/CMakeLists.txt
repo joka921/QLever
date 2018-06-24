@@ -70,4 +70,4 @@ add_library(tests
             ConversionsTest
 	    SparsehashTest
 	    VocabularyGeneratorTest
-            )
+)

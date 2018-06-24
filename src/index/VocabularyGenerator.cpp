@@ -1,3 +1,7 @@
+// Copyright 2018, University of Freiburg,
+// Chair of Algorithms and Data Structures.
+// Author: Johannes Kalmbach <johannes.kalmbach@gmail.com>
+
 #include "./VocabularyGenerator.h"
 #include <unordered_set>
 #include <vector>
@@ -7,6 +11,7 @@
 #include <fstream>
 #include <iostream>
 
+#include "./ConstantsIndexCreation.h"
 #include "../util/Log.h"
 #include "../util/Exception.h"
 
@@ -17,12 +22,15 @@ class PairCompare {
 };
 // ___________________________________________________________________
 void mergeVocabulary(const std::string& basename, size_t numFiles) {
-  size_t bufferSize = 200000;
+  const size_t bufferSize = 5; //see comment below for buffers
+  
   std::vector<std::fstream> infiles;
-  std::vector<std::vector<std::string>> vecs(numFiles);
+  // currently only one word is buffered, no matter how big the bufferSize is
+  // TODO: buffer, or throw the buffer out
+  std::vector<std::vector<std::string>> mergeBuf(numFiles);
   std::ofstream outfile(basename + ".vocabulary");
   AD_CHECK(outfile.is_open());
-  std::ofstream outfileExternal(basename + ".externalTextFile");
+  std::ofstream outfileExternal(basename + EXTERNAL_LITS_TEXT_FILE_NAME);
   AD_CHECK(outfileExternal.is_open());
   std::vector<bool> endOfFile(numFiles, false);
   std::vector<std::streampos> posNextWord;
@@ -31,13 +39,13 @@ void mergeVocabulary(const std::string& basename, size_t numFiles) {
     infiles.emplace_back(basename + PARTIAL_VOCAB_FILE_NAME + std::to_string(i), std::ios_base::in | std::ios_base::out);
     AD_CHECK(infiles.back().is_open());
     endOfFile[i] = true;
-    vecs[i].reserve(bufferSize);
+    mergeBuf[i].reserve(bufferSize);
 
     unsigned int len;
     if (infiles[i].read((char*)&len, sizeof(len))) {
-      vecs[i].emplace_back();
-      vecs[i].back().resize(len);
-      infiles[i].read(&(vecs[i].back()[0]), len);
+      mergeBuf[i].emplace_back();
+      mergeBuf[i].back().resize(len);
+      infiles[i].read(&(mergeBuf[i].back()[0]), len);
       endOfFile[i] = false;
     
     }
@@ -47,17 +55,20 @@ void mergeVocabulary(const std::string& basename, size_t numFiles) {
   using pair_T = std::pair<std::string, size_t>;
   std::priority_queue<pair_T, std::vector<pair_T>, PairCompare> queue;
   for (size_t i = 0; i < numFiles; i++) {
-    if (!vecs[i].empty()) {
-      queue.push(std::make_pair(vecs[i].front(), i));
-      //std::cout << vecs[i].front() << i << std::endl;;
+    if (!mergeBuf[i].empty()) {
+      // the empty is another sanity check in case one of the partial
+      // vocabularies is empty (this should probably not happen and will be
+      // checked during next refactoring. But the performance overhead in this
+      // case is small
+      queue.push(std::make_pair(mergeBuf[i].front(), i));
     }
-    iterators.push_back(vecs[i].begin());
+    iterators.push_back(mergeBuf[i].begin());
   }
 
   std::string lastWritten = "";
   size_t totalWritten = 0;
 
-  while (! queue.empty()) {
+  while (!queue.empty()) {
     auto top = queue.top();
     queue.pop();
 
@@ -72,7 +83,6 @@ void mergeVocabulary(const std::string& basename, size_t numFiles) {
       }
       infiles[top.second].write((char*)&totalWritten, sizeof(totalWritten));
       totalWritten++;
-      //std::cout << "outputting " << top.first << " from " << top.second << std::endl;
     } else {
       // always write Index (also in case of duplicates)
       // we already have increased total written, so for the duplicate
@@ -83,27 +93,26 @@ void mergeVocabulary(const std::string& basename, size_t numFiles) {
 
     // refill with top element from current vector
     iterators[top.second]++;
-    if (iterators[top.second] == vecs[top.second].end()) {
-      if (!endOfFile[top.second]) {
-        // if above condition is false, we have no more words for file i, just
-        // skip
+    if (iterators[top.second] == mergeBuf[top.second].end()) {
+      // if this condition is false, we have no more words for file i, just
+      // skip
+      if (endOfFile[top.second]) { continue;}
 
-        // refill vector from file
-        vecs[top.second].clear();
-        auto i = top.second;
-        std::string word;
-        endOfFile[top.second] = true;
-        uint32_t len;
-        if (infiles[i].read((char*)&len, sizeof(len))) {
-          vecs[i].emplace_back();
-          vecs[i].back().resize(len);
-          infiles[i].read(&(vecs[i].back()[0]), len);
-          endOfFile[i] = false;
-        }
-        iterators[i] = vecs[i].begin();
-        if (vecs[i].begin() != vecs[i].end()) {
-          queue.push(std::make_pair(vecs[i].front(), i));
-        }
+      // refill vector from file
+      mergeBuf[top.second].clear();
+      auto i = top.second;
+      std::string word;
+      endOfFile[top.second] = true;
+      uint32_t len;
+      if (infiles[i].read((char*)&len, sizeof(len))) {
+	mergeBuf[i].emplace_back();
+	mergeBuf[i].back().resize(len);
+	infiles[i].read(&(mergeBuf[i].back()[0]), len);
+	endOfFile[i] = false;
+      }
+      iterators[i] = mergeBuf[i].begin();
+      if (mergeBuf[i].begin() != mergeBuf[i].end()) {
+	queue.push(std::make_pair(mergeBuf[i].front(), i));
       }
     } else {
       queue.push(std::make_pair(*(iterators[top.second]), top.second));
