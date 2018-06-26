@@ -138,12 +138,17 @@ std::string SearchServer::createResponse(const std::string& req)
       }
     } else if (filename.substr(0, 3) == std::string("?c=")) {
       contentType = "application/json";
+      std::cout << filename.substr(3) << '\n';
       auto listOfNames = ServerUtils::decodeURL(filename.substr(3));
+      std::cout << listOfNames << '\n';
       auto vecOfNames = ServerUtils::split(listOfNames, ' ');
+      for (const auto& s : vecOfNames) {
+	std::cout << s << '\n';
+      }
       //TODO: convert ALL
       // and do this directly without detour in client
       // TODO: probably not needed
-      //contentString = ServerUtils::entitiesToJson(finder.wdNamesToEntities(vecOfNames), 100);
+      contentString = ServerUtils::entitiesToJson(std::vector<std::vector<WikidataEntityShort>>{_finder.wdNamesToEntities(vecOfNames)}, 100);
     } else if (filename.substr(0, 3) == std::string("?s=")) {
       auto remainder = filename.substr(3);
       auto pos = remainder.find("?");

@@ -79,6 +79,7 @@ std::pair<std::string, SearchMode> ServerUtils::parseQuery(const std::string& qu
 }
 
 // Decode URLS from URL-Encoding to valid strings
+/*
 std::string ServerUtils::decodeURL(std::string encoded) {
   std::string output = "";
   auto curPos = encoded.find_first_of("%+");
@@ -103,6 +104,25 @@ std::string ServerUtils::decodeURL(std::string encoded) {
   }
   std::cout << output << std::endl;
   return output;
+}
+*/
+std::string ServerUtils::decodeURL(std::string str) {
+  std::string decoded;
+  for (size_t i = 0; i < str.size(); ++i) {
+    char c = str[i];
+    if (c == '%') {
+      std::string ah = str.substr(i + 1, 2);
+      char* nonProced = 0;
+      char hexVal = strtol(ah.c_str(), &nonProced, 16);
+
+      if (ah.find_first_of("+-") > 1 && ah.size() - strlen(nonProced) == 2) {
+        c = hexVal;
+        i += 2;
+      }
+    } else if (c == '+') { c = ' '; }
+    decoded += c;
+  }
+  return decoded;
 }
 
 
