@@ -52,10 +52,13 @@ target_link_libraries(SparsehashTest gtest_main -pthread)
 add_executable(VocabularyGeneratorTest VocabularyGeneratorTest.cpp)
 target_link_libraries(VocabularyGeneratorTest gtest_main index 
   -pthread)
+  
+add_executable(GroupByTest GroupByTest.cpp)
+target_link_libraries(GroupByTest gtest_main engine -pthread)
 
 add_library(tests
             SparqlParserTest
-	    StringUtilsTest
+            StringUtilsTest
             LRUCacheTest
             Simple8bTest
             FileTest
@@ -68,6 +71,8 @@ add_library(tests
             FTSAlgorithmsTest
             QueryPlannerTest
             ConversionsTest
-	    SparsehashTest
-	    VocabularyGeneratorTest
-)
+            SparsehashTest
+            GroupByTest
+            VocabularyGeneratorTest
+            )
+
