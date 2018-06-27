@@ -1593,5 +1593,15 @@ void Index::setKbName(const string& name) {
   _opsMeta.setName(name);
 }
 
+// ____________________________________________________________________________
+void Index::setOnDiskLiterals(bool onDiskLiterals) {
+  _onDiskLiterals = onDiskLiterals;
+}
+
+// ____________________________________________________________________________
+void Index::setOnDiskBase(const std::string& onDiskBase) {
+  _onDiskBase = onDiskBase;
+}
+
 // _____________________________________________________________________________
 void Index::setUsePatterns(bool usePatterns) { _usePatterns = usePatterns; }
