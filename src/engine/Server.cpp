@@ -484,11 +484,16 @@ string Server::composeStatsJson() const {
     os << "\"nofobjects\": \"" << _index.getNofObjects() << "\",\n";
   }
 
-  os << "\"noftriples\": \"" << _index.getNofTriples() << "\",\n"
+  // TODO: if there is no text index  this is dangerous and frustrating
+  // because it sometimes segfaults??
+  os << "\"noftriples\": \"" << _index.getNofTriples() << "\"}\n";
+
+    /*
      << "\"textindex\": \"" << _index.getTextName() << "\",\n"
      << "\"nofrecords\": \"" << _index.getNofTextRecords() << "\",\n"
      << "\"nofwordpostings\": \"" << _index.getNofWordPostings() << "\",\n"
      << "\"nofentitypostings\": \"" << _index.getNofEntityPostings() << "\"\n"
      << "}\n";
+     */
   return os.str();
 }

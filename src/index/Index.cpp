@@ -89,6 +89,20 @@ void Index::createFromTsvFile(const string& tsvFile, const string& onDiskBase,
 Index::ExtVec Index::createExtVecAndVocabFromNTriples(const string& ntFile, 
     					       const string& onDiskBase,
 					       bool onDiskLiterals) {
+  
+  std::vector<Prefix> prefixes;
+  prefixes.emplace_back("http://www.wikidata.org/entity/", "wd");
+  prefixes.emplace_back("http://www.wikidata.org/entity/statement/", "wds");
+  prefixes.emplace_back("http://www.wikidata.org/value/", "wdv");
+  prefixes.emplace_back("http://www.wikidata.org/prop/direct/", "wdt");
+  prefixes.emplace_back("http://wikiba.se/ontology#", "wikibase");
+  prefixes.emplace_back("http://www.wikidata.org/prop/statement/", "ps");
+  prefixes.emplace_back("http://www.wikidata.org/prop/qualifier/", "pq");
+  prefixes.emplace_back("http://www.w3.org/2000/01/rdf-schema#", "rdfs");
+  prefixes.emplace_back("http://www.bigdata.com/rdf#", "bd");
+  _vocab.setPrefixes(prefixes);
+  
+
   size_t nofLines = passNTriplesFileForVocabulary(ntFile, onDiskLiterals, NUM_TRIPLES_PER_PARTIAL_VOCAB);
   if (onDiskLiterals) {
     _vocab.externalizeLiteralsFromTextFile(onDiskBase + EXTERNAL_LITS_TEXT_FILE_NAME, 
@@ -96,6 +110,7 @@ Index::ExtVec Index::createExtVecAndVocabFromNTriples(const string& ntFile,
   }
   // clear vocabulary to save ram (only information from partial binary files used from now on).
   _vocab = Vocabulary();
+  _vocab.setPrefixes(prefixes);
   ExtVec v(nofLines);
   passNTriplesFileIntoIdVector(ntFile, v, onDiskLiterals, NUM_TRIPLES_PER_PARTIAL_VOCAB);
   return v;
@@ -244,7 +259,7 @@ size_t Index::passNTriplesFileForVocabulary(const string& ntFile,
     
     // Duplicated in pass for Id Vector, externalize to function
     for (size_t k = 0; k < 3; ++k) {
-      items.insert(spo[k]);
+      items.insert(_vocab.replacePrefix(spo[k]));
     }
 
     ++i;
@@ -298,6 +313,7 @@ void Index::passNTriplesFileIntoIdVector(const string& ntFile, ExtVec& data,
   size_t numFiles = 0;
   // write using vector_bufwriter
   ExtVec::bufwriter_type writer(data);
+  //TODO: do NEVER hardcode this
   while (p.getLine(spo)) {
     if (ad_utility::isXsdValue(spo[2])) {
       spo[2] = ad_utility::convertValueLiteralToIndexWord(spo[2]);
@@ -309,6 +325,7 @@ void Index::passNTriplesFileIntoIdVector(const string& ntFile, ExtVec& data,
     // Duplicated in pass for Id Vector, externalize to function
     bool broken = false;
     for (size_t k = 0; k < 3; ++k) {
+      spo[k] = _vocab.replacePrefix(spo[k]);
       if (vocabMap.find(spo[k]) == vocabMap.end()) {
         LOG(INFO) << "not found in partial Vocab: " << spo[k] << '\n';
         broken = true;
@@ -812,6 +829,18 @@ void Index::createFromOnDiskIndex(const string& onDiskBase,
   _onDiskBase = onDiskBase;
   _vocab.readFromFile(onDiskBase + ".vocabulary",
                       onDiskLiterals ? onDiskBase + ".literals-index" : "");
+  std::vector<Prefix> prefixes;
+  prefixes.emplace_back("http://www.wikidata.org/entity/", "wd");
+  prefixes.emplace_back("http://www.wikidata.org/entity/statement/", "wds");
+  prefixes.emplace_back("http://www.wikidata.org/value/", "wdv");
+  prefixes.emplace_back("http://www.wikidata.org/prop/direct/", "wdt");
+  prefixes.emplace_back("http://wikiba.se/ontology#", "wikibase");
+  prefixes.emplace_back("http://www.wikidata.org/prop/statement/", "ps");
+  prefixes.emplace_back("http://www.wikidata.org/prop/qualifier/", "pq");
+  prefixes.emplace_back("http://www.w3.org/2000/01/rdf-schema#", "rdfs");
+  prefixes.emplace_back("http://www.bigdata.com/rdf#", "bd");
+  _vocab.setPrefixes(prefixes);
+
   _psoFile.open(string(_onDiskBase + ".index.pso").c_str(), "r");
   _posFile.open(string(_onDiskBase + ".index.pos").c_str(), "r");
   AD_CHECK(_psoFile.isOpen() && _posFile.isOpen());

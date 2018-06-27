@@ -50,6 +50,12 @@ class PrefixComparator {
   const size_t _prefixLength;
 };
 
+struct Prefix {
+  std::string _long;
+  std::string _short;
+  Prefix(const std::string& longName, const std::string& shortName): _long(longName), _short(shortName){};
+};
+
 //! A vocabulary. Wraps a vector of strings
 //! and provides additional methods for retrieval.
 class Vocabulary {
@@ -83,9 +89,11 @@ class Vocabulary {
 
   //! Get an Id from the vocabulary for some "normal" word.
   //! Return value signals if something was found at all.
-  bool getId(const string& word, Id* id) const {
+  bool getId(string word, Id* id) const {
+    word = replacePrefix(word);
     if (word[0] != '\"' || !shouldBeExternalized(word)) {
       *id = lower_bound(word);
+      LOG(INFO) << "id is" << *id << '\n';
       return *id < _words.size() && _words[*id] == word;
     }
     bool success = _externalLiterals.getId(word, id);
@@ -164,6 +172,10 @@ class Vocabulary {
   static bool shouldBeExternalized(const string& word);
   static string getLanguage(const string& literal);
 
+  void setPrefixes(const std::vector<Prefix>& prefixes);
+
+  std::string replacePrefix(const std::string word) const;
+
  private:
   // Wraps std::lower_bound and returns an index instead of an iterator
   Id lower_bound(const string& word) const {
@@ -197,6 +209,7 @@ class Vocabulary {
     return retVal;
   }
 
+  vector<Prefix> _prefixes;
   vector<string> _words;
   ExternalVocabulary _externalLiterals;
 };
