@@ -269,6 +269,7 @@ class Index {
 
  private:
   string _onDiskBase;
+  bool _onDiskLiterals = false;
   Vocabulary _vocab;
   Vocabulary _textVocab;
   IndexMetaData _psoMeta;

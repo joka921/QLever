@@ -106,6 +106,7 @@ void Index::createFromNTriplesFile(const string& ntFile,
                                    const string& onDiskBase,
                                    bool allPermutations, bool onDiskLiterals) {
   _onDiskBase = onDiskBase;
+  _onDiskLiterals = onDiskLiterals;
   string indexFilename = _onDiskBase + ".index";
 
   ExtVec v = createExtVecAndVocabFromNTriples(ntFile, onDiskBase, onDiskLiterals);
@@ -159,6 +160,11 @@ void Index::createFromNTriplesFile(const string& ntFile,
                    _patterns, _maxNumPatterns);
   }
   openFileHandles();
+  // we have deleted the vocabulary in the process to save ram, so now we have
+  // to reload it,
+  _vocab = Vocabulary();
+  _vocab.readFromFile(onDiskBase + ".vocabulary",
+                      onDiskLiterals ? onDiskBase + ".literals-index" : "");
 }
 
 // _____________________________________________________________________________
