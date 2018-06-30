@@ -103,11 +103,16 @@ Index::ExtVec Index::createExtVecAndVocabFromNTriples(const string& ntFile,
   _vocab.setPrefixes(prefixes);
   
 
-  size_t nofLines = passNTriplesFileForVocabulary(ntFile, onDiskLiterals, NUM_TRIPLES_PER_PARTIAL_VOCAB);
-  if (onDiskLiterals) {
-    _vocab.externalizeLiteralsFromTextFile(onDiskBase + EXTERNAL_LITS_TEXT_FILE_NAME, 
-	                                   onDiskBase + ".literals-index");
-  }
+  //size_t nofLines = passNTriplesFileForVocabulary(ntFile, onDiskLiterals, NUM_TRIPLES_PER_PARTIAL_VOCAB);
+  size_t nofLines = 3049605259; 
+  //auto numFiles = 31;
+  auto numFiles = 3;
+  mergeVocabulary(_onDiskBase, numFiles);
+  std::terminate();
+  //if (onDiskLiterals) {
+   // _vocab.externalizeLiteralsFromTextFile(onDiskBase + EXTERNAL_LITS_TEXT_FILE_NAME, 
+//	                                   onDiskBase + ".literals-index");
+ // }
   // clear vocabulary to save ram (only information from partial binary files used from now on).
   _vocab = Vocabulary();
   _vocab.setPrefixes(prefixes);
@@ -249,7 +254,19 @@ size_t Index::passNTriplesFileForVocabulary(const string& ntFile,
   ad_utility::HashSet<string> items;
   size_t i = 0; 
   size_t numFiles = 0; 
+  p.seekg(213387651568);
   while (p.getLine(spo)) {
+    // For Debugging, skip lines
+    /*
+    if (i < 17 * linesPerPartial) {
+      ++i;
+      if (i % 10000000 == 0) {
+	LOG(INFO) << "Lines processed: " << i << '\n';
+	LOG(INFO) << "position in File " << p.tellg() << '\n';
+      }
+      continue;
+    }
+    */
     if (ad_utility::isXsdValue(spo[2])) {
       spo[2] = ad_utility::convertValueLiteralToIndexWord(spo[2]);
     }
@@ -311,6 +328,7 @@ void Index::passNTriplesFileIntoIdVector(const string& ntFile, ExtVec& data,
   LOG(INFO) << "done reading partial vocab\n"; 
   size_t i = 0;
   size_t numFiles = 0;
+  size_t numNotFound = 0;
   // write using vector_bufwriter
   ExtVec::bufwriter_type writer(data);
   //TODO: do NEVER hardcode this
@@ -327,18 +345,24 @@ void Index::passNTriplesFileIntoIdVector(const string& ntFile, ExtVec& data,
     for (size_t k = 0; k < 3; ++k) {
       spo[k] = _vocab.replacePrefix(spo[k]);
       if (vocabMap.find(spo[k]) == vocabMap.end()) {
-        LOG(INFO) << "not found in partial Vocab: " << spo[k] << '\n';
+	numNotFound++;
+	if (numNotFound < 20) {
+	  LOG(INFO) << "not found in partial Vocab: " << spo[k] << '\n';
+	} else if (numNotFound == 20) {
+	  LOG(INFO) << "more words not found, suppressing warnings" << '\n';
+	}
         broken = true;
       }
     }
-    if (broken) continue;
-    writer << array<Id, 3>{{
-                               vocabMap.find(spo[0])->second,
-                               vocabMap.find(spo[1])->second,
-                               vocabMap.find(spo[2])->second
-                           }};
+    if (!broken) {
+      writer << array<Id, 3>{{
+				 vocabMap.find(spo[0])->second,
+				 vocabMap.find(spo[1])->second,
+				 vocabMap.find(spo[2])->second
+			     }};
+    }
     ++i;
-    if (i % 100000 == 0) {
+    if (i % 1000000 == 0) {
       LOG(INFO) << "Lines processed: " << i << '\n';
     }
 
@@ -349,6 +373,7 @@ void Index::passNTriplesFileIntoIdVector(const string& ntFile, ExtVec& data,
       LOG(INFO) << "Reading partial vocab from " << vocabFilename << " ...\n";
       vocabMap = vocabMapFromPartialIndexedFile(vocabFilename);
       LOG(INFO) << "done reading partial vocab\n";
+      numNotFound = 0;
     }
   }
   writer.finish();

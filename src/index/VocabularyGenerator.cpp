@@ -69,6 +69,9 @@ void mergeVocabulary(const std::string& basename, size_t numFiles) {
   size_t totalWritten = 0;
 
   while (!queue.empty()) {
+    if (totalWritten == 40056276) {
+      LOG(INFO) << "breakpoint";
+    }
     auto top = queue.top();
     queue.pop();
 
@@ -81,14 +84,16 @@ void mergeVocabulary(const std::string& basename, size_t numFiles) {
       } else {
         outfileExternal << top.first << std::endl;
       }
+      infiles[top.second].seekp(infiles[top.second].tellp());
       infiles[top.second].write((char*)&totalWritten, sizeof(totalWritten));
       totalWritten++;
     } else {
       // always write Index (also in case of duplicates)
       // we already have increased total written, so for the duplicate
       // we have to subtract one again
-      auto minusOne = totalWritten - 1;
-      infiles[top.second].write((char*)&minusOne, sizeof(totalWritten));
+      size_t minusOne = totalWritten - 1;
+      infiles[top.second].seekp(infiles[top.second].tellg());
+      infiles[top.second].write((char*)&minusOne, sizeof(minusOne));
     }
 
     // refill with top element from current vector
@@ -104,6 +109,7 @@ void mergeVocabulary(const std::string& basename, size_t numFiles) {
       std::string word;
       endOfFile[top.second] = true;
       uint32_t len;
+      infiles[top.second].seekg(infiles[top.second].tellp());
       if (infiles[i].read((char*)&len, sizeof(len))) {
 	mergeBuf[i].emplace_back();
 	mergeBuf[i].back().resize(len);

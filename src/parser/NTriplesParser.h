@@ -21,6 +21,8 @@ class NTriplesParser {
   // Get the next line from the file.
   // Returns true if something was stored.
   bool getLine(array<string, 3>&);
+  size_t tellg() { return _in.tellg();}
+  void seekg(size_t pos) { _in.seekg(pos);}
 
  private:
   std::ifstream _in;
