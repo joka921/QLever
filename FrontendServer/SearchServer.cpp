@@ -17,6 +17,8 @@ void SearchServer::run() {
     try{
     // Wait for the client.
     std::cout << "Waiting on port " << _server.port() << " ... " << std::flush;
+    // Make sure that _client is closed, so we get no already open exception
+    _client.close();
     _acceptor.accept(_client);
     std::cout << "client connected from "
         << _client.remote_endpoint().address().to_string() << std::endl;
