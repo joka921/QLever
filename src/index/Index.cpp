@@ -147,19 +147,19 @@ void Index::createFromNTriplesFile(const string& ntFile,
   v.resize(size_t(last - v.begin()));
   LOG(INFO) << "Done: unique." << std::endl;
   LOG(INFO) << "Size after: " << v.size() << std::endl;
-  createPermutation(indexFilename + ".pso", v, _psoMeta, 1, 0, 2);
+  createPermutation(indexFilename + ".pso", v, IndexMetaData(), 1, 0, 2);
   LOG(INFO) << "Sorting for POS permutation..." << std::endl;
   ;
   stxxl::sort(begin(v), end(v), SortByPOS(), STXXL_MEMORY_TO_USE);
   LOG(INFO) << "Sort done." << std::endl;
   ;
-  createPermutation(indexFilename + ".pos", v, _posMeta, 1, 2, 0);
+  createPermutation(indexFilename + ".pos", v, IndexMetaData(), 1, 2, 0);
   if (allPermutations) {
     // SPO permutation
     LOG(INFO) << "Sorting for SPO permutation..." << std::endl;
     stxxl::sort(begin(v), end(v), SortBySPO(), STXXL_MEMORY_TO_USE);
     LOG(INFO) << "Sort done." << std::endl;
-    createPermutation(indexFilename + ".spo", v, _spoMeta, 0, 1, 2);
+    createPermutation(indexFilename + ".spo", v, IndexMetaData(), 0, 1, 2);
     if (_usePatterns) {
       LOG(INFO) << "Vector already sorted for pattern creation." << std::endl;
       createPatterns(indexFilename + ".patterns", v, _hasRelation, _hasPattern,
@@ -169,17 +169,17 @@ void Index::createFromNTriplesFile(const string& ntFile,
     LOG(INFO) << "Sorting for SOP permutation..." << std::endl;
     stxxl::sort(begin(v), end(v), SortBySOP(), STXXL_MEMORY_TO_USE);
     LOG(INFO) << "Sort done." << std::endl;
-    createPermutation(indexFilename + ".sop", v, _sopMeta, 0, 2, 1);
+    createPermutation(indexFilename + ".sop", v, IndexMetaData(), 0, 2, 1);
     // OSP permutation
     LOG(INFO) << "Sorting for OSP permutation..." << std::endl;
     stxxl::sort(begin(v), end(v), SortByOSP(), STXXL_MEMORY_TO_USE);
     LOG(INFO) << "Sort done." << std::endl;
-    createPermutation(indexFilename + ".osp", v, _ospMeta, 2, 0, 1);
+    createPermutation(indexFilename + ".osp", v, IndexMetaData(), 2, 0, 1);
     // OPS permutation
     LOG(INFO) << "Sorting for OPS permutation..." << std::endl;
     stxxl::sort(begin(v), end(v), SortByOPS(), STXXL_MEMORY_TO_USE);
     LOG(INFO) << "Sort done." << std::endl;
-    createPermutation(indexFilename + ".ops", v, _opsMeta, 2, 1, 0);
+    createPermutation(indexFilename + ".ops", v, IndexMetaData(), 2, 1, 0);
   } else if (_usePatterns) {
     LOG(INFO) << "Sorting for pattern creation..." << std::endl;
     stxxl::sort(begin(v), end(v), SortBySPO(), STXXL_MEMORY_TO_USE);
