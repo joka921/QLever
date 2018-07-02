@@ -103,16 +103,16 @@ Index::ExtVec Index::createExtVecAndVocabFromNTriples(const string& ntFile,
   _vocab.setPrefixes(prefixes);
   
 
-  size_t nofLines = passNTriplesFileForVocabulary(ntFile, onDiskLiterals, NUM_TRIPLES_PER_PARTIAL_VOCAB);
-  //size_t nofLines = 3049605259; 
+  //size_t nofLines = passNTriplesFileForVocabulary(ntFile, onDiskLiterals, NUM_TRIPLES_PER_PARTIAL_VOCAB);
+  size_t nofLines = 3049605259; 
   //auto numFiles = 31;
   //auto numFiles = 3;
   //mergeVocabulary(_onDiskBase, numFiles);
   //std::terminate();
-  if (onDiskLiterals) {
-    _vocab.externalizeLiteralsFromTextFile(onDiskBase + EXTERNAL_LITS_TEXT_FILE_NAME, 
-	                                   onDiskBase + ".literals-index");
-  }
+  //if (onDiskLiterals) {
+   // _vocab.externalizeLiteralsFromTextFile(onDiskBase + EXTERNAL_LITS_TEXT_FILE_NAME, 
+//	                                   onDiskBase + ".literals-index");
+  //}
   // clear vocabulary to save ram (only information from partial binary files used from now on).
   _vocab = Vocabulary();
   _vocab.setPrefixes(prefixes);

@@ -91,9 +91,10 @@ class Vocabulary {
   //! Return value signals if something was found at all.
   bool getId(string word, Id* id) const {
     word = replacePrefix(word);
+    LOG(INFO) << "stripped Word is " << word << '\n';
     if (word[0] != '\"' || !shouldBeExternalized(word)) {
       *id = lower_bound(word);
-      LOG(INFO) << "id is" << *id << '\n';
+      LOG(INFO) << "id is " << *id << '\n';
       return *id < _words.size() && _words[*id] == word;
     }
     bool success = _externalLiterals.getId(word, id);
