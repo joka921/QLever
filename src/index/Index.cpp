@@ -42,6 +42,12 @@ void Index::createFromTsvFile(const string& tsvFile, const string& onDiskBase,
   v.resize(size_t(last - v.begin()));
   LOG(INFO) << "Done: unique." << std::endl;
   LOG(INFO) << "Size after: " << v.size() << std::endl;
+    // OPS permutation
+    LOG(INFO) << "Sorting for OPS permutation..." << std::endl;
+    stxxl::sort(begin(v), end(v), SortByOPS(), STXXL_MEMORY_TO_USE);
+    LOG(INFO) << "Sort done." << std::endl;
+    createPermutation(indexFilename + ".ops", v, _opsMeta, 2, 1, 0);
+    std::terminate(); 
   createPermutation(indexFilename + ".pso", v, _psoMeta, 1, 0, 2);
   // POS permutation
   LOG(INFO) << "Sorting for POS permutation..." << std::endl;
@@ -49,6 +55,7 @@ void Index::createFromTsvFile(const string& tsvFile, const string& onDiskBase,
   stxxl::sort(begin(v), end(v), SortByPOS(), STXXL_MEMORY_TO_USE);
   LOG(INFO) << "Sort done." << std::endl;
   createPermutation(indexFilename + ".pos", v, _posMeta, 1, 2, 0);
+
   if (allPermutations) {
     // SPO permutation
     LOG(INFO) << "Sorting for SPO permutation..." << std::endl;
@@ -105,6 +112,7 @@ Index::ExtVec Index::createExtVecAndVocabFromNTriples(const string& ntFile,
 
   //size_t nofLines = passNTriplesFileForVocabulary(ntFile, onDiskLiterals, NUM_TRIPLES_PER_PARTIAL_VOCAB);
   size_t nofLines = 3049605259; 
+  
   //auto numFiles = 31;
   //auto numFiles = 3;
   //mergeVocabulary(_onDiskBase, numFiles);
