@@ -148,6 +148,8 @@ void Index::createFromNTriplesFile(const string& ntFile,
   LOG(INFO) << "Done: unique." << std::endl;
   LOG(INFO) << "Size after: " << v.size() << std::endl;
   createPermutation(indexFilename + ".pso", v, IndexMetaData(), 1, 0, 2);
+  LOG(INFO) << "This version only creates PSO permutation. terminating" << std::endl;
+  std::terminate();
   LOG(INFO) << "Sorting for POS permutation..." << std::endl;
   ;
   stxxl::sort(begin(v), end(v), SortByPOS(), STXXL_MEMORY_TO_USE);
@@ -390,8 +392,9 @@ void Index::passNTriplesFileIntoIdVector(const string& ntFile, ExtVec& data,
 
 // _____________________________________________________________________________
 void Index::createPermutation(const string& fileName, Index::ExtVec const& vec,
-                              IndexMetaData& metaData, size_t c0, size_t c1,
+                              const IndexMetaData& metaDataTemp, size_t c0, size_t c1,
                               size_t c2) {
+  IndexMetaData metaData;
   if (vec.size() == 0) {
     LOG(WARN) << "Attempt to write an empty index!" << std::endl;
     return;
