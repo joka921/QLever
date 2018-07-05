@@ -72,7 +72,7 @@ class SearchServer {
   // Creates a new search server.
   SearchServer(EntityFinder&& finder,  uint16_t port) :
         _finder(std::move(finder)),
-	_communicator("alicudi.informatik.privat", 9998),
+	_communicator("alicudi.informatik.privat", 9999),
         _server(boost::asio::ip::tcp::v4(), port),
         _acceptor(_ioService, _server),
         _client(_ioService),

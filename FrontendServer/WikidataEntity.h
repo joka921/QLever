@@ -54,7 +54,7 @@ class WikidataEntityShort {
   string wdName;
   string name;
   string description;
-  unsigned int numSitelinks;
+  int numSitelinks;
   EntityType type;
 
   WikidataEntityShort(const string& wd, const string& nameT, const string& desc, unsigned int nSitelinks = 0)
@@ -77,7 +77,7 @@ class WikidataEntityShort {
 
   template<class Archive>
     void serialize(Archive& ar, std::uint32_t const version) {
-      ar(CEREAL_NVP(wdName), CEREAL_NVP(name), CEREAL_NVP(description), CEREAL_NVP(type));
+      ar(CEREAL_NVP(wdName), CEREAL_NVP(name), CEREAL_NVP(description), CEREAL_NVP(numSitelinks), CEREAL_NVP(type));
     }
 
 };

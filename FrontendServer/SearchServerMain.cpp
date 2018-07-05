@@ -43,8 +43,9 @@ int main(int argc, char** argv) {
   EntityFinder finder;
   //QLeverCommunicator communicator("alicudi.informatik.privat", 9998);
   if (argc == 3) {
+    //finder.ReadFromFile(std::string(argv[1]) + "preprocessed.dat");
     finder.InitializeFromTextFile(argv[1]);
-    //finder.WriteToFile("test.dat");
+    //finder.WriteToFile(std::string(argv[1]) + "preprocessed.dat");
   } else {
     finder = EntityFinder::ReadFromFile("test.dat");
     std::cout << finder.aliasVec.size()<< std::endl;

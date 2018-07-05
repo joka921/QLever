@@ -372,9 +372,11 @@ function showSingleEntity(parentId, entity) {
   $("#" + parentId).append("<span class=\"wdName\" id=\"" + wdId +"\"></span>");
   $("#" + parentId).append("<div class=\"entityDescription\" id=\"" + descId +"\"></div>");
   
-  $("#" + wdId).text(entity["wdName"]);
-  $("#" + nameId).text(entity["name"]);
-  $("#" + descId).text(entity["description"]);
+  
+  // we have already escaped the names, so we can set the html
+  $("#" + wdId).html(entity["wdName"]);
+  $("#" + nameId).html(entity["name"]);
+  $("#" + descId).html(entity["description"]);
   
 }
 
