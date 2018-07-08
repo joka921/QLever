@@ -88,7 +88,7 @@ class EntityFinder {
   std::vector<std::pair<std::string, unsigned>> aliasVec;
   std::vector<std::pair<std::string, unsigned>> aliasVecPred;
 //  std::unordered_map<std::string, std::vector<unsigned>> wordMap;
-  static size_t getIdxFromWdName(const std::string& wdName);
+  static std::pair<size_t, EntityType> getIdxFromWdName(const std::string& wdName);
 
 
 // public:

@@ -65,7 +65,7 @@ void EntityFinder::InitializeFromTextFile(const std::string& filename) {
   // Set up the "translation indices" for the sub/objects
   size_t maxIdxEntity = 0;
   for (const auto& el : wdNameVec) {
-    size_t idx = getIdxFromWdName(el);
+    size_t idx = getIdxFromWdName(el).first;
     maxIdxEntity = std::max(maxIdxEntity, idx);
   }
   EntityToIdxVec.resize(maxIdxEntity + 1);
@@ -73,7 +73,7 @@ void EntityFinder::InitializeFromTextFile(const std::string& filename) {
 
   size_t num = 0;
   for (const auto& el : wdNameVec) {
-    size_t idx = getIdxFromWdName(el);
+    size_t idx = getIdxFromWdName(el).first;
     EntityToIdxVec.at(idx) = num;
     num += 1;
   }
@@ -81,7 +81,7 @@ void EntityFinder::InitializeFromTextFile(const std::string& filename) {
   // same for the properties
   maxIdxEntity = 0;
   for (const auto& el : wdNameVecPred) {
-    size_t idx = getIdxFromWdName(el);
+    size_t idx = getIdxFromWdName(el).first;
     maxIdxEntity = std::max(maxIdxEntity, idx);
   }
 
@@ -90,7 +90,7 @@ void EntityFinder::InitializeFromTextFile(const std::string& filename) {
 
   num = 0;
   for (const auto& el : wdNameVecPred) {
-    size_t idx = getIdxFromWdName(el);
+    size_t idx = getIdxFromWdName(el).first;
     PropertyToIdxVec.at(idx) = num;
     num += 1;
   }
@@ -194,12 +194,12 @@ EntitySearchResult EntityFinder::findEntitiesByPrefix( const std::string& prefix
    for (int i = 0; i < 40 && i < uniqueSizeExact; ++i) {
      auto idx = onlyIdxVecExact[i].second;
      auto numLinks = onlyIdxVecExact[i].first;
-     ret.entities.push_back(WikidataEntityShort((*wdVec)[idx], (*nVec)[idx], (*dVec)[idx] + std::to_string(numLinks)));
+     ret.entities.push_back(WikidataEntityShort((*wdVec)[idx], (*nVec)[idx], (*dVec)[idx], numLinks));
    }
    for (int i = ret.entities.size(); i < 40 && i < uniqueSize; ++i) {
      auto idx = onlyIdxVec[i].second;
      auto numLinks = onlyIdxVec[i].first;
-     ret.entities.push_back(WikidataEntityShort((*wdVec)[idx], (*nVec)[idx], (*dVec)[idx] + std::to_string(numLinks)));
+     ret.entities.push_back(WikidataEntityShort((*wdVec)[idx], (*nVec)[idx], (*dVec)[idx], numLinks));
    }
 
    auto translateTime = std::chrono::high_resolution_clock::now();
@@ -222,17 +222,37 @@ std::string EntityFinder::readSingleDescription(std::ifstream* descFile, size_t 
 */
 
 // ________________________________________________________________________
-size_t EntityFinder::getIdxFromWdName(const std::string& wdName) {
+std::pair<size_t, EntityType> EntityFinder::getIdxFromWdName(const std::string& wdName) {
   // start with "<Q" or "<P", then number
-  if (wdName.size() < 3 || wdName[0] != '<') {
-    // this is not a valid entity name, it is probably a string literal,
-    // a numeric value or something else, so it has no proper internal idx.
-    return -1;
+  EntityType type = EntityType::Subject;
+  if (wdName.size() < 3 || wdName[0] == '"') {
+    // this is a string literal
+    return std::make_pair(-1, type);
   }
-  std::stringstream s(wdName.substr(2));
-  size_t idx;
-  s >> idx;
-  return idx;
+  if (wdName[0] == '<') {
+    // internal format
+    if (wdName[1] == 'P') {
+      type = EntityType::Property;
+    } else if (wdName[1] == 'Q') {
+      type = EntityType::Subject;
+    } else {
+      return std::make_pair(-1, type);
+    }
+    std::stringstream s(wdName.substr(2));
+    size_t idx;
+    s >> idx;
+    return std::make_pair(idx, type);
+  } else {
+  auto pos = wdName.find(':');
+    if (pos == std::string::npos || pos == wdName.size() - 1 || (wdName[pos + 1] != 'Q' && wdName[pos + 1] != 'P')) {
+      return std::make_pair(-1, type);
+    }
+    type = wdName[pos + 1] == 'Q' ? EntityType::Subject : EntityType::Property;
+    std::stringstream s(wdName.substr(pos + 2));
+    size_t idx;
+    s >> idx;
+    return std::make_pair(idx, type);
+  }
 }
 
 // _______________________________________________________________________________
@@ -255,12 +275,13 @@ std::vector<WikidataEntityShort> EntityFinder::wdNamesToEntities(const std::vect
 
 // ________________________________________________________________________________
 WikidataEntityShort EntityFinder::wdNamesToEntities(const std::string& el) const {
-    auto idx = getIdxFromWdName(el);
+    auto p = getIdxFromWdName(el);
+    auto& idx = p.first;
     auto* vec = &EntityToIdxVec;
     auto* nVec = &nameVec;
     auto* dVec = &descVec;
     auto* sVec = &numSitelinkVec;
-    if (WikidataEntity::IsPropertyName(el)) {
+    if (p.second == EntityType::Property) {
       vec = &PropertyToIdxVec;
       nVec = &nameVecPred;
       dVec = &descVecPred;
@@ -269,18 +290,22 @@ WikidataEntityShort EntityFinder::wdNamesToEntities(const std::string& el) const
     // default values which make sense for everything that is NOT a
     // wikidata-entity
     std::string wdName = "";
+    
     std::string name = el;
     std::string desc = "";
     unsigned int numSitelinks = 0;
     if (idx < vec->size()) {
       // convert from the "wikidata-name-idx" to the internal (unique) index
+      auto wdIdx = idx;
       idx = (*vec)[idx];
       if (idx <= nVec->size()) {
         // if there is an entity matching, then also include name and description
         name = (*nVec)[idx];
         desc = (*dVec)[idx];
 	numSitelinks = (*sVec)[idx];
-	wdName = el;
+	
+	// compose wdName in the canonical "internal" form (<Q42> or <P31>)
+	wdName = "<" + entityTypeToString(p.second) + std::to_string(wdIdx) + ">";
       }
     }
     return WikidataEntityShort(wdName, name, desc, numSitelinks);

@@ -15,6 +15,10 @@ using std::string;
 enum class EntityType {
   Subject, Property};
 
+inline std::string entityTypeToString(EntityType t) {
+  return t == EntityType::Subject ? "Q" : "P";
+}
+
 // ________________________________________________________________
 enum class OrderType {
   None, NumSitelinks, Numeric, Alphabetical
