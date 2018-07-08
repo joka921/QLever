@@ -47,7 +47,6 @@ void Index::createFromTsvFile(const string& tsvFile, const string& onDiskBase,
     stxxl::sort(begin(v), end(v), SortByOPS(), STXXL_MEMORY_TO_USE);
     LOG(INFO) << "Sort done." << std::endl;
     createPermutation(indexFilename + ".ops", v, _opsMeta, 2, 1, 0);
-    std::terminate(); 
   createPermutation(indexFilename + ".pso", v, _psoMeta, 1, 0, 2);
   // POS permutation
   LOG(INFO) << "Sorting for POS permutation..." << std::endl;
@@ -111,7 +110,8 @@ Index::ExtVec Index::createExtVecAndVocabFromNTriples(const string& ntFile,
   
 
   //size_t nofLines = passNTriplesFileForVocabulary(ntFile, onDiskLiterals, NUM_TRIPLES_PER_PARTIAL_VOCAB);
-  size_t nofLines = 3049605259; 
+  //size_t nofLines = 3049605259; 
+  size_t nofLines = 4157785636;
   
   //auto numFiles = 31;
   //auto numFiles = 3;
@@ -148,10 +148,7 @@ void Index::createFromNTriplesFile(const string& ntFile,
   LOG(INFO) << "Done: unique." << std::endl;
   LOG(INFO) << "Size after: " << v.size() << std::endl;
   createPermutation(indexFilename + ".pso", v, IndexMetaData(), 1, 0, 2);
-  LOG(INFO) << "This version only creates PSO permutation. terminating" << std::endl;
-  std::terminate();
   LOG(INFO) << "Sorting for POS permutation..." << std::endl;
-  ;
   stxxl::sort(begin(v), end(v), SortByPOS(), STXXL_MEMORY_TO_USE);
   LOG(INFO) << "Sort done." << std::endl;
   ;
@@ -372,7 +369,7 @@ void Index::passNTriplesFileIntoIdVector(const string& ntFile, ExtVec& data,
 			     }};
     }
     ++i;
-    if (i % 1000000 == 0) {
+    if (i % 10000000 == 0) {
       LOG(INFO) << "Lines processed: " << i << '\n';
     }
 
