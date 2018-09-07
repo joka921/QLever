@@ -269,6 +269,7 @@ bool TurtleParser::stringParse() {
       while (endPos != string::npos && view[endPos - 1] == '\\') {
         endPos = view.find(q, endPos + 1);
       }
+      break;
     }
   }
   /*
