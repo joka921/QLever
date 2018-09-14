@@ -234,6 +234,9 @@ class File {
     return lastOffsetOffset;
   }
 
+  // return the filename of this file
+  const std::string& getFilename() const { return _name; }
+
   // Static method to check if a file exists.
   static bool exists(const string& path) {
     struct stat buffer;

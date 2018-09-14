@@ -264,6 +264,9 @@ void MmapVector<T>::close() {
 template <class T>
 MmapVector<T>::~MmapVector() {
   close();
+  if (_isTmp) {
+    std::remove(_filename.c_str());
+  }
 }
 
 // ________________________________________________________________
@@ -282,10 +285,13 @@ MmapVector<T>::MmapVector(MmapVector<T>&& other) noexcept
       _size(other._size),
       _capacity(other._capacity),
       _bytesize(other._bytesize),
-      _filename(other._filename),
-      _pattern(other._pattern) {
+      _filename(std::move(other._filename)),
+      _pattern(other._pattern),
+      _isTmp(other._isTmp) {
   // we take exclusive ownership of the arguments mapping, setting
   other._ptr = nullptr;
+  // we do not want the moved from vector to remove our backing file
+  other._isTmp = false;
 }
 
 // ________________________________________________________________
@@ -299,8 +305,11 @@ MmapVector<T>& MmapVector<T>::operator=(MmapVector<T>&& other) noexcept {
   _bytesize = other._bytesize;
   _filename = other._filename;
   _pattern = other._pattern;
+  _isTmp = other._isTmp;
   // we take exclusive ownership of the arguments mapping, setting
   other._ptr = nullptr;
+  // we do not want the moved from vector to remove our backing file
+  other._isTmp = false;
   return *this;
 }
 

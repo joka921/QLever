@@ -12,6 +12,7 @@
 #include <unordered_set>
 #include "../parser/NTriplesParser.h"
 #include "../parser/TsvParser.h"
+#include "../util/BufferedVector.h"
 #include "../util/Conversions.h"
 #include "./PrefixHeuristic.h"
 #include "./VocabularyGenerator.h"
@@ -257,7 +258,8 @@ std::optional<MetaData> Index::createPermutationImpl(const string& fileName,
   size_t from = 0;
   Id currentRel = vec[0][c0];
   off_t lastOffset = 0;
-  ad_utility::MmapVector<array<Id, 2>> buffer(0, fileName + ".tmp.MmapBuffer");
+  ad_utility::BufferedVector<array<Id, 2>> buffer(BUFFERED_VEC_THRESHOLD,
+                                                  fileName + ".tmp.MmapBuffer");
   bool functional = true;
   size_t distinctC1 = 0;
   size_t sizeOfRelation = 0;
@@ -732,7 +734,7 @@ void Index::createPatternsImpl(const string& fileName, const ExtVec& vec,
 // _____________________________________________________________________________
 pair<FullRelationMetaData, BlockBasedRelationMetaData> Index::writeRel(
     ad_utility::File& out, off_t currentOffset, Id relId,
-    const ad_utility::MmapVector<array<Id, 2>>& data, size_t distinctC1,
+    const ad_utility::BufferedVector<array<Id, 2>>& data, size_t distinctC1,
     bool functional) {
   LOG(TRACE) << "Writing a relation ...\n";
   AD_CHECK_GT(data.size(), 0);
@@ -761,7 +763,7 @@ pair<FullRelationMetaData, BlockBasedRelationMetaData> Index::writeRel(
 
 // _____________________________________________________________________________
 void Index::writeFunctionalRelation(
-    const MmapVector<array<Id, 2>>& data,
+    const BufferedVector<array<Id, 2>>& data,
     pair<FullRelationMetaData, BlockBasedRelationMetaData>& rmd) {
   // Only has to do something if there are blocks.
   if (rmd.first.hasBlocks()) {
@@ -790,7 +792,7 @@ void Index::writeFunctionalRelation(
 
 // _____________________________________________________________________________
 void Index::writeNonFunctionalRelation(
-    ad_utility::File& out, const MmapVector<array<Id, 2>>& data,
+    ad_utility::File& out, const BufferedVector<array<Id, 2>>& data,
     pair<FullRelationMetaData, BlockBasedRelationMetaData>& rmd) {
   // Only has to do something if there are blocks.
   if (rmd.first.hasBlocks()) {
@@ -798,8 +800,11 @@ void Index::writeNonFunctionalRelation(
     // Make a pass over the data and extract a RHS list for each LHS.
     // Prepare both in buffers.
     // TODO: add compression - at least to RHS.
-    pair<Id, off_t>* bufLhs = new pair<Id, off_t>[data.size()];
-    Id* bufRhs = new Id[data.size()];
+    BufferedVector<pair<Id, off_t>> bufLhs(
+        BUFFERED_VEC_THRESHOLD, data.size(),
+        out.getFilename() + ".tmp.NonFunctionalPair.mmap");
+    BufferedVector<Id> bufRhs(BUFFERED_VEC_THRESHOLD, data.size(),
+                              out.getFilename() + ".tmp.NonFunctionalId.mmap");
     size_t nofDistinctLhs = 0;
     Id lastLhs = std::numeric_limits<Id>::max();
     size_t nofRhsDone = 0;
@@ -821,8 +826,8 @@ void Index::writeNonFunctionalRelation(
     }
 
     // Write to file.
-    out.write(bufLhs, nofDistinctLhs * (sizeof(Id) + sizeof(off_t)));
-    out.write(bufRhs, data.size() * sizeof(Id));
+    out.write(bufLhs.data(), nofDistinctLhs * (sizeof(Id) + sizeof(off_t)));
+    out.write(bufRhs.data(), data.size() * sizeof(Id));
 
     // Update meta data.
     rmd.second._startRhs = startRhs;
@@ -838,8 +843,6 @@ void Index::writeNonFunctionalRelation(
             rmd.first.getStartOfLhs() + i * (sizeof(Id) + sizeof(off_t))));
       }
     }
-    delete[] bufLhs;
-    delete[] bufRhs;
   }
 }
 

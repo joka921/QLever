@@ -64,6 +64,10 @@ class ReuseTag {};
 // Enum that specifies access patterns to this array
 enum class AccessPattern { None, Random, Sequential };
 
+// determine whether we are supposed to delete the backing file at the end of
+// the runtime
+enum class TemporaryVec { True, False };
+
 // STL-like class which implements a dynamic array (similar to std::vector)
 // whose contents are stored persistently in a file on memory and are accessed
 // using memory mapping
@@ -203,6 +207,10 @@ class MmapVector {
     advise(_pattern);
   }
 
+  // if called with true then the backing file will be deleted
+  // at the runtime (default behavior: keep it persistent)
+  void setTmp(bool tmp) { _isTmp = tmp; }
+
  protected:
   // _________________________________________________________________________
   inline void throwIfUninitialized() const {
@@ -260,6 +268,7 @@ class MmapVector {
   static constexpr float ResizeFactor = 1.5;
   static constexpr uint32_t MagicNumber = 7601577;
   static constexpr uint32_t Version = 0;
+  bool _isTmp = false;
 };
 
 // MmapVector variation that only supports read-access to a previously created

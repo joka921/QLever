@@ -18,3 +18,6 @@ static const int NUM_TRIPLES_PER_PARTIAL_VOCAB = 100000000;
 
 // ________________________________________________________________
 static const std::string PARTIAL_VOCAB_FILE_NAME = ".partial-vocabulary";
+
+// ________________________________________________________________
+static const int BUFFERED_VEC_THRESHOLD = 2000;

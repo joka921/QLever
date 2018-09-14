@@ -14,6 +14,7 @@
 #include "../global/Pattern.h"
 #include "../parser/NTriplesParser.h"
 #include "../parser/TsvParser.h"
+#include "../util/BufferedVector.h"
 #include "../util/File.h"
 #include "../util/MmapVector.h"
 #include "./ConstantsIndexCreation.h"
@@ -24,6 +25,7 @@
 #include "./TextMetaData.h"
 #include "./Vocabulary.h"
 
+using ad_utility::BufferedVector;
 using ad_utility::MmapVector;
 using std::array;
 using std::string;
@@ -466,14 +468,15 @@ class Index {
   //   Careful: only multiplicity for first column is valid in return value
   static pair<FullRelationMetaData, BlockBasedRelationMetaData> writeRel(
       ad_utility::File& out, off_t currentOffset, Id relId,
-      const MmapVector<array<Id, 2>>& data, size_t distinctC1, bool functional);
+      const BufferedVector<array<Id, 2>>& data, size_t distinctC1,
+      bool functional);
 
   static void writeFunctionalRelation(
-      const MmapVector<array<Id, 2>>& data,
+      const BufferedVector<array<Id, 2>>& data,
       pair<FullRelationMetaData, BlockBasedRelationMetaData>& rmd);
 
   static void writeNonFunctionalRelation(
-      ad_utility::File& out, const MmapVector<array<Id, 2>>& data,
+      ad_utility::File& out, const BufferedVector<array<Id, 2>>& data,
       pair<FullRelationMetaData, BlockBasedRelationMetaData>& rmd);
 
   void openFileHandles();
