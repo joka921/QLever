@@ -5,8 +5,8 @@
 
 #include <array>
 #include <string>
-#include "./StxxlSortFunctors.h"
 #include "../global/Constants.h"
+#include "./StxxlSortFunctors.h"
 
 namespace Permutation {
 using std::array;
@@ -54,11 +54,10 @@ class Permutation : public Impl {
     _file.open(filename, "r");
     AD_CHECK(_file.isOpen());
     if constexpr (MetaData::_isMmapBased) {
-      _metaData.setup(filename + MMAP_FILE_SUFFIX,
-                     ad_utility::ReuseTag(), ad_utility::AccessPattern::Random);
+      _metaData.setup(filename + MMAP_FILE_SUFFIX, ad_utility::ReuseTag(),
+                      ad_utility::AccessPattern::Random);
     }
     _metaData.readFromFile(&_file);
-
   }
   // ____________________________________________________________
   void scan(Id key, WidthTwoList* result) const {
@@ -67,54 +66,51 @@ class Permutation : public Impl {
       result->reserve(rmd.getNofElements() + 2);
       result->resize(rmd.getNofElements());
       _file.read(result->data(), rmd.getNofElements() * 2 * sizeof(Id),
-                    rmd._startFullIndex);
+                 rmd._startFullIndex);
     }
   }
-  void scan(Id keyFirst, Id keySecond,
-                      WidthOneList* result) const {
-      if (_metaData.relationExists(keyFirst)) {
-        auto rmd = _metaData.getRmd(keyFirst);
-        if (rmd.hasBlocks()) {
-          pair<off_t, size_t> blockOff =
-                  rmd._rmdBlocks->getBlockStartAndNofBytesForLhs(keySecond);
-          // Functional relations have blocks point into the pair index,
-          // non-functional relations have them point into lhs lists
-          if (rmd.isFunctional()) {
-            scanFunctionalRelation(blockOff, keySecond, _file, result);
-          } else {
-            pair<off_t, size_t> block2 =
-                    rmd._rmdBlocks->getFollowBlockForLhs(keySecond);
-            scanNonFunctionalRelation(blockOff, block2, keySecond, _file,
-                                      rmd._rmdBlocks->_offsetAfter, result);
-          }
+  void scan(Id keyFirst, Id keySecond, WidthOneList* result) const {
+    if (_metaData.relationExists(keyFirst)) {
+      auto rmd = _metaData.getRmd(keyFirst);
+      if (rmd.hasBlocks()) {
+        pair<off_t, size_t> blockOff =
+            rmd._rmdBlocks->getBlockStartAndNofBytesForLhs(keySecond);
+        // Functional relations have blocks point into the pair index,
+        // non-functional relations have them point into lhs lists
+        if (rmd.isFunctional()) {
+          scanFunctionalRelation(blockOff, keySecond, _file, result);
         } else {
-          // If we don't have blocks, scan the whole relation and filter /
-          // restrict.
-          WidthTwoList fullRelation;
-          fullRelation.resize(rmd.getNofElements());
-          _file.read(fullRelation.data(),
-                        rmd.getNofElements() * 2 * sizeof(Id),
-                        rmd._rmdPairs._startFullIndex);
-          getRhsForSingleLhs(fullRelation, keySecond, result);
+          pair<off_t, size_t> block2 =
+              rmd._rmdBlocks->getFollowBlockForLhs(keySecond);
+          scanNonFunctionalRelation(blockOff, block2, keySecond, _file,
+                                    rmd._rmdBlocks->_offsetAfter, result);
         }
       } else {
-        LOG(DEBUG) << "No such relation.\n";
-
+        // If we don't have blocks, scan the whole relation and filter /
+        // restrict.
+        WidthTwoList fullRelation;
+        fullRelation.resize(rmd.getNofElements());
+        _file.read(fullRelation.data(), rmd.getNofElements() * 2 * sizeof(Id),
+                   rmd._rmdPairs._startFullIndex);
+        getRhsForSingleLhs(fullRelation, keySecond, result);
+      }
+    } else {
+      LOG(DEBUG) << "No such relation.\n";
     }
     LOG(DEBUG) << "Scan done, got " << result->size() << " elements.\n";
   }
 
   // _____________________________________________________________________________
-  void scanFunctionalRelation(const pair<off_t, size_t>& blockOff,
-                                     Id lhsId, ad_utility::File& indexFile,
-                                     WidthOneList* result) const {
+  void scanFunctionalRelation(const pair<off_t, size_t>& blockOff, Id lhsId,
+                              ad_utility::File& indexFile,
+                              WidthOneList* result) const {
     LOG(TRACE) << "Scanning functional relation ...\n";
     WidthTwoList block;
     block.resize(blockOff.second / (2 * sizeof(Id)));
     indexFile.read(block.data(), blockOff.second, blockOff.first);
     auto it = std::lower_bound(
-            block.begin(), block.end(), lhsId,
-            [](const array<Id, 2>& elem, Id key) { return elem[0] < key; });
+        block.begin(), block.end(), lhsId,
+        [](const array<Id, 2>& elem, Id key) { return elem[0] < key; });
     if ((*it)[0] == lhsId) {
       result->push_back(array<Id, 1>{(*it)[1]});
     }
@@ -123,15 +119,17 @@ class Permutation : public Impl {
 
   // _____________________________________________________________________________
   void getRhsForSingleLhs(const WidthTwoList& in, Id lhsId,
-                           WidthOneList* result) const {
+                          WidthOneList* result) const {
     LOG(DEBUG) << "Getting only rhs from a relation with " << in.size()
                << " elements by an Id key.\n";
     AD_CHECK(result);
     AD_CHECK_EQ(0, result->size());
 
-    auto it = std::lower_bound(
-            in.begin(), in.end(), array<Id, 2>{{lhsId, 0}},
-            [](const array<Id, 2>& a, const array<Id, 2>& b) { return a[0] < b[0]; });
+    auto it =
+        std::lower_bound(in.begin(), in.end(), array<Id, 2>{{lhsId, 0}},
+                         [](const array<Id, 2>& a, const array<Id, 2>& b) {
+                           return a[0] < b[0];
+                         });
 
     while (it != in.end() && it->operator[](0) == lhsId) {
       result->emplace_back(array<Id, 1>{{it->operator[](1)}});
@@ -143,9 +141,9 @@ class Permutation : public Impl {
                << "\n";
   }
 
-private:
-  mutable ad_utility::File _file {};
-  MetaData _metaData {};
+ private:
+  mutable ad_utility::File _file{};
+  MetaData _metaData{};
 };
 
 // instantiations for the 6 Permutations used in QLever

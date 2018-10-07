@@ -29,8 +29,7 @@ Index::Index()
       _sop(Permutation::Sop),
       _ops(Permutation::Ops),
       _osp(Permutation::Osp),
-      _maxNumPatterns(std::numeric_limits<PatternID>::max() - 2)
-{}
+      _maxNumPatterns(std::numeric_limits<PatternID>::max() - 2) {}
 
 // _____________________________________________________________________________________________
 template <class Parser>

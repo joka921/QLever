@@ -19,10 +19,10 @@
 #include "./ConstantsIndexCreation.h"
 #include "./DocsDB.h"
 #include "./IndexMetaData.h"
-#include "Permutations.h"
 #include "./StxxlSortFunctors.h"
 #include "./TextMetaData.h"
 #include "./Vocabulary.h"
+#include "Permutations.h"
 
 using ad_utility::MmapVector;
 using std::array;
@@ -169,23 +169,35 @@ class Index {
 
   // Get multiplicities for full scans (dummy)
   template <class Permutation>
-  vector<float> getMultiplicities(const Permutation& p) const{
-    std::array<float, 3>arr{
-            {static_cast<float>(getNofTriples() / getNofSubjects()),
-                    static_cast<float>(getNofTriples() / getNofPredicates()),
-                    static_cast<float>(getNofTriples() / getNofObjects())}};
+  vector<float> getMultiplicities(const Permutation& p) const {
+    std::array<float, 3> arr{
+        {static_cast<float>(getNofTriples() / getNofSubjects()),
+         static_cast<float>(getNofTriples() / getNofPredicates()),
+         static_cast<float>(getNofTriples() / getNofObjects())}};
     std::vector<float> result(3);
     for (int i = 0; i < 3; ++i) {
       result[i] = arr[p._keyOrder[i]];
     }
     return result;
   }
-  vector<float> getPSOMultiplicities() const {return getMultiplicities(Permutation::Pso);}
-  vector<float> getPOSMultiplicities() const {return getMultiplicities(Permutation::Pos);}
-  vector<float> getSPOMultiplicities() const {return getMultiplicities(Permutation::Spo);}
-  vector<float> getSOPMultiplicities() const {return getMultiplicities(Permutation::Sop);}
-  vector<float> getOSPMultiplicities() const {return getMultiplicities(Permutation::Osp);}
-  vector<float> getOPSMultiplicities() const {return getMultiplicities(Permutation::Ops);}
+  vector<float> getPSOMultiplicities() const {
+    return getMultiplicities(Permutation::Pso);
+  }
+  vector<float> getPOSMultiplicities() const {
+    return getMultiplicities(Permutation::Pos);
+  }
+  vector<float> getSPOMultiplicities() const {
+    return getMultiplicities(Permutation::Spo);
+  }
+  vector<float> getSOPMultiplicities() const {
+    return getMultiplicities(Permutation::Sop);
+  }
+  vector<float> getOSPMultiplicities() const {
+    return getMultiplicities(Permutation::Osp);
+  }
+  vector<float> getOPSMultiplicities() const {
+    return getMultiplicities(Permutation::Ops);
+  }
 
   // --------------------------------------------------------------------------
   // TEXT RETRIEVAL
@@ -334,12 +346,24 @@ class Index {
   IndexMetaDataMmapView _sopMeta;
   IndexMetaDataMmapView _ospMeta;
   IndexMetaDataMmapView _opsMeta;
-  Permutation::Permutation<IndexMetaDataHmap, Permutation::PermutationImpl<SortByPSO>> _pso;
-  Permutation::Permutation<IndexMetaDataHmap, Permutation::PermutationImpl<SortByPOS>> _pos;
-  Permutation::Permutation<IndexMetaDataMmapView, Permutation::PermutationImpl<SortBySPO>> _spo;
-  Permutation::Permutation<IndexMetaDataMmapView, Permutation::PermutationImpl<SortBySOP>> _sop;
-  Permutation::Permutation<IndexMetaDataMmapView, Permutation::PermutationImpl<SortByOSP>> _osp;
-  Permutation::Permutation<IndexMetaDataMmapView, Permutation::PermutationImpl<SortByOPS>> _ops;
+  Permutation::Permutation<IndexMetaDataHmap,
+                           Permutation::PermutationImpl<SortByPSO>>
+      _pso;
+  Permutation::Permutation<IndexMetaDataHmap,
+                           Permutation::PermutationImpl<SortByPOS>>
+      _pos;
+  Permutation::Permutation<IndexMetaDataMmapView,
+                           Permutation::PermutationImpl<SortBySPO>>
+      _spo;
+  Permutation::Permutation<IndexMetaDataMmapView,
+                           Permutation::PermutationImpl<SortBySOP>>
+      _sop;
+  Permutation::Permutation<IndexMetaDataMmapView,
+                           Permutation::PermutationImpl<SortByOSP>>
+      _osp;
+  Permutation::Permutation<IndexMetaDataMmapView,
+                           Permutation::PermutationImpl<SortByOPS>>
+      _ops;
   TextMetaData _textMeta;
   DocsDB _docsDB;
   vector<Id> _blockBoundaries;
