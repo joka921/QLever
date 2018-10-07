@@ -12,7 +12,10 @@ add_library(index
         TextMetaData.cpp TextMetaData.h
         DocsDB.cpp DocsDB.h
         FTSAlgorithms.cpp FTSAlgorithms.h
-        PrefixHeuristic.cpp PrefixHeuristic.h)
+        PrefixHeuristic.cpp PrefixHeuristic.h
+        CompressedString.h
+        Permutations.h
+        )
 
 target_link_libraries(index parser ${STXXL_LIBRARIES})
 
