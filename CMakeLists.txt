@@ -65,7 +65,10 @@ include_directories(third_party/json/)
 # Header only, nothing to include
 include_directories(third_party/lexer/antlr/runtime/src)
 add_subdirectory(third_party/lexer/antlr/)
-add_subdirectory(third_party/SparqlParser/antlr4-runtime)
+target_compile_options(antlr4_static PRIVATE "-Wno-attributes")
+target_compile_options(antlr4_shared PRIVATE "-Wno-attributes")
+target_compile_options(antlr4_static PRIVATE "-Wno-reorder")
+target_compile_options(antlr4_shared PRIVATE "-Wno-reorder")
 
 
 
@@ -132,6 +135,7 @@ endif()
 set_property(CACHE LOGLEVEL PROPERTY STRINGS FATAL ERROR WARN INFO DEBUG TRACE)
 add_definitions(-DLOGLEVEL=${LOG_LEVEL_${LOGLEVEL}})
 
+add_subdirectory(src/parser/SparqlParser/antlr4-runtime)
 add_subdirectory(src/parser)
 add_subdirectory(src/engine)
 add_subdirectory(src/index)
@@ -171,6 +175,10 @@ target_link_libraries(TurtleParserMain parser ${CMAKE_THREAD_LIBS_INIT})
 
 add_executable(VocabularyMergerMain src/VocabularyMergerMain.cpp)
 target_link_libraries(VocabularyMergerMain index ${CMAKE_THREAD_LIBS_INIT})
+
+add_executable(SparqlParserMain src/SparqlParserMain.cpp)
+target_link_libraries(SparqlParserMain sparqlParser antlr4_static)
+target_compile_options(SparqlParserMain PRIVATE -Wno-attributes)
 
 #add_executable(TextFilterComparison src/experiments/TextFilterComparison.cpp)
 #target_link_libraries (TextFilterComparison experiments)
