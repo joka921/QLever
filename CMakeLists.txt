@@ -59,6 +59,16 @@ include_directories(third_party/googletest/googletest/include)
 # Header only, nothing to include
 include_directories(third_party/json/)
 
+################################
+# ATLR4_Runtime
+################################
+# Header only, nothing to include
+include_directories(third_party/lexer/antlr/runtime/src)
+add_subdirectory(third_party/lexer/antlr/)
+add_subdirectory(third_party/SparqlParser/antlr4-runtime)
+
+
+
 if (USE_PARALLEL)
     include(FindOpenMP)
     if(OPENMP_FOUND)
