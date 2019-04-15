@@ -88,7 +88,7 @@ class SparqlVisitor : public antlr4::tree::AbstractParseTreeVisitor {
   virtual antlrcpp::Any visitGroupGraphPattern(
       SparqlParser::GroupGraphPatternContext* context) = 0;
 
-  virtual antlrcpp::Any visitTriplesBlock(
+  virtual std::vector<std::array<std::string, 3>> visitTriplesBlock(
       SparqlParser::TriplesBlockContext* context) = 0;
 
   virtual antlrcpp::Any visitGraphPatternNotTriples(
@@ -116,24 +116,25 @@ class SparqlVisitor : public antlr4::tree::AbstractParseTreeVisitor {
   virtual antlrcpp::Any visitConstructTemplate(
       SparqlParser::ConstructTemplateContext* context) = 0;
 
-  virtual antlrcpp::Any visitConstructTriples(
+  virtual std::vector<std::array<std::string, 3>> visitConstructTriples(
       SparqlParser::ConstructTriplesContext* context) = 0;
 
-  virtual antlrcpp::Any visitTriplesSameSubject(
+  virtual std::vector<std::array<std::string, 3>> visitTriplesSameSubject(
       SparqlParser::TriplesSameSubjectContext* context) = 0;
 
-  virtual antlrcpp::Any visitPropertyListNotEmpty(
+  virtual std::vector<std::pair<std::string, std::string>>
+  visitPropertyListNotEmpty(
       SparqlParser::PropertyListNotEmptyContext* context) = 0;
 
   virtual antlrcpp::Any visitPropertyList(
       SparqlParser::PropertyListContext* context) = 0;
 
-  virtual antlrcpp::Any visitObjectList(
+  virtual std::vector<std::string> visitObjectList(
       SparqlParser::ObjectListContext* context) = 0;
 
   virtual antlrcpp::Any visitObject(SparqlParser::ObjectContext* context) = 0;
 
-  virtual antlrcpp::Any visitVerb(SparqlParser::VerbContext* context) = 0;
+  virtual std::string visitVerb(SparqlParser::VerbContext* context) = 0;
 
   virtual antlrcpp::Any visitTriplesNode(
       SparqlParser::TriplesNodeContext* context) = 0;

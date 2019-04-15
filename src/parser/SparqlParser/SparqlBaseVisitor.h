@@ -87,39 +87,25 @@ class SparqlBaseVisitor : public SparqlVisitor {
   }
 
   virtual antlrcpp::Any visitConstructQuery(
-      SparqlParser::ConstructQueryContext* ctx) override {
-    return visitChildren(ctx);
-  }
+      SparqlParser::ConstructQueryContext* ctx) override;
 
   virtual antlrcpp::Any visitDescribeQuery(
-      SparqlParser::DescribeQueryContext* ctx) override {
-    return visitChildren(ctx);
-  }
+      SparqlParser::DescribeQueryContext* ctx) override;
 
   virtual antlrcpp::Any visitAskQuery(
-      SparqlParser::AskQueryContext* ctx) override {
-    return visitChildren(ctx);
-  }
+      SparqlParser::AskQueryContext* ctx) override;
 
   virtual antlrcpp::Any visitDatasetClause(
-      SparqlParser::DatasetClauseContext* ctx) override {
-    return visitChildren(ctx);
-  }
+      SparqlParser::DatasetClauseContext* ctx) override;
 
   virtual antlrcpp::Any visitDefaultGraphClause(
-      SparqlParser::DefaultGraphClauseContext* ctx) override {
-    return visitChildren(ctx);
-  }
+      SparqlParser::DefaultGraphClauseContext* ctx) override;
 
   virtual antlrcpp::Any visitNamedGraphClause(
-      SparqlParser::NamedGraphClauseContext* ctx) override {
-    return visitChildren(ctx);
-  }
+      SparqlParser::NamedGraphClauseContext* ctx) override;
 
   virtual antlrcpp::Any visitSourceSelector(
-      SparqlParser::SourceSelectorContext* ctx) override {
-    return visitChildren(ctx);
-  }
+      SparqlParser::SourceSelectorContext* ctx) override;
 
   virtual antlrcpp::Any visitWhereClause(
       SparqlParser::WhereClauseContext* ctx) override {
@@ -171,10 +157,8 @@ class SparqlBaseVisitor : public SparqlVisitor {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitTriplesBlock(
-      SparqlParser::TriplesBlockContext* ctx) override {
-    return visitChildren(ctx);
-  }
+  virtual vector<array<string, 3>> visitTriplesBlock(
+      SparqlParser::TriplesBlockContext* ctx) override;
 
   virtual antlrcpp::Any visitGraphPatternNotTriples(
       SparqlParser::GraphPatternNotTriplesContext* ctx) override {
@@ -220,43 +204,31 @@ class SparqlBaseVisitor : public SparqlVisitor {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitConstructTriples(
-      SparqlParser::ConstructTriplesContext* ctx) override {
-    return visitChildren(ctx);
-  }
+  virtual vector<array<string, 3>> visitConstructTriples(
+      SparqlParser::ConstructTriplesContext* ctx) override;
 
-  virtual antlrcpp::Any visitTriplesSameSubject(
-      SparqlParser::TriplesSameSubjectContext* ctx) override {
-    return visitChildren(ctx);
-  }
+  virtual vector<array<string, 3>> visitTriplesSameSubject(
+      SparqlParser::TriplesSameSubjectContext* ctx) override;
 
-  virtual antlrcpp::Any visitPropertyListNotEmpty(
-      SparqlParser::PropertyListNotEmptyContext* ctx) override {
-    return visitChildren(ctx);
-  }
+  virtual vector<std::pair<string, string>> visitPropertyListNotEmpty(
+      SparqlParser::PropertyListNotEmptyContext* ctx) override;
 
   virtual antlrcpp::Any visitPropertyList(
       SparqlParser::PropertyListContext* ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitObjectList(
-      SparqlParser::ObjectListContext* ctx) override {
-    return visitChildren(ctx);
-  }
+  virtual vector<string> visitObjectList(
+      SparqlParser::ObjectListContext* ctx) override;
 
   virtual antlrcpp::Any visitObject(SparqlParser::ObjectContext* ctx) override {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitVerb(SparqlParser::VerbContext* ctx) override {
-    return visitChildren(ctx);
-  }
+  virtual string visitVerb(SparqlParser::VerbContext* ctx) override;
 
   virtual antlrcpp::Any visitTriplesNode(
-      SparqlParser::TriplesNodeContext* ctx) override {
-    return visitChildren(ctx);
-  }
+      SparqlParser::TriplesNodeContext* ctx) override;
 
   virtual antlrcpp::Any visitBlankNodePropertyList(
       SparqlParser::BlankNodePropertyListContext* ctx) override {
@@ -269,28 +241,18 @@ class SparqlBaseVisitor : public SparqlVisitor {
   }
 
   virtual antlrcpp::Any visitGraphNode(
-      SparqlParser::GraphNodeContext* ctx) override {
-    return visitChildren(ctx);
-  }
+      SparqlParser::GraphNodeContext* ctx) override;
 
   virtual antlrcpp::Any visitVarOrTerm(
-      SparqlParser::VarOrTermContext* ctx) override {
-    return visitChildren(ctx);
-  }
+      SparqlParser::VarOrTermContext* ctx) override;
 
   virtual antlrcpp::Any visitVarOrIRIref(
-      SparqlParser::VarOrIRIrefContext* ctx) override {
-    return visitChildren(ctx);
-  }
+      SparqlParser::VarOrIRIrefContext* ctx) override;
 
-  virtual antlrcpp::Any visitVar(SparqlParser::VarContext* ctx) override {
-    return visitChildren(ctx);
-  }
+  virtual antlrcpp::Any visitVar(SparqlParser::VarContext* ctx) override;
 
   virtual antlrcpp::Any visitGraphTerm(
-      SparqlParser::GraphTermContext* ctx) override {
-    return visitChildren(ctx);
-  }
+      SparqlParser::GraphTermContext* ctx) override;
 
   virtual antlrcpp::Any visitExpression(
       SparqlParser::ExpressionContext* ctx) override {
@@ -387,9 +349,7 @@ class SparqlBaseVisitor : public SparqlVisitor {
       SparqlParser::PrefixedNameContext* ctx) override;
 
   virtual antlrcpp::Any visitBlankNode(
-      SparqlParser::BlankNodeContext* ctx) override {
-    return visitChildren(ctx);
-  }
+      SparqlParser::BlankNodeContext* ctx) override;
 
  private:
   struct Number {
