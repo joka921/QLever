@@ -296,44 +296,65 @@ vector<array<string, 3>> SparqlBaseVisitor::visitTriplesBlock(
   return triples;
 }
 
+// ___________________________________________________________________________
 antlrcpp::Any SparqlBaseVisitor::visitConstructQuery(
     SparqlParser::ConstructQueryContext* ctx) {
   (void)ctx;
   throw NotImplementedException("Construct Queries");
 }
 
+// __________________________________________________________________________
 antlrcpp::Any SparqlBaseVisitor::visitDescribeQuery(
     SparqlParser::DescribeQueryContext* ctx) {
   (void)ctx;
   throw NotImplementedException("DescribeQuery");
 }
 
+// __________________________________________________________________________
 antlrcpp::Any SparqlBaseVisitor::visitAskQuery(
     SparqlParser::AskQueryContext* ctx) {
   (void)ctx;
   throw NotImplementedException("AskQuery");
 }
 
+// ___________________________________________________________________________
 antlrcpp::Any SparqlBaseVisitor::visitDatasetClause(
     SparqlParser::DatasetClauseContext* ctx) {
   // used only by not implemented query type
   return visitChildren(ctx);
 }
 
+// ______________________________________________________________________________
 antlrcpp::Any SparqlBaseVisitor::visitDefaultGraphClause(
     SparqlParser::DefaultGraphClauseContext* ctx) {
   return visitChildren(ctx);
 }
 
+// ______________________________________________________________________
 antlrcpp::Any SparqlBaseVisitor::visitNamedGraphClause(
     SparqlParser::NamedGraphClauseContext* ctx) {
   // used only by not implemented query type
   return visitChildren(ctx);
 }
 
+// _________________________________________________________________________
 antlrcpp::Any SparqlBaseVisitor::visitSourceSelector(
     SparqlParser::SourceSelectorContext* ctx) {
   // used only by not implemented query type
 
   return visitChildren(ctx);
+}
+
+string SparqlBaseVisitor::visitIriRefOrFunction(
+        SparqlParser::IriRefOrFunctionContext *ctx) {
+// currently only able to return an iriRef, thus it is a std::string
+
+//iriRefOrFunction: iriRef argList? | VARNAME argList?
+if (ctx->argList()) {
+throw NotImplementedException("nested function call within a filter expression");
+}
+if (ctx->VARNAME()) {
+throw NotImplementedException("VARNAME within a filter Expression");
+}
+return visitIriRef(ctx->iriRef());
 }

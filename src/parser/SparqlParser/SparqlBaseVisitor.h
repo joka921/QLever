@@ -8,6 +8,7 @@
 
 #include <iostream>
 #include "../../util/Log.h"
+#include "../ParsedQuery.h"
 
 /**
  * This class provides an empty implementation of SparqlVisitor, which can be
@@ -46,6 +47,9 @@ class SparqlBaseVisitor : public SparqlVisitor {
 
   virtual antlrcpp::Any visitQueryBody(
       SparqlParser::QueryBodyContext* ctx) override {
+    //queryBody: ( selectQuery | constructQuery | describeQuery | askQuery )
+    // This is only used in subqueries
+
     return visitChildren(ctx);
   }
 
@@ -152,9 +156,26 @@ class SparqlBaseVisitor : public SparqlVisitor {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitGroupGraphPattern(
-      SparqlParser::GroupGraphPatternContext* ctx) override {
-    return visitChildren(ctx);
+  virtual ParsedQuery::GraphPattern visitGroupGraphPattern(
+          SparqlParser::GroupGraphPatternContext *ctx) override {
+    //groupGraphPattern : '{' triplesBlock? ( ( graphPatternNotTriples | filter ) '.'? triplesBlock? )* '}'
+    ParsedQuery::GraphPattern result;
+    for (auto tripleCtx : ctx->triplesBlock()) {
+      auto triples = visitTriplesBlock(tripleCtx);
+      for (auto& t : triples) {
+        result._whereClauseTriples.emplace_back(std::move(t[0]), std::move(t[1]), std::move(t[2]));
+      }
+    }
+    // TODO<johannes>: make the following calls work
+
+    for (auto filterCtx: ctx->filter()) {
+      //result._filters.push_back(visitFilter(filterCtx));
+    }
+
+    for (auto operationCtx: ctx->graphPatternNotTriples()) {
+      //result._children.push_back(visitGraphPatternNotTriples(operationCtx));
+    }
+    return result;
   }
 
   virtual vector<array<string, 3>> visitTriplesBlock(
@@ -301,6 +322,10 @@ class SparqlBaseVisitor : public SparqlVisitor {
 
   virtual antlrcpp::Any visitPrimaryExpression(
       SparqlParser::PrimaryExpressionContext* ctx) override {
+    //primaryExpression : brackettedExpression | regexExpression | iriRefOrFunction | rdfLiteral | numericLiteral | booleanLiteral | var
+    if (ctx->regexExpression() || ctx->brackettedExpression()) {
+      throw NotImplementedException("Nested filter conditions");
+    }
     return visitChildren(ctx);
   }
 
@@ -314,10 +339,8 @@ class SparqlBaseVisitor : public SparqlVisitor {
     return visitChildren(ctx);
   }
 
-  virtual antlrcpp::Any visitIriRefOrFunction(
-      SparqlParser::IriRefOrFunctionContext* ctx) override {
-    return visitChildren(ctx);
-  }
+  virtual string visitIriRefOrFunction(
+          SparqlParser::IriRefOrFunctionContext *ctx) override;
 
   virtual antlrcpp::Any visitRdfLiteral(
       SparqlParser::RdfLiteralContext* ctx) override;

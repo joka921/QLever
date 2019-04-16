@@ -177,7 +177,7 @@ add_executable(VocabularyMergerMain src/VocabularyMergerMain.cpp)
 target_link_libraries(VocabularyMergerMain index ${CMAKE_THREAD_LIBS_INIT})
 
 add_executable(SparqlParserMain src/SparqlParserMain.cpp)
-target_link_libraries(SparqlParserMain sparqlParser antlr4_static)
+target_link_libraries(SparqlParserMain sparqlParser parser antlr4_static ${CMAKE_THREAD_LIBS_INIT})
 target_compile_options(SparqlParserMain PRIVATE -Wno-attributes)
 
 #add_executable(TextFilterComparison src/experiments/TextFilterComparison.cpp)

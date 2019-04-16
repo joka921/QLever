@@ -5,6 +5,7 @@
 
 #include "SparqlParser.h"
 #include "antlr4-runtime.h"
+#include "../../ParsedQuery.h"
 
 /**
  * This class defines an abstract visitor for a parse tree
@@ -85,8 +86,8 @@ class SparqlVisitor : public antlr4::tree::AbstractParseTreeVisitor {
   virtual antlrcpp::Any visitOffsetClause(
       SparqlParser::OffsetClauseContext* context) = 0;
 
-  virtual antlrcpp::Any visitGroupGraphPattern(
-      SparqlParser::GroupGraphPatternContext* context) = 0;
+  virtual ParsedQuery::GraphPattern visitGroupGraphPattern(
+          SparqlParser::GroupGraphPatternContext *context) = 0;
 
   virtual std::vector<std::array<std::string, 3>> visitTriplesBlock(
       SparqlParser::TriplesBlockContext* context) = 0;
@@ -195,8 +196,8 @@ class SparqlVisitor : public antlr4::tree::AbstractParseTreeVisitor {
   virtual antlrcpp::Any visitRegexExpression(
       SparqlParser::RegexExpressionContext* context) = 0;
 
-  virtual antlrcpp::Any visitIriRefOrFunction(
-      SparqlParser::IriRefOrFunctionContext* context) = 0;
+  virtual string visitIriRefOrFunction(
+          SparqlParser::IriRefOrFunctionContext *context) = 0;
 
   virtual antlrcpp::Any visitRdfLiteral(
       SparqlParser::RdfLiteralContext* context) = 0;
