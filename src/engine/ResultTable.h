@@ -37,7 +37,21 @@ class ResultTable {
     // bytes have to be zero.
     FLOAT,
     // An entry in the ResultTable's _localVocab
-    LOCAL_VOCAB
+    LOCAL_VOCAB,
+    // An entry in the ResultTables's _groupConcats
+    CONCATENATION
+  };
+
+  static constexpr auto floatFromVerbatim = [](const Id x) {
+    float f;
+    std::memcpy(&f, &x, sizeof(float));
+    return f;
+  };
+
+  static constexpr auto idFromFloat = [] (const float f) {
+    Id res = 0;
+    std::memcpy(&(res), &f, sizeof(float));
+    return res;
   };
 
   /**
@@ -64,6 +78,17 @@ class ResultTable {
   // WARNING: Currently only operations that can run after a GroupBy copy
   //          the _localVocab of a subresult.
   std::shared_ptr<vector<string>> _localVocab;
+
+  struct GroupConcatResults {
+    ResultType _resultType;
+    std::string _delim;
+    std::vector<Id> _ids;  // the external Ids, pointing to the single entries;
+    std::vector<std::pair<size_t, size_t>> _offsets;
+    std::vector<Id> _entries;
+  };
+
+  // TODO(joka921) Comment
+  std::shared_ptr<vector<GroupConcatResults>> _concatResults;
 
   ResultTable();
 

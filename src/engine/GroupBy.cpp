@@ -8,6 +8,11 @@
 #include "../util/Conversions.h"
 #include "../util/HashSet.h"
 #include "CallFixedSize.h"
+#include "../util/HighOrderFunctions.h"
+
+using highOrderFunctions::ADD;
+using highOrderFunctions::CONST;
+using highOrderFunctions::ID;
 
 GroupBy::GroupBy(QueryExecutionContext* qec,
                  const vector<string>& groupByVariables,
@@ -165,6 +170,7 @@ struct resizeIfVec<vector<C>, C> {
  *                        argument to allow for efficient reusage of its
  *                        its already allocated storage.
  */
+
 template <int IN_WIDTH, int OUT_WIDTH>
 void processGroup(const GroupBy::Aggregate& a, size_t blockStart,
                   size_t blockEnd, const IdTableStatic<IN_WIDTH>& input,
@@ -173,401 +179,181 @@ void processGroup(const GroupBy::Aggregate& a, size_t blockStart,
                   const ResultTable* inTable, ResultTable* outTable,
                   const Index& index,
                   ad_utility::HashSet<size_t>& distinctHashSet) {
-  switch (a._type) {
-    case ParsedQuery::AggregateType::AVG: {
-      float res = 0;
-      if (inputTypes[a._inCol] == ResultTable::ResultType::VERBATIM) {
-        if (a._distinct) {
-          for (size_t i = blockStart; i <= blockEnd; i++) {
-            const auto it = distinctHashSet.find(input(i, a._inCol));
-            if (it == distinctHashSet.end()) {
-              distinctHashSet.insert(input(i, a._inCol));
-              res += input(i, a._inCol);
-            }
-          }
-          distinctHashSet.clear();
-        } else {
-          for (size_t i = blockStart; i <= blockEnd; i++) {
-            res += input(i, a._inCol);
-          }
-        }
-      } else if (inputTypes[a._inCol] == ResultTable::ResultType::FLOAT) {
-        // used to store the id value of the entry interpreted as a float
-        float tmpF;
-        if (a._distinct) {
-          for (size_t i = blockStart; i <= blockEnd; i++) {
-            const auto it = distinctHashSet.find(input(i, a._inCol));
-            if (it == distinctHashSet.end()) {
-              distinctHashSet.insert(input(i, a._inCol));
-              std::memcpy(&tmpF, &input(i, a._inCol), sizeof(float));
-              res += tmpF;
-            }
-          }
-          distinctHashSet.clear();
-        } else {
-          for (size_t i = blockStart; i <= blockEnd; i++) {
-            std::memcpy(&tmpF, &input(i, a._inCol), sizeof(float));
-            res += tmpF;
-          }
-        }
-      } else if (inputTypes[a._inCol] == ResultTable::ResultType::TEXT ||
-                 inputTypes[a._inCol] == ResultTable::ResultType::LOCAL_VOCAB) {
-        res = std::numeric_limits<float>::quiet_NaN();
-      } else {
-        if (a._distinct) {
-          for (size_t i = blockStart; i <= blockEnd; i++) {
-            const auto it = distinctHashSet.find(input(i, a._inCol));
-            if (it == distinctHashSet.end()) {
-              distinctHashSet.insert(input(i, a._inCol));
-              // TODO(schnelle): What's the correct way to handle OPTIONAL here
-              // load the string, parse it as an xsd::int or float
-              std::string entity =
-                  index.idToOptionalString(input(i, a._inCol)).value_or("");
-              if (!ad_utility::startsWith(entity, VALUE_FLOAT_PREFIX)) {
-                res = std::numeric_limits<float>::quiet_NaN();
-                break;
-              } else {
-                res += ad_utility::convertIndexWordToFloat(entity);
-              }
-            }
-          }
-          distinctHashSet.clear();
-        } else {
-          for (size_t i = blockStart; i <= blockEnd; i++) {
-            // load the string, parse it as an xsd::int or float
-            // TODO(schnelle): What's the correct way to handle OPTIONAL here
-            std::string entity =
-                index.idToOptionalString(input(i, a._inCol)).value_or("");
-            if (!ad_utility::startsWith(entity, VALUE_FLOAT_PREFIX)) {
-              res = std::numeric_limits<float>::quiet_NaN();
-              break;
-            } else {
-              res += ad_utility::convertIndexWordToFloat(entity);
-            }
-          }
-        }
-      }
-      res /= (blockEnd - blockStart + 1);
 
-      (*result)(resultRow, a._outCol) = 0;
-      std::memcpy(&(*result)(resultRow, a._outCol), &res, sizeof(float));
-      break;
+  auto numericalAggregateLoop = [blockStart, blockEnd, inCol = a._inCol, &input](auto combineFun, auto getFun) {
+    auto res = getFun(input(blockStart, inCol));
+    for (size_t i = blockStart + 1; i <= blockEnd; i++) {
+      res = combineFun(res, getFun(input(i, inCol)));
     }
-    case ParsedQuery::AggregateType::COUNT:
-      if (a._distinct) {
-        size_t count = 0;
-        for (size_t i = blockStart; i <= blockEnd; i++) {
-          const auto it = distinctHashSet.find(input(i, a._inCol));
-          if (it == distinctHashSet.end()) {
-            count++;
-            distinctHashSet.insert(input(i, a._inCol));
-          }
-        }
-        (*result)(resultRow, a._outCol) = count;
-        distinctHashSet.clear();
+    return res;
+  };
+
+  auto numericalAggregate = [&inputTypes, &a, &numericalAggregateLoop](auto aggregateFun) {
+    if (inputTypes[a._inCol] == ResultTable::ResultType::VERBATIM) {
+      return numericalAggregateLoop(aggregateFun, ID);
+    } else if (inputTypes[a._inCol] == ResultTable::ResultType::FLOAT) {
+      return ResultTable::idFromFloat(numericalAggregateLoop(aggregateFun, ResultTable::floatFromVerbatim));
+    } else if (inputTypes[a._inCol] == ResultTable::ResultType::TEXT ||
+               inputTypes[a._inCol] == ResultTable::ResultType::LOCAL_VOCAB) {
+      return ID_NO_VALUE;
+    } else {
+      return numericalAggregateLoop(aggregateFun, ID);
+    }
+  };
+
+  // this lambda performs the actual aggregation logic
+  // args: initialResult: the initial aggregate value (typically 0 or an default-constructed ostream). Type of
+  //                      initial result determinex the return type, so make sure to differ float(0), size_t(0)...
+  //       getAndCombineValue: must takes a pointer to the aggregate type and an Id. Might return void or bool
+  //                           returning false means: aggregation can be shortcutted (breaks from the loop)
+
+  auto processLambda = [&a, blockStart, blockEnd, &distinctHashSet, &input](auto getAndCombineValue, auto&& initialResult) {
+    auto res{std::forward<decltype(initialResult)>(initialResult)};
+
+    // handle a single aggregation step for index i
+    const auto combine = [&res, &getAndCombineValue, &input, &a] (size_t i) {
+      // the combine aggregate must be callable from a pointer to the resulttype and an Id, and must return void or bool
+      using CombineResult = std::decay_t<std::invoke_result_t<decltype(getAndCombineValue), decltype(&res), decltype(input(0, 0))>>;
+      constexpr bool combineIsVoid = std::is_same_v<void, CombineResult>;
+      static_assert(combineIsVoid || std::is_same_v<bool, CombineResult>);
+
+      if constexpr (combineIsVoid) {
+        getAndCombineValue(&res, input(i, a._inCol));
+        return true;  // make the void case always return true, makes life easier and will get optimized out.
       } else {
-        (*result)(resultRow, a._outCol) = blockEnd - blockStart + 1;
+        return getAndCombineValue(&res, input(i, a._inCol));
       }
-      break;
-    case ParsedQuery::AggregateType::GROUP_CONCAT: {
-      std::ostringstream out;
-      std::string* delim = reinterpret_cast<string*>(a._userData);
-      if (inputTypes[a._inCol] == ResultTable::ResultType::VERBATIM) {
-        if (a._distinct) {
-          for (size_t i = blockStart; i + 1 <= blockEnd; i++) {
-            const auto it = distinctHashSet.find(input(i, a._inCol));
-            if (it == distinctHashSet.end()) {
-              distinctHashSet.insert(input(i, a._inCol));
-              out << input(i, a._inCol) << *delim;
-            }
-          }
-          const auto it = distinctHashSet.find(input(blockEnd, a._inCol));
-          if (it == distinctHashSet.end()) {
-            out << input(blockEnd, a._inCol) << *delim;
-          }
-          distinctHashSet.clear();
-        } else {
-          for (size_t i = blockStart; i + 1 <= blockEnd; i++) {
-            out << input(i, a._inCol) << *delim;
-          }
-          out << input(blockEnd, a._inCol);
-        }
-      } else if (inputTypes[a._inCol] == ResultTable::ResultType::FLOAT) {
-        float f;
-        if (a._distinct) {
-          for (size_t i = blockStart; i + 1 <= blockEnd; i++) {
-            const auto it = distinctHashSet.find(input(i, a._inCol));
-            if (it == distinctHashSet.end()) {
-              distinctHashSet.insert(input(i, a._inCol));
-              std::memcpy(&f, &input(i, a._inCol), sizeof(float));
-              out << f << *delim;
-            }
-          }
-          const auto it = distinctHashSet.find(input(blockEnd, a._inCol));
-          if (it == distinctHashSet.end()) {
-            std::memcpy(&f, &input(blockEnd, a._inCol), sizeof(float));
-            out << f;
-          }
-          distinctHashSet.clear();
-        } else {
-          for (size_t i = blockStart; i + 1 <= blockEnd; i++) {
-            std::memcpy(&f, &input(i, a._inCol), sizeof(float));
-            out << f << *delim;
-          }
-          std::memcpy(&f, &input(blockEnd, a._inCol), sizeof(float));
-          out << f;
-        }
-      } else if (inputTypes[a._inCol] == ResultTable::ResultType::TEXT) {
-        if (a._distinct) {
-          for (size_t i = blockStart; i + 1 <= blockEnd; i++) {
-            const auto it = distinctHashSet.find(input(i, a._inCol));
-            if (it == distinctHashSet.end()) {
-              distinctHashSet.insert(input(i, a._inCol));
-              out << index.getTextExcerpt(input(i, a._inCol)) << *delim;
-            }
-          }
-          const auto it = distinctHashSet.find(input(blockEnd, a._inCol));
-          if (it == distinctHashSet.end()) {
-            out << index.getTextExcerpt(input(blockEnd, a._inCol));
-          }
-          distinctHashSet.clear();
-        } else {
-          for (size_t i = blockStart; i + 1 <= blockEnd; i++) {
-            out << index.getTextExcerpt(input(i, a._inCol)) << *delim;
-          }
-          out << index.getTextExcerpt(input(blockEnd, a._inCol));
-        }
-      } else if (inputTypes[a._inCol] == ResultTable::ResultType::LOCAL_VOCAB) {
-        if (a._distinct) {
-          for (size_t i = blockStart; i + 1 <= blockEnd; i++) {
-            const auto it = distinctHashSet.find(input(i, a._inCol));
-            if (it == distinctHashSet.end()) {
-              distinctHashSet.insert(input(i, a._inCol));
-              // TODO(schnelle): What's the correct way to handle OPTIONAL here
-              out << inTable->idToOptionalString(input(i, a._inCol))
-                         .value_or("")
-                  << *delim;
-            }
-          }
-          const auto it = distinctHashSet.find(input(blockEnd, a._inCol));
-          if (it == distinctHashSet.end()) {
-            // TODO(schnelle): What's the correct way to handle OPTIONAL here
-            out << inTable->idToOptionalString(input(blockEnd, a._inCol))
-                       .value_or("");
-          }
-          distinctHashSet.clear();
-        } else {
-          for (size_t i = blockStart; i + 1 <= blockEnd; i++) {
-            // TODO(schnelle): What's the correct way to handle OPTIONAL here
-            out << inTable->idToOptionalString(input(i, a._inCol)).value_or("")
-                << *delim;
-          }
-          out << inTable->idToOptionalString(input(blockEnd, a._inCol))
-                     .value_or("");
-        }
-      } else {
-        if (a._distinct) {
-          for (size_t i = blockStart; i + 1 <= blockEnd; i++) {
-            const auto it = distinctHashSet.find(input(i, a._inCol));
-            if (it == distinctHashSet.end()) {
-              distinctHashSet.insert(input(i, a._inCol));
-              // TODO(schnelle): What's the correct way to handle OPTIONAL here
-              std::string entity =
-                  index.idToOptionalString(input(i, a._inCol)).value_or("");
-              if (ad_utility::startsWith(entity, VALUE_PREFIX)) {
-                out << ad_utility::convertIndexWordToValueLiteral(entity)
-                    << *delim;
-              } else {
-                out << entity << *delim;
-              }
-            }
-          }
-          const auto it = distinctHashSet.find(input(blockEnd, a._inCol));
-          if (it == distinctHashSet.end()) {
-            // TODO(schnelle): What's the correct way to handle OPTIONAL here
-            std::string entity =
-                index.idToOptionalString(input(blockEnd, a._inCol))
-                    .value_or("");
-            if (ad_utility::startsWith(entity, VALUE_PREFIX)) {
-              out << ad_utility::convertIndexWordToValueLiteral(entity);
-            } else {
-              out << entity;
-            }
-          }
-          distinctHashSet.clear();
-        } else {
-          for (size_t i = blockStart; i + 1 <= blockEnd; i++) {
-            // TODO(schnelle): What's the correct way to handle OPTIONAL here
-            std::string entity =
-                index.idToOptionalString(input(i, a._inCol)).value_or("");
-            if (ad_utility::startsWith(entity, VALUE_PREFIX)) {
-              out << ad_utility::convertIndexWordToValueLiteral(entity)
-                  << *delim;
-            } else {
-              out << entity << *delim;
-            }
-          }
-          // TODO(schnelle): What's the correct way to handle OPTIONAL here
-          std::string entity =
-              index.idToOptionalString(input(blockEnd, a._inCol)).value_or("");
-          if (ad_utility::startsWith(entity, VALUE_PREFIX)) {
-            out << ad_utility::convertIndexWordToValueLiteral(entity);
-          } else {
-            out << entity;
-          }
+    };
+
+    if (a._distinct) {
+      distinctHashSet.clear();
+      for (size_t i = blockStart; i <= blockEnd; i++) {
+        if (!distinctHashSet.count(input(i, a._inCol))) {
+          distinctHashSet.insert(input(i, a._inCol));
+          if (!combine(i)) break;
         }
       }
-      (*result)(resultRow, a._outCol) = outTable->_localVocab->size();
-      outTable->_localVocab->push_back(out.str());
-      break;
-    }
-    case ParsedQuery::AggregateType::MAX: {
-      if (inputTypes[a._inCol] == ResultTable::ResultType::VERBATIM) {
-        Id res = std::numeric_limits<Id>::lowest();
-        for (size_t i = blockStart; i <= blockEnd; i++) {
-          res = std::max(res, input(i, a._inCol));
-        }
-        (*result)(resultRow, a._outCol) = res;
-      } else if (inputTypes[a._inCol] == ResultTable::ResultType::FLOAT) {
-        float res = std::numeric_limits<float>::lowest();
-        // used to store the id value of the entry interpreted as a float
-        float tmpF;
-        for (size_t i = blockStart; i <= blockEnd; i++) {
-          // interpret the first sizeof(float) bytes of the entry as a float.
-          std::memcpy(&tmpF, &input(i, a._inCol), sizeof(float));
-          res = std::max(res, tmpF);
-        }
-        (*result)(resultRow, a._outCol) = 0;
-        std::memcpy(&(*result)(resultRow, a._outCol), &res, sizeof(float));
-      } else if (inputTypes[a._inCol] == ResultTable::ResultType::TEXT ||
-                 inputTypes[a._inCol] == ResultTable::ResultType::LOCAL_VOCAB) {
-        (*result)(resultRow, a._outCol) = ID_NO_VALUE;
-      } else {
-        Id res = std::numeric_limits<Id>::lowest();
-        for (size_t i = blockStart; i <= blockEnd; i++) {
-          res = std::max(res, input(i, a._inCol));
-        }
-        (*result)(resultRow, a._outCol) = res;
+    } else {
+      for (size_t i = blockStart; i <= blockEnd; i++) {
+        if (!combine(i)) break;
       }
-      break;
     }
-    case ParsedQuery::AggregateType::MIN: {
-      if (inputTypes[a._inCol] == ResultTable::ResultType::VERBATIM) {
-        Id res = std::numeric_limits<Id>::max();
-        for (size_t i = blockStart; i <= blockEnd; i++) {
-          res = std::min(res, input(i, a._inCol));
-        }
-        (*result)(resultRow, a._outCol) = res;
-      } else if (inputTypes[a._inCol] == ResultTable::ResultType::FLOAT) {
-        float res = std::numeric_limits<float>::max();
-        // used to store the id value of the entry interpreted as a float
-        float tmpF;
-        for (size_t i = blockStart; i <= blockEnd; i++) {
-          // interpret the first sizeof(float) bytes of the entry as a float.
-          std::memcpy(&tmpF, &input(i, a._inCol), sizeof(float));
-          res = std::min(res, tmpF);
-        }
-        (*result)(resultRow, a._outCol) = 0;
-        std::memcpy(&(*result)(resultRow, a._outCol), &res, sizeof(float));
-      } else if (inputTypes[a._inCol] == ResultTable::ResultType::TEXT ||
-                 inputTypes[a._inCol] == ResultTable::ResultType::LOCAL_VOCAB) {
-        (*result)(resultRow, a._outCol) = ID_NO_VALUE;
-      } else {
-        Id res = std::numeric_limits<Id>::max();
-        for (size_t i = blockStart; i <= blockEnd; i++) {
-          res = std::min(res, input(i, a._inCol));
-        }
-        (*result)(resultRow, a._outCol) = res;
-      }
-      break;
-    }
-    case ParsedQuery::AggregateType::SAMPLE:
-      (*result)(resultRow, a._outCol) = input(blockEnd, a._inCol);
-      break;
+    return res;
+  };
+
+
+  switch (a._type) {
+    case ParsedQuery::AggregateType::AVG: [[fallthrough]];
     case ParsedQuery::AggregateType::SUM: {
       float res = 0;
       if (inputTypes[a._inCol] == ResultTable::ResultType::VERBATIM) {
-        if (a._distinct) {
-          for (size_t i = blockStart; i <= blockEnd; i++) {
-            const auto it = distinctHashSet.find(input(i, a._inCol));
-            if (it == distinctHashSet.end()) {
-              distinctHashSet.insert(input(i, a._inCol));
-              res += input(i, a._inCol);
-            }
-          }
-          distinctHashSet.clear();
-        } else {
-          for (size_t i = blockStart; i <= blockEnd; i++) {
-            res += input(i, a._inCol);
-          }
-        }
+        const auto combine = [](float* res, const auto& x) {*res += x;};
+        res = processLambda(combine, res);
       } else if (inputTypes[a._inCol] == ResultTable::ResultType::FLOAT) {
-        // used to store the id value of the entry interpreted as a float
-        float tmpF;
-        if (a._distinct) {
-          for (size_t i = blockStart; i <= blockEnd; i++) {
-            const auto it = distinctHashSet.find(input(i, a._inCol));
-            if (it == distinctHashSet.end()) {
-              distinctHashSet.insert(input(i, a._inCol));
-              std::memcpy(&tmpF, &input(i, a._inCol), sizeof(float));
-              res += tmpF;
-            }
-          }
-          distinctHashSet.clear();
-        } else {
-          for (size_t i = blockStart; i <= blockEnd; i++) {
-            std::memcpy(&tmpF, &input(i, a._inCol), sizeof(float));
-            res += tmpF;
-          }
-        }
+        constexpr auto combineValue = [=] (auto res, const auto& x) {*res += ResultTable::floatFromVerbatim(x); };
+        res = processLambda(combineValue, res);
       } else if (inputTypes[a._inCol] == ResultTable::ResultType::TEXT ||
                  inputTypes[a._inCol] == ResultTable::ResultType::LOCAL_VOCAB) {
         res = std::numeric_limits<float>::quiet_NaN();
       } else {
-        if (a._distinct) {
-          for (size_t i = blockStart; i <= blockEnd; i++) {
-            const auto it = distinctHashSet.find(input(i, a._inCol));
-            if (it == distinctHashSet.end()) {
-              distinctHashSet.insert(input(i, a._inCol));
-              // load the string, parse it as an xsd::int or float
-              // TODO(schnelle): What's the correct way to handle OPTIONAL here
-              std::string entity =
-                  index.idToOptionalString(input(i, a._inCol)).value_or("");
-              if (!ad_utility::startsWith(entity, VALUE_FLOAT_PREFIX)) {
-                res = std::numeric_limits<float>::quiet_NaN();
-                break;
-              } else {
-                res += ad_utility::convertIndexWordToFloat(entity);
-              }
-            }
+        const auto combineValue = [&index](auto res, const auto& x) {
+          auto val = index.idToOptionalString(x).value_or("");
+          if (!ad_utility::startsWith(val, VALUE_FLOAT_PREFIX)) {
+            *res = std::numeric_limits<float>::quiet_NaN();
+            return false;  // allows for early breaking;
           }
-          distinctHashSet.clear();
-        } else {
-          for (size_t i = blockStart; i <= blockEnd; i++) {
-            // load the string, parse it as an xsd::int or float
-            // TODO(schnelle): What's the correct way to handle OPTIONAL here
-            std::string entity =
-                index.idToOptionalString(input(i, a._inCol)).value_or("");
-            if (!ad_utility::startsWith(entity, VALUE_FLOAT_PREFIX)) {
-              res = std::numeric_limits<float>::quiet_NaN();
-              break;
-            } else {
-              res += ad_utility::convertIndexWordToFloat(entity);
-            }
-          }
-        }
+          *res += ad_utility::convertIndexWordToFloat(val);
+          return true;
+        };
+
+        res = processLambda(combineValue, res);
       }
-      (*result)(resultRow, a._outCol) = 0;
-      std::memcpy(&(*result)(resultRow, a._outCol), &res, sizeof(float));
+      if (a._type == ParsedQuery::AggregateType::AVG) {
+        // this is where sum and AVG actually differ
+        res /= static_cast<float>(blockEnd - blockStart + 1);
+      }
+      (*result)(resultRow, a._outCol) = ResultTable::idFromFloat(res);
       break;
     }
-    case ParsedQuery::AggregateType::FIRST:
-      // This does the same as sample, as the non grouping rows have no
-      // inherent order.
-      (*result)(resultRow, a._outCol) = input(blockStart, a._inCol);
+
+    case ParsedQuery::AggregateType::COUNT: {
+      constexpr auto combineLambda = [](auto resPtr, [[maybe_unused]] const auto &value) { ++(*resPtr); };
+      (*result)(resultRow, a._outCol) = processLambda(combineLambda, size_t(0));
       break;
+    }
+
+    case ParsedQuery::AggregateType::GROUP_CONCAT: {
+      std::ostringstream out;
+      auto delim = reinterpret_cast<string*>(a._userData);
+      auto & concatRes = (*(outTable->_concatResults))[a._outCol];
+      concatRes._delim = *delim; // this is done for every group, but unecessary, TODO move
+      concatRes._resultType = inputTypes[a._inCol]; // same here
+      auto entrySizeBefore = concatRes._entries.size();
+      const auto combineLambda = [] (auto it, const auto& val) {*it = val;};
+      processLambda(combineLambda, std::back_inserter(concatRes._entries));
+
+
+
+
+      if (inputTypes[a._inCol] == ResultTable::ResultType::VERBATIM) {
+        // TODO(joka921) No delimiter for last entry;
+        const auto combineValues = [delim](std::ostringstream* out, const auto& val ) {
+          *out << val << *delim;
+        };
+        out = processLambda(combineValues, std::ostringstream{});
+      } else if (inputTypes[a._inCol] == ResultTable::ResultType::FLOAT) {
+        const auto combineValues = [delim](std::ostringstream* out, const auto& val ) {
+          *out << ResultTable::floatFromVerbatim(val) << *delim;
+        };
+        out = processLambda(combineValues, std::ostringstream{});
+      } else if (inputTypes[a._inCol] == ResultTable::ResultType::TEXT) {
+        const auto combineValues = [delim, &index](std::ostringstream* out, const auto& val ) {
+          *out << index.getTextExcerpt(val) << *delim;
+        };
+        out = processLambda(combineValues, std::ostringstream{});
+
+      } else if (inputTypes[a._inCol] == ResultTable::ResultType::LOCAL_VOCAB) {
+        const auto combineValues = [delim, &inTable](std::ostringstream* out, const auto& val ) {
+          // TODO(schnelle): What's the correct way to handle OPTIONAL here
+          *out << inTable->idToOptionalString(val)
+                  .value_or("")
+              << *delim;
+        };
+        out = processLambda(combineValues, std::ostringstream{});
+      } else {
+        const auto combineValues = [delim, &index](std::ostringstream* out, const auto& val ) {
+          // TODO(schnelle): What's the correct way to handle OPTIONAL here
+          std::string entity =
+                  index.idToOptionalString(val).value_or("");
+          if (ad_utility::startsWith(entity, VALUE_PREFIX)) {
+            *out << ad_utility::convertIndexWordToValueLiteral(entity)
+                << *delim;
+          } else {
+            *out << entity << *delim;
+          }
+        };
+        out = processLambda(combineValues, std::ostringstream{});
+      }
+      (*result)(resultRow, a._outCol) = outTable->_localVocab->size();
+      auto str = out.str();
+      str.resize(str.size() - delim->size());
+      outTable->_localVocab->push_back(std::move(str));
+      break;
+    }
+    case ParsedQuery::AggregateType::MAX: {
+      auto maxLambda = [](const auto& a, const auto& b) {return std::max(a, b);};
+      (*result)(resultRow, a._outCol) = numericalAggregate(maxLambda);
+      break;
+    }
+    case ParsedQuery::AggregateType::MIN: {
+      auto minLambda = [](const auto& a, const auto& b) {return std::min(a, b);};
+      (*result)(resultRow, a._outCol) = numericalAggregate(minLambda);
+      break;
+    }
+    case ParsedQuery::AggregateType::SAMPLE: [[fallthrough]];
+    case ParsedQuery::AggregateType::FIRST: [[fallthrough]];
     case ParsedQuery::AggregateType::LAST:
-      // This does the same as sample, as the non grouping rows have no
+      // SAMPLE, FIRST and LAST share the same behavior, as the non grouping rows have no
       // inherent order.
       (*result)(resultRow, a._outCol) = input(blockEnd, a._inCol);
       break;
@@ -588,6 +374,14 @@ void doGroupBy(const IdTable& dynInput,
   const IdTableStatic<IN_WIDTH> input = dynInput.asStaticView<IN_WIDTH>();
   IdTableStatic<OUT_WIDTH> result = dynResult->moveToStatic<OUT_WIDTH>();
   ad_utility::HashSet<size_t> distinctHashSet;
+
+
+  for (const auto& a : aggregates) {
+    if (a._type == ParsedQuery::AggregateType::GROUP_CONCAT) {
+      outTable->_concatResults = std::make_shared<std::vector<ResultTable::GroupConcatResults>>(result.cols());
+      break;
+    }
+  }
 
   if (groupByCols.empty()) {
     // The entire input is a single group
