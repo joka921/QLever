@@ -53,7 +53,7 @@ void Sort::computeResult(ResultTable* result) {
   result->_resultTypes.insert(result->_resultTypes.end(),
                               subRes->_resultTypes.begin(),
                               subRes->_resultTypes.end());
-  result->_localVocab = subRes->_localVocab;
+  result->shareLocalData(*subRes);
   result->_data.insert(result->_data.end(), subRes->_data.begin(),
                        subRes->_data.end());
   int width = result->_data.cols();

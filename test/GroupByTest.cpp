@@ -94,23 +94,23 @@ TEST_F(GroupByTest, doGroupBy) {
   inTable._localVocab->push_back("<local2>");
   inTable._localVocab->push_back("<local3>");
 
-  IdTable inputData(6);
+  IdTable inputData(5);
   // The input data types are
   //                   KB, KB, VERBATIM, TEXT, FLOAT,           STRING
-  inputData.push_back({1, 4, 123, 0, floatBuffers[0], 0});
-  inputData.push_back({1, 5, 0, 1, floatBuffers[1], 1});
+  inputData.push_back({1, 4, 123, 0, floatBuffers[0]});
+  inputData.push_back({1, 5, 0, 1, floatBuffers[1]});
 
-  inputData.push_back({2, 6, 41223, 2, floatBuffers[2], 2});
-  inputData.push_back({2, 7, 123, 0, floatBuffers[0], 0});
-  inputData.push_back({2, 7, 123, 0, floatBuffers[0], 0});
+  inputData.push_back({2, 6, 41223, 2, floatBuffers[2]});
+  inputData.push_back({2, 7, 123, 0, floatBuffers[0]});
+  inputData.push_back({2, 7, 123, 0, floatBuffers[0]});
 
-  inputData.push_back({3, 8, 0, 1, floatBuffers[1], 1});
-  inputData.push_back({3, 9, 41223, 2, floatBuffers[2], 2});
+  inputData.push_back({3, 8, 0, 1, floatBuffers[1]});
+  inputData.push_back({3, 9, 41223, 2, floatBuffers[2]});
 
   std::vector<ResultTable::ResultType> inputTypes = {
       ResultTable::ResultType::KB,       ResultTable::ResultType::KB,
       ResultTable::ResultType::VERBATIM, ResultTable::ResultType::TEXT,
-      ResultTable::ResultType::FLOAT,    ResultTable::ResultType::LOCAL_VOCAB};
+      ResultTable::ResultType::FLOAT};
 
   /*
     COUNT,
@@ -134,7 +134,6 @@ TEST_F(GroupByTest, doGroupBy) {
       {ParsedQuery::AggregateType::GROUP_CONCAT, 2, 3, &delim1},
       {ParsedQuery::AggregateType::GROUP_CONCAT, 3, 4, &delim1},
       {ParsedQuery::AggregateType::GROUP_CONCAT, 4, 5, &delim1},
-      {ParsedQuery::AggregateType::GROUP_CONCAT, 5, 6, &delim1},
 
       {ParsedQuery::AggregateType::SAMPLE, 1, 7, nullptr},
 
@@ -183,19 +182,42 @@ TEST_F(GroupByTest, doGroupBy) {
 
   // GROUP CONCAT CHECKS
   // check that the local vocab ids are ascending
-  for (int i = 0; i < 5; i++) {
-    ASSERT_EQ(0u + i, outTable._data[0][2 + i]);
-    ASSERT_EQ(0u + i + 5, outTable._data[1][2 + i]);
-    ASSERT_EQ(0u + i + 10, outTable._data[2][2 + i]);
+  for (int i = 0; i < 4; i++) {
+    ASSERT_EQ(0u, outTable._data[0][2 + i]);
+    ASSERT_EQ(1u, outTable._data[1][2 + i]);
+    ASSERT_EQ(2u, outTable._data[2][2 + i]);
   }
+
+  const auto& concatResults = *(outTable._concatResults);
+  ASSERT_EQ(concatResults.size(), 24ul);
   // check for a local vocab entry for each of the 5 input cols
-  ASSERT_EQ(std::string("<entity1>, <entity2>"), (*outTable._localVocab)[0]);
-  ASSERT_EQ(std::string("123, 0"), (*outTable._localVocab)[1]);
-  ASSERT_EQ(std::string("Exert 1, Exert 2"), (*outTable._localVocab)[2]);
-  std::ostringstream groupConcatFloatString;
-  groupConcatFloatString << floatValues[0] << ", " << floatValues[1];
-  ASSERT_EQ(groupConcatFloatString.str(), (*outTable._localVocab)[3]);
-  ASSERT_EQ(std::string("<local1>, <local2>"), (*outTable._localVocab)[4]);
+
+  // "<entity1>, <entity2>"
+  ASSERT_EQ(concatResults[2]._offsets[0].second - concatResults[2]._offsets[0].first, 2ul);
+  ASSERT_EQ("<entity1>"s, vocab.at(concatResults[2]._entries[concatResults[2]._offsets[0].first]));
+  ASSERT_EQ("<entity2>"s, vocab.at(concatResults[2]._entries[concatResults[2]._offsets[0].first + 1]));
+  ASSERT_EQ(", "s, concatResults[2]._delim);
+  ASSERT_EQ(ResultTable::ResultType::KB, concatResults[2]._resultType);
+
+  // "123, 0"
+  ASSERT_EQ(2u, concatResults[3]._offsets[0].second - concatResults[3]._offsets[0].first );
+  ASSERT_EQ(123u, concatResults[3]._entries[concatResults[3]._offsets[0].first]);
+  ASSERT_EQ(0u, concatResults[3]._entries[concatResults[3]._offsets[0].first + 1]);
+  ASSERT_EQ(", "s, concatResults[3]._delim);
+  ASSERT_EQ(ResultTable::ResultType::VERBATIM, concatResults[3]._resultType);
+
+  // "Exert 1, Exert 2"
+  ASSERT_EQ(concatResults[4]._offsets[0].second - concatResults[4]._offsets[0].first, 2ul);
+  ASSERT_EQ("Exert 1"s, _index.getTextExcerpt(concatResults[4]._entries[concatResults[4]._offsets[0].first]));
+  ASSERT_EQ("Exert 2"s, _index.getTextExcerpt(concatResults[4]._entries[concatResults[4]._offsets[0].first + 1]));
+  ASSERT_EQ(", "s, concatResults[4]._delim);
+  ASSERT_EQ(ResultTable::ResultType::TEXT, concatResults[4]._resultType);
+
+  ASSERT_EQ(concatResults[5]._offsets[0].second - concatResults[5]._offsets[0].first, 2ul);
+  ASSERT_EQ(floatBuffers[0], concatResults[5]._entries[concatResults[5]._offsets[0].first]);
+  ASSERT_EQ(floatBuffers[1], concatResults[5]._entries[concatResults[5]._offsets[0].first + 1]);
+  ASSERT_EQ(", "s, concatResults[5]._delim);
+  ASSERT_EQ(ResultTable::ResultType::FLOAT, concatResults[5]._resultType);
 
   // SAMPLE CHECKS
   ASSERT_EQ(5u, outTable._data[0][7]);

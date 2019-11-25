@@ -233,7 +233,7 @@ void Filter::computeResult(ResultTable* result) {
   result->_resultTypes.insert(result->_resultTypes.end(),
                               subRes->_resultTypes.begin(),
                               subRes->_resultTypes.end());
-  result->_localVocab = subRes->_localVocab;
+  result->shareLocalData(*subRes);
   size_t lhsInd = _subtree->getVariableColumn(_lhs);
   int width = result->_data.cols();
   if (_rhs[0] == '?') {
@@ -610,8 +610,8 @@ void Filter::computeResultFixedValue(
         // Find a matching entry in subRes' _localVocab. If _rhs is not in the
         // _localVocab of subRes r will be equal to  _localVocab.size() and
         // not match the index of any entry in _localVocab.
-        for (rhs = 0; rhs < subRes->_localVocab->size(); rhs++) {
-          if ((*subRes->_localVocab)[rhs] == _rhs) {
+        for (rhs = 0; rhs < subRes->localVocab().size(); rhs++) {
+          if (subRes->localVocab()[rhs] == _rhs) {
             break;
           }
         }

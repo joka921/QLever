@@ -10,6 +10,7 @@ ResultTable::ResultTable()
     : _sortedBy(),
       _resultTypes(),
       _localVocab(std::make_shared<std::vector<std::string>>()),
+      _concatResults(std::make_shared<std::vector<GroupConcatResults>>()),
       _status(ResultTable::IN_PROGRESS) {}
 
 // _____________________________________________________________________________

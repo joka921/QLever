@@ -200,3 +200,116 @@ void QueryExecutionTree::readFromCache() {
     _cachedResult = cache[asString()]->_resTable;
   }
 }
+
+// _______________________________________________________________________
+template <class Callable, bool AllowRecursion>
+bool QueryExecutionTree::restypeToStream(Callable f, const ResultTable& restable, const Index& idx, ResultTable::ResultType type, Id id, [[maybe_unused]] size_t column) {
+  std::optional<std::string> entity;
+  switch (type) {
+    case ResultTable::ResultType::KB : {
+      entity = idx.idToOptionalString(id);
+      if (entity) {
+        string entitystr = entity.value();
+        if (ad_utility::startsWith(entitystr, VALUE_PREFIX)) {
+          entity = ad_utility::convertIndexWordToValueLiteral(entitystr);
+        }
+      }
+      break;
+    }
+
+    case ResultTable::ResultType::FLOAT : {
+      entity = std::to_string(ResultTable::floatFromVerbatim(id));
+      break;
+    }
+    case ResultTable::ResultType::TEXT : {
+      entity = idx.getTextExcerpt(id);
+      break;
+    }
+    case ResultTable::ResultType::VERBATIM : {
+      entity = std::to_string(id);
+      break;
+    }
+
+    case ResultTable::ResultType::LOCAL_VOCAB: {
+      entity = restable.idToOptionalString(id);
+      break;
+    }
+
+    case ResultTable::ResultType::CONCATENATION: {
+      if constexpr (AllowRecursion) {
+        const auto &concat = (*(restable._concatResults))[column];
+        const auto &limits = concat._offsets[id];
+        std::ostringstream tmp;
+        bool nextDelim = false;
+        auto appendLambda = [&tmp](const auto &val, [[maybe_unused]] const auto &type) { tmp << val.value_or(""); };
+        for (size_t i = limits.first; i < limits.second; ++i) {
+          AD_CHECK(concat._resultType != ResultTable::ResultType::CONCATENATION);
+          if (nextDelim) {
+            tmp << concat._delim;
+          }
+          nextDelim = restypeToStream<decltype(appendLambda), false>(appendLambda, restable, idx, concat._resultType, concat._entries[i], 0);
+        }
+        entity = tmp.str();
+      } else {
+        AD_CHECK(false);
+      }
+      break;
+    }
+  }
+  f(entity, type);
+  return bool(entity) ;
+}
+
+// _________________________________________________________________________________________
+void QueryExecutionTree::writeJsonTable(
+        const IdTable& data, size_t from, size_t upperBound,
+        const vector<pair<size_t, ResultTable::ResultType>>& validIndices,
+        size_t maxSend, std::ostream& out) const {
+  shared_ptr<const ResultTable> res = getResult();
+
+  auto streamEntity = [&r =  *res, &idx = _qec->getIndex()] (auto& out, ResultTable::ResultType type, Id id, size_t column) {
+    auto appendToStream = [&out] (const auto& val, const ResultTable::ResultType type) {
+      if (type == ResultTable::ResultType::FLOAT || type == ResultTable::ResultType::VERBATIM) {
+        out << "\"" << val.value() << "\"";
+      } else {
+        out << ad_utility::toJson(val);
+      }
+    };
+    return restypeToStream(appendToStream, r, idx, type, id, column);
+  };
+
+  for (size_t i = from; i < upperBound && i < maxSend + from; ++i) {
+    auto& os = out;
+    os << "[";
+    for (size_t j = 0; j < validIndices.size(); ++j) {
+      auto id = data(i, validIndices[j].first);
+      streamEntity(os, validIndices[j].second, id, j);
+      os  << (j + 1 < validIndices.size() ? ", " : "]");
+    }
+    if (i + 1 < upperBound && i + 1 < maxSend + from) {
+      os << ", ";
+    }
+    os << "\r\n";
+  }
+}
+
+void QueryExecutionTree::writeTable(
+        const IdTable& data, char sep, size_t from, size_t upperBound,
+        const vector<pair<size_t, ResultTable::ResultType>>& validIndices,
+        std::ostream& out) const {
+  shared_ptr<const ResultTable> res = getResult();
+
+  auto streamEntity = [&r =  *res, &idx = _qec->getIndex()] (auto& out, ResultTable::ResultType type, Id id, size_t column) {
+    auto appendToStream = [&out] (const auto& val, [[maybe_unused]] const ResultTable::ResultType type) {
+      out << val.value_or("");
+    };
+    return restypeToStream(appendToStream, r, idx, type, id, column);
+  };
+  for (size_t i = from; i < upperBound; ++i) {
+    for (size_t j = 0; j < validIndices.size(); ++j) {
+      auto id = data(i, validIndices[j].first);
+      streamEntity(out, validIndices[j].second, id, validIndices[j].first);
+      out << (j + 1 < validIndices.size() ? sep : '\n');
+    }
+  }
+}

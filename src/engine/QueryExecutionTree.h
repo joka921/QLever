@@ -145,144 +145,18 @@ class QueryExecutionTree {
   size_t _sizeEstimate;
 
   std::shared_ptr<const ResultTable> _cachedResult = nullptr;
+
+  template <class Callable, bool AllowRecursion = true>
+  static bool
+  restypeToStream(Callable f, const ResultTable& restable, const Index& idx, ResultTable::ResultType type, Id id, [[maybe_unused]] size_t column);
+
   void writeJsonTable(
       const IdTable& data, size_t from, size_t upperBound,
       const vector<pair<size_t, ResultTable::ResultType>>& validIndices,
-      size_t maxSend, std::ostream& out) const {
-    std::ostringstream throwaway;
-    shared_ptr<const ResultTable> res = getResult();
-    for (size_t i = from; i < upperBound; ++i) {
-      auto& os = (i < (maxSend + from) ? out : throwaway);
-      os << "[";
-      for (size_t j = 0; j + 1 < validIndices.size(); ++j) {
-        switch (validIndices[j].second) {
-          case ResultTable::ResultType::KB: {
-            std::optional<string> entity = _qec->getIndex().idToOptionalString(
-                data(i, validIndices[j].first));
-            if (entity) {
-              string entitystr = entity.value();
-              if (ad_utility::startsWith(entitystr, VALUE_PREFIX)) {
-                entity = ad_utility::convertIndexWordToValueLiteral(entitystr);
-              }
-            }
-            os << ad_utility::toJson(entity) << ",";
-            break;
-          }
-          case ResultTable::ResultType::VERBATIM:
-            os << "\"" << data(i, validIndices[j].first) << "\",";
-            break;
-          case ResultTable::ResultType::TEXT:
-            os << ad_utility::toJson(_qec->getIndex().getTextExcerpt(
-                      data(i, validIndices[j].first)))
-               << ",";
-            break;
-          case ResultTable::ResultType::FLOAT: {
-            float f;
-            std::memcpy(&f, &data(i, validIndices[j].first), sizeof(float));
-            os << "\"" << f << "\",";
-            break;
-          }
-          case ResultTable::ResultType::LOCAL_VOCAB: {
-            std::optional<string> entity =
-                res->idToOptionalString(data(i, validIndices[j].first));
-            os << ad_utility::toJson(entity) << ",";
-            break;
-          }
-          default:
-            AD_THROW(ad_semsearch::Exception::INVALID_PARAMETER_VALUE,
-                     "Cannot deduce output type.");
-        }
-      }
-      switch (validIndices[validIndices.size() - 1].second) {
-        case ResultTable::ResultType::KB: {
-          std::optional<string> entity = _qec->getIndex().idToOptionalString(
-              data(i, validIndices[validIndices.size() - 1].first));
-          if (entity) {
-            string entitystr = entity.value();
-            if (ad_utility::startsWith(entitystr, VALUE_PREFIX)) {
-              entity = ad_utility::convertIndexWordToValueLiteral(entitystr);
-            }
-          }
-          os << ad_utility::toJson(entity) << "]";
-          break;
-        }
-        case ResultTable::ResultType::VERBATIM:
-          os << "\"" << data(i, validIndices[validIndices.size() - 1].first)
-             << "\"]";
-          break;
-        case ResultTable::ResultType::TEXT:
-          os << ad_utility::toJson(_qec->getIndex().getTextExcerpt(
-                    data(i, validIndices[validIndices.size() - 1].first)))
-             << "]";
-          break;
-        case ResultTable::ResultType::FLOAT: {
-          float f;
-          std::memcpy(&f, &data(i, validIndices[validIndices.size() - 1].first),
-                      sizeof(float));
-          os << "\"" << f << "\"]";
-          break;
-        }
-        case ResultTable::ResultType::LOCAL_VOCAB: {
-          std::optional<string> entity = res->idToOptionalString(
-              data(i, validIndices[validIndices.size() - 1].first));
-          os << ad_utility::toJson(entity) << "]";
-          break;
-        }
-        default:
-          AD_THROW(ad_semsearch::Exception::INVALID_PARAMETER_VALUE,
-                   "Cannot deduce output type.");
-      }
-      if (i + 1 < upperBound && i + 1 < maxSend + from) {
-        os << ", ";
-      }
-      os << "\r\n";
-    }
-  }
+      size_t maxSend, std::ostream& out) const;
 
   void writeTable(
       const IdTable& data, char sep, size_t from, size_t upperBound,
       const vector<pair<size_t, ResultTable::ResultType>>& validIndices,
-      std::ostream& out) const {
-    shared_ptr<const ResultTable> res = getResult();
-    for (size_t i = from; i < upperBound; ++i) {
-      for (size_t j = 0; j < validIndices.size(); ++j) {
-        switch (validIndices[j].second) {
-          case ResultTable::ResultType::KB: {
-            string entity =
-                _qec->getIndex()
-                    .idToOptionalString(data(i, validIndices[j].first))
-                    .value_or("");
-            if (ad_utility::startsWith(entity, VALUE_PREFIX)) {
-              out << ad_utility::convertIndexWordToValueLiteral(entity);
-            } else {
-              out << entity;
-            }
-            break;
-          }
-          case ResultTable::ResultType::VERBATIM:
-            out << data(i, validIndices[j].first);
-            break;
-          case ResultTable::ResultType::TEXT:
-            out << _qec->getIndex().getTextExcerpt(
-                data(i, validIndices[j].first));
-            break;
-          case ResultTable::ResultType::FLOAT: {
-            float f;
-            std::memcpy(&f, &data(i, validIndices[j].first), sizeof(float));
-            out << f;
-            break;
-          }
-          case ResultTable::ResultType::LOCAL_VOCAB: {
-            out << res->idToOptionalString(data(i, validIndices[j].first))
-                       .value_or("");
-            break;
-          }
-          default:
-            AD_THROW(ad_semsearch::Exception::INVALID_PARAMETER_VALUE,
-                     "Cannot deduce output type.");
-        }
-        out << (j + 1 < validIndices.size() ? sep : '\n');
-      }
-    }
-  }
+      std::ostream& out) const;
 };

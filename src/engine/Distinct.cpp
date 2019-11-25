@@ -48,7 +48,7 @@ void Distinct::computeResult(ResultTable* result) {
   result->_resultTypes.insert(result->_resultTypes.end(),
                               subRes->_resultTypes.begin(),
                               subRes->_resultTypes.end());
-  result->_localVocab = subRes->_localVocab;
+  result->shareLocalData(*subRes);
   int width = subRes->_data.cols();
   CALL_FIXED_SIZE_1(width, getEngine().distinct, subRes->_data, _keepIndices,
                     &result->_data);

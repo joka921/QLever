@@ -11,6 +11,7 @@
 #include "../global/Id.h"
 #include "../util/Exception.h"
 #include "IdTable.h"
+#include <gtest/gtest.h>
 
 using std::array;
 using std::condition_variable;
@@ -77,7 +78,14 @@ class ResultTable {
   // due to later use.
   // WARNING: Currently only operations that can run after a GroupBy copy
   //          the _localVocab of a subresult.
+
+private:
   std::shared_ptr<vector<string>> _localVocab;
+
+public:
+
+  const vector<string>& localVocab() const {return *_localVocab;}
+  FRIEND_TEST(GroupByTest, doGroupBy);
 
   struct GroupConcatResults {
     ResultType _resultType;
@@ -87,7 +95,14 @@ class ResultTable {
     std::vector<Id> _entries;
   };
 
-  // TODO(joka921) Comment
+
+
+  void shareLocalData(const ResultTable& other) {
+    _localVocab = other._localVocab;
+    _concatResults = other._concatResults;
+  }
+
+  // TODO(joka921) Comment and make private with interface
   std::shared_ptr<vector<GroupConcatResults>> _concatResults;
 
   ResultTable();

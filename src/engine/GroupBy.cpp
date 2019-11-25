@@ -176,7 +176,7 @@ void processGroup(const GroupBy::Aggregate& a, size_t blockStart,
                   size_t blockEnd, const IdTableStatic<IN_WIDTH>& input,
                   const vector<ResultTable::ResultType>& inputTypes,
                   IdTableStatic<OUT_WIDTH>* result, size_t resultRow,
-                  const ResultTable* inTable, ResultTable* outTable,
+                  [[maybe_unused]] const ResultTable* inTable, ResultTable* outTable,
                   const Index& index,
                   ad_utility::HashSet<size_t>& distinctHashSet) {
 
@@ -291,53 +291,8 @@ void processGroup(const GroupBy::Aggregate& a, size_t blockStart,
       auto entrySizeBefore = concatRes._entries.size();
       const auto combineLambda = [] (auto it, const auto& val) {*it = val;};
       processLambda(combineLambda, std::back_inserter(concatRes._entries));
-
-
-
-
-      if (inputTypes[a._inCol] == ResultTable::ResultType::VERBATIM) {
-        // TODO(joka921) No delimiter for last entry;
-        const auto combineValues = [delim](std::ostringstream* out, const auto& val ) {
-          *out << val << *delim;
-        };
-        out = processLambda(combineValues, std::ostringstream{});
-      } else if (inputTypes[a._inCol] == ResultTable::ResultType::FLOAT) {
-        const auto combineValues = [delim](std::ostringstream* out, const auto& val ) {
-          *out << ResultTable::floatFromVerbatim(val) << *delim;
-        };
-        out = processLambda(combineValues, std::ostringstream{});
-      } else if (inputTypes[a._inCol] == ResultTable::ResultType::TEXT) {
-        const auto combineValues = [delim, &index](std::ostringstream* out, const auto& val ) {
-          *out << index.getTextExcerpt(val) << *delim;
-        };
-        out = processLambda(combineValues, std::ostringstream{});
-
-      } else if (inputTypes[a._inCol] == ResultTable::ResultType::LOCAL_VOCAB) {
-        const auto combineValues = [delim, &inTable](std::ostringstream* out, const auto& val ) {
-          // TODO(schnelle): What's the correct way to handle OPTIONAL here
-          *out << inTable->idToOptionalString(val)
-                  .value_or("")
-              << *delim;
-        };
-        out = processLambda(combineValues, std::ostringstream{});
-      } else {
-        const auto combineValues = [delim, &index](std::ostringstream* out, const auto& val ) {
-          // TODO(schnelle): What's the correct way to handle OPTIONAL here
-          std::string entity =
-                  index.idToOptionalString(val).value_or("");
-          if (ad_utility::startsWith(entity, VALUE_PREFIX)) {
-            *out << ad_utility::convertIndexWordToValueLiteral(entity)
-                << *delim;
-          } else {
-            *out << entity << *delim;
-          }
-        };
-        out = processLambda(combineValues, std::ostringstream{});
-      }
-      (*result)(resultRow, a._outCol) = outTable->_localVocab->size();
-      auto str = out.str();
-      str.resize(str.size() - delim->size());
-      outTable->_localVocab->push_back(std::move(str));
+      (*result)(resultRow, a._outCol) = concatRes._offsets.size();
+      concatRes._offsets.emplace_back(entrySizeBefore, concatRes._entries.size());
       break;
     }
     case ParsedQuery::AggregateType::MAX: {
@@ -514,7 +469,7 @@ void GroupBy::computeResult(ResultTable* result) {
         result->_resultTypes[i] = ResultTable::ResultType::VERBATIM;
         break;
       case ParsedQuery::AggregateType::GROUP_CONCAT:
-        result->_resultTypes[i] = ResultTable::ResultType::LOCAL_VOCAB;
+        result->_resultTypes[i] = ResultTable::ResultType::CONCATENATION;
         break;
       case ParsedQuery::AggregateType::MAX:
         result->_resultTypes[i] =
