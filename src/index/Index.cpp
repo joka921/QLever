@@ -983,6 +983,18 @@ void Index::writeNonFunctionalRelation(
   }
 }
 
+// ____________________________________________________________________________________________
+void Index::LoadVocabularyForBenchmark(const string& onDiskBase) {
+  setOnDiskBase(onDiskBase);
+  readConfiguration();
+  _vocab.readFromFile(_onDiskBase + ".vocabulary",
+                      _onDiskLiterals ? _onDiskBase + ".literals-index" : "");
+
+  _totalVocabularySize = _vocab.size() + _vocab.getExternalVocab().size();
+  LOG(INFO) << "total vocab size is " << _totalVocabularySize << std::endl;
+}
+
+
 // _____________________________________________________________________________
 void Index::createFromOnDiskIndex(const string& onDiskBase) {
   setOnDiskBase(onDiskBase);

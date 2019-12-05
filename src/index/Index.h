@@ -126,6 +126,9 @@ class Index {
   // Read necessary meta data into memory and opens file handles.
   void createFromOnDiskIndex(const string& onDiskBase);
 
+  // only load the vocabulary and not the permutations
+  void LoadVocabularyForBenchmark(const string& onDiskBase);
+
   // Adds a text index to a fully initialized KB index.
   // Reads a context file and builds the index for the first time.
   void addTextFromContextFile(const string& contextFile);

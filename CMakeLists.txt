@@ -60,6 +60,13 @@ add_subdirectory(third_party/googletest/googletest)
 include_directories(third_party/googletest/googletest/include)
 
 ################################
+# GOOGLE BENCHMARK
+################################
+set(BENCHMARK_ENABLE_TESTING False)
+add_subdirectory(third_party/google-benchmark)
+include_directories(third_party/google-benchmark/include)
+
+################################
 # NLOHNMANN-JSON
 ################################
 # Header only, nothing to include
@@ -134,6 +141,7 @@ add_subdirectory(src/index)
 enable_testing()
 add_subdirectory(test)
 
+add_subdirectory(benchmark)
 
 
 configure_file(src/web/index.html index.html)
