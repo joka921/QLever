@@ -21,9 +21,15 @@ public:
   ByteBuffer(ByteBuffer&&) = default;
 
   // __________________________________________
-  ByteBuffer(ByteBuffer& other) {
+  ByteBuffer(const ByteBuffer& other) {
     resize(other.size());
     std::memcpy(data(), other.data(), size());
+  }
+
+  ByteBuffer& operator=(const ByteBuffer& other) {
+    resize(other.size());
+    std::memcpy(data(), other.data(), size());
+    return *this;
   }
 
   // ________________________________________

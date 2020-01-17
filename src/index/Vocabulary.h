@@ -24,6 +24,7 @@
 #include "./CompressedString.h"
 #include "./StringSortComparator.h"
 #include "ExternalVocabulary.h"
+#include "../util/CompressedDeque.h"
 
 using std::string;
 using std::vector;
@@ -33,7 +34,8 @@ struct AccessReturnTypeGetter {};
 
 template <>
 struct AccessReturnTypeGetter<string> {
-  using type = const string&;
+  //using type = const string&;
+  using type = string;
 };
 template <>
 struct AccessReturnTypeGetter<CompressedString> {
@@ -116,6 +118,7 @@ class Vocabulary {
   void writeToBinaryFileForMerging(const string& fileName) const;
 
   //! Append a word to the vocabulary. Wraps the std::vector method.
+  /*
   void push_back(const string& word) {
     if constexpr (_isCompressed) {
       _words.push_back(compressPrefix(word));
@@ -123,12 +126,13 @@ class Vocabulary {
       _words.push_back(word);
     }
   }
+   */
 
   //! Get the word with the given id or an empty optional if the
   //! word is not in the vocabulary.
   //! Only enabled when uncompressed which also means no externalization
   template <typename U = StringType, typename = enable_if_uncompressed<U>>
-  const std::optional<std::reference_wrapper<const string>> operator[](
+  const std::optional<const string> operator[](
       Id id) const {
     if (id < _words.size()) {
       return _words[static_cast<size_t>(id)];
@@ -144,7 +148,7 @@ class Vocabulary {
   const std::optional<string> idToOptionalString(Id id) const {
     if (id < _words.size()) {
       // internal, prefixCompressed word
-      return expandPrefix(_words[static_cast<size_t>(id)]);
+      return expandPrefix(CompressedString::fromString(_words[static_cast<size_t>(id)]));
     } else if (id == ID_NO_VALUE) {
       return std::nullopt;
     } else {
@@ -159,7 +163,7 @@ class Vocabulary {
   //! lvalue for compressedString and const& for string-based vocabulary
   AccessReturnType_t<StringType> at(Id id) const {
     if constexpr (_isCompressed) {
-      return expandPrefix(_words[static_cast<size_t>(id)]);
+      return expandPrefix(CompressedString::fromString(_words[static_cast<size_t>(id)]));
     } else {
       return _words[static_cast<size_t>(id)];
     }
@@ -170,8 +174,10 @@ class Vocabulary {
   //! Get the number of words in the vocabulary.
   size_t size() const { return _words.size(); }
 
+  /*
   //! Reserve space for the given number of words.
   void reserve(unsigned int n) { _words.reserve(n); }
+   */
 
   //! Get an Id from the vocabulary for some "normal" word.
   //! Return value signals if something was found at all.
@@ -398,7 +404,8 @@ class Vocabulary {
   // defaults to English
   vector<std::string> _internalizedLangs{"en"};
 
-  vector<StringType> _words;
+  //vector<StringType> _words;
+  CompressedQueue<1000> _words;
   ExternalVocabulary _externalLiterals;
   ComparatorType _caseComparator;
 };

@@ -65,6 +65,12 @@ include_directories(third_party/googletest/googletest/include)
 # Header only, nothing to include
 include_directories(third_party/json/)
 
+################################
+# LIBZSTD FOR COMPRESSION
+################################
+add_subdirectory(third_party/zstd/build/cmake)
+include_directories(third_party/zstd/lib)
+
 if (USE_PARALLEL)
     include(FindOpenMP)
     if(OPENMP_FOUND)

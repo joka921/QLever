@@ -17,44 +17,45 @@ using std::string;
 class CompressedString : private string {
  public:
   CompressedString() : string() {}
+  // TODO<joka921> disable the safety for testing the Deque;
+// private constructors and assignments internally used by the to and from
+// string conversions
+CompressedString(string&& other) : string(std::move(other)){};
 
-  // explicit conversions from strings
-  static CompressedString fromString(const string& other) { return other; }
+// _____________________________________________________________
+CompressedString(const string& other) : string(other){};
 
-  // ______________________________________________________________
-  static CompressedString fromString(string&& other) {
-    return std::move(other);
-  }
+// explicit conversions from strings
+static CompressedString fromString(const string& other) { return other; }
 
-  // explicit conversions to strings and string_views
-  string toString() const { return *this; }
+// ______________________________________________________________
+static CompressedString fromString(string&& other) {
+  return std::move(other);
+}
 
-  // ______________________________________________________
-  std::string_view toStringView() const { return *this; }
+// explicit conversions to strings and string_views
+string toString() const { return *this; }
 
-  //  _______________________________________________________
-  bool empty() const { return string::empty(); }
+// ______________________________________________________
+std::string_view toStringView() const { return *this; }
 
-  // __________________________________________________________
-  const char& operator[](size_t pos) const { return string::operator[](pos); }
+//  _______________________________________________________
+bool empty() const { return string::empty(); }
 
- private:
-  // private constructors and assignments internally used by the to and from
-  // string conversions
-  CompressedString(string&& other) : string(std::move(other)){};
+// __________________________________________________________
+const char& operator[](size_t pos) const { return string::operator[](pos); }
 
-  // _____________________________________________________________
-  CompressedString(const string& other) : string(other){};
+private:
 
-  // _____________________________________________________________
-  CompressedString& operator=(string&& other) {
-    *this = CompressedString(std::move(other));
-    return *this;
-  }
+// _____________________________________________________________
+CompressedString& operator=(string&& other) {
+  *this = CompressedString(std::move(other));
+  return *this;
+}
 
-  // _______________________________________________________________
-  CompressedString& operator=(const string& other) {
-    *this = CompressedString(other);
-    return *this;
-  }
+// _______________________________________________________________
+CompressedString& operator=(const string& other) {
+  *this = CompressedString(other);
+  return *this;
+}
 };

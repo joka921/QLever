@@ -190,7 +190,7 @@ class Index {
   // --------------------------------------------------------------------------
   // TEXT RETRIEVAL
   // --------------------------------------------------------------------------
-  const string& wordIdToString(Id id) const;
+  const string wordIdToString(Id id) const;
 
   size_t getSizeEstimate(const string& words) const;
 

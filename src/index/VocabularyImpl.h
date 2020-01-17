@@ -26,11 +26,18 @@ void Vocabulary<S, C>::readFromFile(const string& fileName,
   string line;
   [[maybe_unused]] bool first = true;
   std::string lastExpandedString;
+  std::vector<std::string> block;
   while (std::getline(in, line)) {
+    block.push_back(line);
+    if (block.size() == _words.blockSize()) {
+      _words.appendBlock(block);
+      block.clear();
+    }
+    /*
     if constexpr (_isCompressed) {
       // when we read from file it means that all preprocessing has been done
       // and the prefixes are already stripped in the file
-      _words.push_back(CompressedString::fromString(line));
+      block.push_back(line);
       auto str = expandPrefix(_words.back());
       if (!first) {
         if (!(_caseComparator.compare(lastExpandedString, str) <= 0)) {
@@ -45,6 +52,11 @@ void Vocabulary<S, C>::readFromFile(const string& fileName,
     } else {
       _words.push_back(line);
     }
+       */
+  }
+  if (!block.empty()) {
+    _words.appendBlock(block);
+    block.clear();
   }
   in.close();
   LOG(INFO) << "Done reading vocabulary from file.\n";
@@ -107,11 +119,14 @@ template <class S, class C>
 template <typename, typename>
 void Vocabulary<S, C>::createFromSet(const ad_utility::HashSet<S>& set) {
   LOG(INFO) << "Creating vocabulary from set ...\n";
-  _words.clear();
-  _words.reserve(set.size());
-  _words.insert(begin(_words), begin(set), end(set));
+  //TODO<joka921> this involves quite some copying and could be more effective
+  std::vector<std::string> buf;
+  buf.reserve(set.size());
+  buf.insert(begin(buf), begin(set), end(set));
   LOG(INFO) << "... sorting ...\n";
-  std::sort(begin(_words), end(_words), _caseComparator);
+  std::sort(begin(buf), end(buf), _caseComparator);
+  _words.clear();
+  _words.buildFromVector(buf);
   LOG(INFO) << "Done creating vocabulary.\n";
 }
 
@@ -128,6 +143,7 @@ ad_utility::HashMap<string, Id> Vocabulary<S, C>::asMap() {
   return map;
 }
 
+/*
 // _____________________________________________________________________________
 template <class S, class C>
 template <typename, typename>
@@ -144,6 +160,7 @@ void Vocabulary<S, C>::externalizeLiterals(const string& fileName) {
   _externalLiterals.buildFromVector(extVocab, fileName);
   LOG(INFO) << "Done externalizing literals." << std::endl;
 }
+*/
 
 // _____________________________________________________________________________
 template <class S, class C>
