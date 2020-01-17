@@ -12,6 +12,7 @@
 #include <vector>
 #include "../util/File.h"
 #include "Id.h"
+#include "../util/ByteBuffer.h"
 
 typedef uint32_t PatternID;
 
@@ -93,7 +94,7 @@ template <typename IndexT, typename DataT>
 class CompactStringVector {
  public:
   CompactStringVector()
-      : _data(nullptr), _size(0), _indexEnd(0), _dataSize(0) {}
+      : _size(0), _indexEnd(0), _dataSize(0) {}
 
   CompactStringVector(const std::vector<std::vector<DataT>>& data) {
     build(data);
@@ -103,18 +104,19 @@ class CompactStringVector {
     load(file, offset);
   }
 
-  virtual ~CompactStringVector() { delete[] _data; }
+  virtual ~CompactStringVector() {}
 
   /**
    * @brief Fills this CompactStringVector with data.
    * @param The data from which to build the vector.
    */
-  void build(const std::vector<std::vector<DataT>>& data) {
-    _size = data.size();
+   template <typename NestedContainer>
+  void build(const NestedContainer& input) {
+    _size = input.size();
     _indexEnd = (_size + 1) * sizeof(IndexT);
     size_t dataCount = 0;
     for (size_t i = 0; i < _size; i++) {
-      dataCount += data[i].size();
+      dataCount += input[i].size();
     }
     if (dataCount > std::numeric_limits<IndexT>::max()) {
       throw std::runtime_error(
@@ -122,21 +124,21 @@ class CompactStringVector {
           std::to_string(std::numeric_limits<IndexT>::max()));
     }
     _dataSize = _indexEnd + sizeof(DataT) * dataCount;
-    _data = new uint8_t[_dataSize];
+    resize(_dataSize);
     IndexT currentLength = 0;
     size_t indPos = 0;
     for (IndexT i = 0; i < _size; i++) {
       // add an entry to the index
-      std::memcpy(_data + (indPos * sizeof(IndexT)), &currentLength,
+      std::memcpy(data() + (indPos * sizeof(IndexT)), &currentLength,
                   sizeof(IndexT));
       // copy the vectors actual data
-      std::memcpy(_data + (_indexEnd + currentLength * sizeof(DataT)),
-                  data[i].data(), data[i].size() * sizeof(DataT));
+      std::memcpy(data() + (_indexEnd + currentLength * sizeof(DataT)),
+                  input[i].data(), input[i].size() * sizeof(DataT));
       indPos++;
-      currentLength += data[i].size();
+      currentLength += input[i].size();
     }
     // add a final entry that stores the end of the data field
-    std::memcpy(_data + (indPos * sizeof(IndexT)), &currentLength,
+    std::memcpy(data() + (indPos * sizeof(IndexT)), &currentLength,
                 sizeof(IndexT));
   }
 
@@ -144,8 +146,8 @@ class CompactStringVector {
     file.read(&_size, sizeof(size_t), offset);
     file.read(&_dataSize, sizeof(size_t), offset + sizeof(size_t));
     _indexEnd = (_size + 1) * sizeof(IndexT);
-    _data = new uint8_t[_dataSize];
-    file.read(_data, _dataSize, offset + 2 * sizeof(size_t));
+    resize(_dataSize);
+    file.read(data(), _dataSize, offset + 2 * sizeof(size_t));
   }
 
   CompactStringVector& operator=(const CompactStringVector&) = delete;
@@ -160,11 +162,31 @@ class CompactStringVector {
   size_t write(ad_utility::File& file) {
     file.write(&_size, sizeof(size_t));
     file.write(&_dataSize, sizeof(size_t));
-    file.write(_data, _dataSize);
+    file.write(data(), _dataSize);
     return _dataSize + 2 * sizeof(size_t);
   }
+  /**
+   * @brief return a serialized representation, making this element invalid
+   * @return
+   */
+   ad_utility::ByteBuffer moveToBuffer() && {
+     assert(_data.size() == _dataSize + sizeof(_size) + sizeof(_dataSize));
+     std::memcpy(data() + _dataSize, &_size, sizeof(_size));
+    std::memcpy(data() + _dataSize + sizeof(_size), &_dataSize, sizeof(_dataSize));
+    return std::move(_data);
+  }
 
-  bool ready() const { return _data != nullptr; }
+  /// Construct from a ByteBuffer that war created by a call to moveToBuffer
+  CompactStringVector(ad_utility::ByteBuffer&& buf) : _data(std::move(buf)) {
+     _dataSize = _data.size() - controlBlockSize();
+    std::memcpy(&_size, data() + _dataSize, sizeof(_size));
+    std::memcpy(&_dataSize, data() + _dataSize + sizeof(_size), sizeof(_dataSize));
+    AD_CHECK(_dataSize == _data.size() - controlBlockSize());
+    _indexEnd = (_size + 1) * sizeof(IndexT);
+  }
+
+
+  bool ready() const { return data() != nullptr; }
 
   /**
    * @brief operator []
@@ -172,20 +194,24 @@ class CompactStringVector {
    * @return A std::pair containing a pointer to the data, and the number of
    *         elements stored at the pointers target.
    */
-  const std::pair<DataT*, size_t> operator[](size_t i) const {
+  const std::pair<const DataT*, size_t> operator[](size_t i) const {
     IndexT ind, nextInd;
-    std::memcpy(&ind, _data + (i * sizeof(IndexT)), sizeof(IndexT));
-    std::memcpy(&nextInd, _data + ((i + 1) * sizeof(IndexT)), sizeof(IndexT));
-    return std::pair<DataT*, size_t>(
-        reinterpret_cast<DataT*>(_data + (_indexEnd + sizeof(DataT) * ind)),
-        nextInd - ind);
+    std::memcpy(&ind, data() + (i * sizeof(IndexT)), sizeof(IndexT));
+    std::memcpy(&nextInd, data() + ((i + 1) * sizeof(IndexT)), sizeof(IndexT));
+    return {
+        reinterpret_cast<const DataT*>(data() + (_indexEnd + sizeof(DataT) * ind)),
+        nextInd - ind};
   }
 
  private:
-  uint8_t* _data;
+  ad_utility::ByteBuffer _data;
+  uint8_t* data() {return _data.data();}
+  const uint8_t* data() const {return _data.data();}
+  void resize(size_t n) {_data.resize(n + controlBlockSize());}
   size_t _size;
   size_t _indexEnd;
   size_t _dataSize;
+  constexpr size_t controlBlockSize() const {return sizeof(_size) + sizeof(_dataSize);}
 };
 
 namespace std {

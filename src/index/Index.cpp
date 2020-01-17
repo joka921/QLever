@@ -10,6 +10,7 @@
 #include <stxxl/algorithm>
 #include <stxxl/map>
 #include <unordered_map>
+#include "../util/CompressedDeque.h"
 
 #include "../parser/NTriplesParser.h"
 #include "../parser/ParallelParseBuffer.h"
