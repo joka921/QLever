@@ -33,4 +33,4 @@ add_library(engine
         IdTable.h
         )
 
-target_link_libraries(engine index parser)
+target_link_libraries(engine index parser libzstd_static)

@@ -14,8 +14,32 @@
 #include "../global/Pattern.h"
 #include "../util/Log.h"
 #include "ByteBuffer.h"
+#include "zstd.h"
+#include "./Exception.h"
 
 using std::vector;
+
+class ZstdCompressor {
+public:
+  static ad_utility::ByteBuffer compress(const ad_utility::ByteBuffer& in) {
+    const size_t bufSize = ZSTD_compressBound(in.size());
+    std::unique_ptr<uint8_t[]> buf{new uint8_t[bufSize]};
+    constexpr int compressionLevel = 3;
+    const auto sz = ZSTD_compress(buf.get(), bufSize, in.data(), in.size(), compressionLevel);
+    LOG(INFO) << "Compressed from " << in.size() << " to " << sz << " bytes\n";
+    return {buf.get(), sz};
+  }
+  static ad_utility::ByteBuffer decompress(const ad_utility::ByteBuffer& in) {
+    unsigned long long const bufSize = ZSTD_getFrameContentSize(in.data(), in.size());
+    AD_CHECK(bufSize != ZSTD_CONTENTSIZE_ERROR); //, "%s: not compressed by zstd!", fname);
+    AD_CHECK(bufSize != ZSTD_CONTENTSIZE_UNKNOWN);  //, "%s: original size unknown!", fname);
+    ad_utility::ByteBuffer buf{bufSize};
+    const auto sz = ZSTD_decompress(buf.data(), bufSize, in.data(), in.size());
+    AD_CHECK(sz == bufSize); // this is guaranteed by zstd
+    LOG(INFO) << "Decompressed from " << in.size() << " to " << sz << " bytes\n";
+    return buf;
+  }
+};
 
 template <size_t Blocksize>
 class CompressedQueue {
@@ -115,7 +139,7 @@ public:
     _size += content.size();
     CompactStringVector<size_t, char> compact;
     compact.build(content);
-    _data.emplace_back(std::move(compact).moveToBuffer());
+    _data.emplace_back(ZstdCompressor::compress(std::move(compact).moveToBuffer()));
   }
 
   void clear() {
@@ -148,7 +172,7 @@ private:
 
   CompactStringVector<size_t, char> getBlock(size_t idx) const {
     // todo implement compression
-    auto cpy = _data[idx];
+    auto cpy = ZstdCompressor::decompress(_data[idx]);
     return {std::move(cpy)};
   }
   bool _finished = false; // no more write access allowed if true

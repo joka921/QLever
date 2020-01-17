@@ -19,4 +19,4 @@ target_link_libraries(index parser ${STXXL_LIBRARIES} ${ICU_LIBRARIES})
 add_library(metaConverter
             MetaDataConverter.cpp MetaDataConverter.h)
 
-target_link_libraries(metaConverter index)
+target_link_libraries(metaConverter index libzstd_static)

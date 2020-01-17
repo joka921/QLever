@@ -124,4 +124,4 @@ target_link_libraries(StringSortComparatorTest gtest_main ${CMAKE_THREAD_LIBS_IN
 
 add_executable(CompressedDequeTest CompressedDequeTest.cpp)
 add_test(CompressedDequeTest CompressedDequeTest)
-target_link_libraries(CompressedDequeTest gtest_main ${CMAKE_THREAD_LIBS_INIT} )
+target_link_libraries(CompressedDequeTest libzstd_static gtest_main ${CMAKE_THREAD_LIBS_INIT} )

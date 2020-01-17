@@ -20,6 +20,11 @@ public:
   ByteBuffer() = default;
   ByteBuffer(ByteBuffer&&) = default;
 
+  ByteBuffer(const uint8_t* arr, size_t sz) {
+    resize(sz);
+    std::memcpy(data(), arr, sz);
+  }
+
   // __________________________________________
   ByteBuffer(const ByteBuffer& other) {
     resize(other.size());
