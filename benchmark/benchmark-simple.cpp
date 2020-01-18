@@ -224,28 +224,30 @@ static void BM_Top_100(benchmark::State& state) {
 
 }
 
-static void BM_VocabularyRetriever(benchmark::State& state, const std::string& indexPrefix) {
-  Index idx;
-  idx.LoadVocabularyForBenchmark(indexPrefix);
-  auto upper = idx.getVocab().size();
+static void BM_VocabularyRetriever(benchmark::State& state, const std::unique_ptr<Index>& indexPrefix) {
+  const auto& vocab = indexPrefix->getVocab();
+  auto upper = vocab.size();
   for (auto s : state) {
     // This code gets timed
     state.PauseTiming();
-    auto x = randomSizeT(state.range(0), upper);
+    auto x = randomSizeT(state.range(0), upper - 1);
     state.ResumeTiming();
     std::vector<std::string> res;
     res.reserve(state.range(0));
     benchmark::DoNotOptimize(res.data());
     for (auto& id : x) {
-      res.push_back(idx.getVocab().at(id));
+      if (id >= vocab.size()) {
+        LOG(ERROR) << "found a word that is too big" << std::endl;
+      }
+      res.push_back(vocab.at(id));
     }
 
     // __gnu_parallel::partial_sort(x.begin(), x.begin() + 100, x.end(), [](const auto& a, const auto&b){return a[0] < b[0];});
   }
 
 }
-static std::string idxPrefix;
-BENCHMARK_CAPTURE(BM_VocabularyRetriever, vocabularyRetriever, idxPrefix)->Range(128, 1ul << 15);
+static std::unique_ptr<Index> idx;
+BENCHMARK_CAPTURE(BM_VocabularyRetriever, vocabularyRetriever, idx)->Range(1ul << 15,  50 * 1ul << 20);
 
 /*
 // Register the function as a benchmark
@@ -272,6 +274,10 @@ int main(int argc, char **argv)
     LOG(ERROR) << "Usage: " << argv[0] << " <index-prefix>\n";
     exit(EXIT_FAILURE);
   }
+  LOG(INFO) << "Benchmarking vocabulary with prefix " << argv[1] << "\n";
+  idx.reset(new Index);
+  idx->LoadVocabularyForBenchmark(argv[1]);
+
   benchmark::Initialize(&argc, argv);
   benchmark::RunSpecifiedBenchmarks();
 }
