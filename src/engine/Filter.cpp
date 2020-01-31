@@ -118,14 +118,17 @@ string Filter::getDescriptor() const {
 template <ResultTable::ResultType T, int WIDTH>
 void Filter::computeFilter(IdTableStatic<WIDTH>* result, size_t lhs, size_t rhs,
                            const IdTableStatic<WIDTH>& input) const {
+  const auto doFilter = [&](auto F) {
+    getEngine().filter(
+            input,
+            [lhs, rhs, F](const auto& e) {
+              return F(ValueReader<T>::get(e[lhs]), ValueReader<T>::get(e[rhs]));
+            },
+            result);
+  };
   switch (_type) {
     case SparqlFilter::EQ:
-      getEngine().filter(
-          input,
-          [lhs, rhs](const auto& e) {
-            return ValueReader<T>::get(e[lhs]) == ValueReader<T>::get(e[rhs]);
-          },
-          result);
+      doFilter(std::equal_to<>{});
       break;
     case SparqlFilter::NE:
       getEngine().filter(
@@ -136,36 +139,16 @@ void Filter::computeFilter(IdTableStatic<WIDTH>* result, size_t lhs, size_t rhs,
           result);
       break;
     case SparqlFilter::LT:
-      getEngine().filter(
-          input,
-          [lhs, rhs](const auto& e) {
-            return ValueReader<T>::get(e[lhs]) < ValueReader<T>::get(e[rhs]);
-          },
-          result);
+      doFilter(std::less{});
       break;
     case SparqlFilter::LE:
-      getEngine().filter(
-          input,
-          [lhs, rhs](const auto& e) {
-            return ValueReader<T>::get(e[lhs]) <= ValueReader<T>::get(e[rhs]);
-          },
-          result);
+      doFilter(std::less_equal{});
       break;
     case SparqlFilter::GT:
-      getEngine().filter(
-          input,
-          [lhs, rhs](const auto& e) {
-            return ValueReader<T>::get(e[lhs]) > ValueReader<T>::get(e[rhs]);
-          },
-          result);
+      doFilter(std::greater{});
       break;
     case SparqlFilter::GE:
-      getEngine().filter(
-          input,
-          [lhs, rhs](const auto& e) {
-            return ValueReader<T>::get(e[lhs]) >= ValueReader<T>::get(e[rhs]);
-          },
-          result);
+      doFilter(std::greater_equal{});
       break;
     case SparqlFilter::LANG_MATCHES:
       AD_THROW(ad_semsearch::Exception::NOT_YET_IMPLEMENTED,
@@ -256,160 +239,78 @@ void Filter::computeFilterFixedValue(
     shared_ptr<const ResultTable> subRes) const {
   bool lhs_is_sorted =
       subRes->_sortedBy.size() > 0 && subRes->_sortedBy[0] == lhs;
-  Id* rhs_array = new Id[res->cols()];
-  IdTable::Row rhs_row(rhs_array, res->cols());
-  switch (_type) {
-    case SparqlFilter::EQ:
-      if (lhs_is_sorted) {
-        // The input data is sorted, use binary search to locate the first
-        // and last element that match rhs and copy the range.
-        rhs_array[lhs] = rhs;
-        const auto& lower = std::lower_bound(
-            input.begin(), input.end(), rhs_row,
-            [lhs](const auto& l, const auto& r) {
-              return ValueReader<T>::get(l[lhs]) < ValueReader<T>::get(r[lhs]);
-            });
-        if (lower != input.end() && (*lower)[lhs] == rhs) {
-          // an element equal to rhs exists in the vector
-          const auto& upper = std::upper_bound(
-              lower, input.end(), rhs_row, [lhs](const auto& l, const auto& r) {
-                return ValueReader<T>::get(l[lhs]) <
-                       ValueReader<T>::get(r[lhs]);
+
+  const auto never = []([[maybe_unused]] const auto&x, [[maybe_unused]] const auto&y) { return false;};
+  const auto always = []([[maybe_unused]] const auto&x, [[maybe_unused]] const auto&y) { return true;};
+
+  const auto performBinarySearchFilter = [&](auto TooLow, auto NotTooBig, auto ActualPred ) {
+    if (lhs_is_sorted) {
+      // The input data is sorted, use binary search to locate the first
+      // and last element that match rhs and copy the range.
+      const auto &lower = std::lower_bound(
+              input.begin(), input.end(), rhs,
+              [lhs, TooLow](const auto &l, const auto &r) {
+                return TooLow(ValueReader<T>::get(l[lhs]), ValueReader<T>::get(r));
               });
-          res->insert(res->end(), lower, upper);
-        }
-      } else {
-        getEngine().filter(
-            input, [lhs, rhs](const auto& e) { return e[lhs] == rhs; }, res);
-      }
+
+      const auto &upper = std::lower_bound(
+              lower, input.end(), rhs, [lhs, NotTooBig](const auto &l, const auto &r) {
+                return NotTooBig(ValueReader<T>::get(l[lhs]),
+                                 ValueReader<T>::get(r));
+              });
+
+      res->insert(res->end(), lower, upper);
+    } else {
+      getEngine().filter(
+              input,
+              [lhs, rhs, ActualPred](const auto& e) {
+                return ActualPred(ValueReader<T>::get(e[lhs]) ,ValueReader<T>::get(rhs));
+              },
+              res);
+    }
+    };
+
+    switch (_type) {
+    case SparqlFilter::EQ:
+      performBinarySearchFilter(std::less{}, std::less_equal{}, std::equal_to{});
       break;
     case SparqlFilter::NE:
       if (lhs_is_sorted) {
         // The input data is sorted, use binary search to locate the first
         // and last element that match rhs and copy the range.
-        rhs_array[lhs] = rhs;
         const auto& lower = std::lower_bound(
-            input.begin(), input.end(), rhs_row,
+            input.begin(), input.end(), rhs,
             [lhs](const auto& l, const auto& r) {
-              return ValueReader<T>::get(l[lhs]) < ValueReader<T>::get(r[lhs]);
+              return ValueReader<T>::get(l[lhs]) < ValueReader<T>::get(r);
             });
-        if (lower != input.end() && (*lower)[lhs] == rhs) {
-          // rhs appears within the input, take all elements before and after it
-          const auto& upper = std::upper_bound(
-              lower, input.end(), rhs_row, [lhs](const auto& l, const auto& r) {
-                return ValueReader<T>::get(l[lhs]) <
-                       ValueReader<T>::get(r[lhs]);
-              });
-          res->insert(res->end(), input.begin(), lower);
-          res->insert(res->end(), upper, input.end());
-        } else {
-          // rhs does not appear within the input
-          res->insert(res->end(), input.begin(), input.end());
-        }
+        const auto& upper = std::upper_bound(
+            lower, input.end(), rhs, [lhs](const auto& l, const auto& r) {
+              return ValueReader<T>::get(l) <
+                     ValueReader<T>::get(r[lhs]);
+            });
+        res->insert(res->end(), input.begin(), lower);
+        res->insert(res->end(), upper, input.end());
       } else {
         getEngine().filter(
             input, [lhs, rhs](const auto& e) { return e[lhs] != rhs; }, res);
       }
       break;
     case SparqlFilter::LT:
-      if (lhs_is_sorted) {
-        // The input data is sorted, use binary search to locate the first
-        // and last element that match rhs and copy the range.
-        rhs_array[lhs] = rhs;
-        const auto& lower = std::lower_bound(
-            input.begin(), input.end(), rhs_row,
-            [lhs](const auto& l, const auto& r) {
-              return ValueReader<T>::get(l[lhs]) < ValueReader<T>::get(r[lhs]);
-            });
-        res->insert(res->end(), input.begin(), lower);
-      } else {
-        getEngine().filter(
-            input,
-            [lhs, rhs](const auto& e) {
-              return ValueReader<T>::get(e[lhs]) < ValueReader<T>::get(rhs);
-            },
-            res);
-      }
+      performBinarySearchFilter(never, std::less{}, std::less{});
       break;
     case SparqlFilter::LE:
-      if (lhs_is_sorted) {
-        // The input data is sorted, use binary search to locate the first
-        // and last element that match rhs and copy the range.
-        rhs_array[lhs] = rhs;
-        const auto& upper = std::upper_bound(
-            input.begin(), input.end(), rhs_row,
-            [lhs](const auto& l, const auto& r) {
-              return ValueReader<T>::get(l[lhs]) < ValueReader<T>::get(r[lhs]);
-            });
-        res->insert(res->end(), input.begin(), upper);
-      } else {
-        getEngine().filter(
-            input,
-            [lhs, rhs](const auto& e) {
-              return ValueReader<T>::get(e[lhs]) <= ValueReader<T>::get(rhs);
-            },
-            res);
-      }
+      performBinarySearchFilter(never, std::less_equal{}, std::less_equal{});
       break;
     case SparqlFilter::GT:
-      if (lhs_is_sorted) {
-        // The input data is sorted, use binary search to locate the first
-        // and last element that match rhs and copy the range.
-        rhs_array[lhs] = rhs;
-        const auto& upper = std::upper_bound(
-            input.begin(), input.end(), rhs_row,
-            [lhs](const auto& l, const auto& r) {
-              return ValueReader<T>::get(l[lhs]) < ValueReader<T>::get(r[lhs]);
-            });
-        // an element equal to rhs exists in the vector
-        res->insert(res->end(), upper, input.end());
-      } else {
-        getEngine().filter(
-            input,
-            [lhs, rhs](const auto& e) {
-              return ValueReader<T>::get(e[lhs]) > ValueReader<T>::get(rhs);
-            },
-            res);
-      }
+      performBinarySearchFilter(std::less_equal{}, always, std::greater{});
       break;
     case SparqlFilter::GE:
-      if (lhs_is_sorted) {
-        // The input data is sorted, use binary search to locate the first
-        // and last element that match rhs and copy the range.
-        rhs_array[lhs] = rhs;
-        const auto& lower = std::lower_bound(
-            input.begin(), input.end(), rhs_row,
-            [lhs](const auto& l, const auto& r) {
-              return ValueReader<T>::get(l[lhs]) < ValueReader<T>::get(r[lhs]);
-            });
-        // an element equal to rhs exists in the vector
-        res->insert(res->end(), lower, input.end());
-      } else {
-        getEngine().filter(
-            input,
-            [lhs, rhs](const auto& e) {
-              return ValueReader<T>::get(e[lhs]) >= ValueReader<T>::get(rhs);
-            },
-            res);
-      }
+      performBinarySearchFilter(std::less{}, always, std::greater_equal{});
       break;
     case SparqlFilter::LANG_MATCHES:
-      getEngine().filter(
-          input,
-          [this, lhs, &subRes](const auto& e) {
-            std::optional<string> entity;
-            if constexpr (T == ResultTable::ResultType::KB) {
-              entity = getIndex().idToOptionalString(e[lhs]);
-            } else if (T == ResultTable::ResultType::LOCAL_VOCAB) {
-              entity = subRes->idToOptionalString(e[lhs]);
-            }
-            if (!entity) {
-              return true;
-            }
-            return ad_utility::endsWith(entity.value(), _rhs);
-          },
-          res);
-      break;
+    AD_THROW(ad_semsearch::Exception::NOT_YET_IMPLEMENTED,
+             "Language filtering is performed by adding special triples now. This should never happen. Please report to the "
+             "developers.");
     case SparqlFilter::PREFIX:
       // Check if the prefix filter can be applied. Use the regex filter
       // otherwise.
@@ -419,27 +320,20 @@ void Filter::computeFilterFixedValue(
         // TODO<joka921>: handle Levels correctly;
         auto [lowerBound, upperBound] = getIndex().getVocab().prefix_range(rhs);
 
-        LOG(DEBUG) << "upper and lower bound are " << upperBound << ' '
-                   << lowerBound << std::endl;
         if (lhs_is_sorted) {
           // The input data is sorted, use binary search to locate the first
           // and last element that match rhs and copy the range.
-          rhs_array[lhs] = lowerBound;
           const auto& lower = std::lower_bound(
-              input.begin(), input.end(), rhs_row,
-              [lhs](const auto& l, const auto& r) { return l[lhs] < r[lhs]; });
-          if (lower != input.end()) {
-            // There is at least one element in the input that is also within
-            // the range, look for the upper boundary and then copy all elements
+              input.begin(), input.end(), lowerBound,
+              [lhs](const auto& l, const auto& r) { return l[lhs] < r; });
+            // look for the upper boundary and then copy all elements
             // within the range.
-            rhs_array[lhs] = upperBound;
             const auto& upper =
-                std::lower_bound(lower, input.end(), rhs_row,
+                std::lower_bound(lower, input.end(), upperBound,
                                  [lhs](const auto& l, const auto& r) {
-                                   return l[lhs] < r[lhs];
+                                   return l[lhs] < r;
                                  });
             res->insert(res->end(), lower, upper);
-          }
         } else {
           getEngine().filter(
               input,
@@ -484,7 +378,6 @@ void Filter::computeFilterFixedValue(
           res);
     } break;
   }
-  delete[] rhs_array;
 }
 
 // _____________________________________________________________________________
