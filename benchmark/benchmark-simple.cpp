@@ -6,18 +6,20 @@
 //#include <hpx/hpx_init.hpp>
 //#include <hpx/parallel/algorithm.hpp>
 #include <benchmark/benchmark.h>
-#include <cmath>
-#include <vector>
-#include <random>
+
 #include <algorithm>
+#include <cmath>
+#include <cstring>
 #include <deque>
+#include <random>
+#include <vector>
 //#include <parallel/algorithm>
 
 double SomeFunction() {
   return std::sqrt(2.0);
 }
 
-static constexpr size_t sz = 1;
+static constexpr size_t sz = 5;
 
 template <size_t A>
 std::vector<std::array<size_t, A>> randomVector(size_t size, size_t upper) {
@@ -41,7 +43,7 @@ std::vector<std::array<size_t, A>> randomVector(size_t size, size_t upper) {
   return vec;
 }
 template <size_t A>
-std::vector<std::array<float, A>> randomFloatVector(size_t size, size_t upper) {
+std::vector<std::array<size_t, A>> randomFloatVector(size_t size, size_t upper) {
   // First create an instance of an engine.
   std::random_device rnd_device;
   // Specify the engine and distribution.
@@ -49,14 +51,15 @@ std::vector<std::array<float, A>> randomFloatVector(size_t size, size_t upper) {
   std::uniform_int_distribution<size_t> dist {0, upper};
 
   auto gen = [&dist, &mersenne_engine](){
-    std::array<float, A> res;
+    std::array<size_t, A> res;
     for (auto& x : res) {
-      x = dist(mersenne_engine);
+      float f = dist(mersenne_engine);
+      std::memcpy(&x, &f, sizeof(float));
     }
     return res;
   };
 
-  std::vector<std::array<float, A>> vec(size);
+  std::vector<std::array<size_t, A>> vec(size);
 
   std::generate(std::begin(vec), std::end(vec), gen);
   return vec;
@@ -239,7 +242,11 @@ static void BM_Float_Sort(benchmark::State& state) {
     state.PauseTiming();
     auto x = randomFloatVector<sz>(state.range(0), 50000);
     state.ResumeTiming();
-    std::sort(x.begin(), x.end(), [](const auto& a, const auto&b){return a[0] < b[0];});
+    std::sort(x.begin(), x.end(), [](const auto& a, const auto&b){
+      float f1, f2;
+      std::memcpy(&f1, &a[0], sizeof(float));
+      std::memcpy(&f2, &b[0], sizeof(float));
+      return f1 < f2;});
   }
 }
 
