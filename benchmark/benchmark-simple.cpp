@@ -3,8 +3,8 @@
 //
 
 
-#include <hpx/hpx_init.hpp>
-#include <hpx/parallel/algorithm.hpp>
+//#include <hpx/hpx_init.hpp>
+//#include <hpx/parallel/algorithm.hpp>
 #include <benchmark/benchmark.h>
 #include <cmath>
 #include <vector>
@@ -16,6 +16,8 @@
 double SomeFunction() {
   return std::sqrt(2.0);
 }
+
+static constexpr size_t sz = 1;
 
 template <size_t A>
 std::vector<std::array<size_t, A>> randomVector(size_t size, size_t upper) {
@@ -34,6 +36,27 @@ std::vector<std::array<size_t, A>> randomVector(size_t size, size_t upper) {
   };
 
   std::vector<std::array<size_t, A>> vec(size);
+
+  std::generate(std::begin(vec), std::end(vec), gen);
+  return vec;
+}
+template <size_t A>
+std::vector<std::array<float, A>> randomFloatVector(size_t size, size_t upper) {
+  // First create an instance of an engine.
+  std::random_device rnd_device;
+  // Specify the engine and distribution.
+  std::mt19937 mersenne_engine {rnd_device()};  // Generates random integers
+  std::uniform_int_distribution<size_t> dist {0, upper};
+
+  auto gen = [&dist, &mersenne_engine](){
+    std::array<float, A> res;
+    for (auto& x : res) {
+      x = dist(mersenne_engine);
+    }
+    return res;
+  };
+
+  std::vector<std::array<float, A>> vec(size);
 
   std::generate(std::begin(vec), std::end(vec), gen);
   return vec;
@@ -70,6 +93,7 @@ auto filter(const Vec<A>& inp, const size_t threshold) {
 
 }
 
+/*
 template <size_t A>
 auto filter_hpx(const Vec<A>& inp, const size_t threshold) {
   auto pred = [threshold](const auto& a) {return a[0] >= threshold;};
@@ -112,7 +136,6 @@ auto filter_branchless(const Vec<A>& inp, size_t threshold) {
 }
 
 
-static constexpr size_t sz = 5;
 
 static void BM_SomeFunction(benchmark::State& state) {
   // Perform setup here
@@ -196,6 +219,7 @@ static void BM_Reserve(benchmark::State& state) {
     auto y = filter_reserve(x, 1000);
   }
 }
+ */
 
 static void BM_Sort(benchmark::State& state) {
   // Perform setup here
@@ -208,6 +232,18 @@ static void BM_Sort(benchmark::State& state) {
   }
 }
 
+static void BM_Float_Sort(benchmark::State& state) {
+  // Perform setup here
+  for (auto s : state) {
+    // This code gets timed
+    state.PauseTiming();
+    auto x = randomFloatVector<sz>(state.range(0), 50000);
+    state.ResumeTiming();
+    std::sort(x.begin(), x.end(), [](const auto& a, const auto&b){return a[0] < b[0];});
+  }
+}
+
+/*
 static void BM_HPX_Sort(benchmark::State& state) {
   // Perform setup here
   for (auto s : state) {
@@ -269,8 +305,10 @@ static void BM_Top_100(benchmark::State& state) {
 
 
 }
+ */
 
 // Register the function as a benchmark
+/*
 BENCHMARK(BM_COPY)->Range(1<<15, 1ul << 27);
 BENCHMARK(BM_Filter_hpx)->Range(1<<15, 1ul << 27ul);
 BENCHMARK(BM_SomeFunction)->Range(1<<26, 1ul << 28ul);
@@ -279,23 +317,30 @@ BENCHMARK(BM_HPX_SortPar)->Range(1ul << 23ul, 1ul << 28ul);
 BENCHMARK(BM_Branchless)->Range(1024, 1ul << 26ul);
 BENCHMARK(BM_parallel)->Range(1024, 1ul << 26ul);
 BENCHMARK(BM_Top_100)->Range(1024, 1ul << 26ul);
+ */
 BENCHMARK(BM_Sort)->Range(1024, 1ul << 26ul);
+BENCHMARK(BM_Float_Sort)->Range(1024, 1ul << 26ul);
+/*
 BENCHMARK(BM_partial)->Range(1024, 1ul << 26ul);
 BENCHMARK(BM_Reserve)->Range(1024, 1ul << 26ul);
+ */
 // Run the benchmark
 
 
+/*
 int hpx_main(int argc, char **argv)
 {
-  benchmark::RunSpecifiedBenchmarks();
 
   return hpx::finalize();
 }
+ */
 
 int main(int argc, char **argv)
 {
   benchmark::Initialize(&argc, argv);
+  benchmark::RunSpecifiedBenchmarks();
 
+  /*
   const char *env = std::getenv("NUM_THREADS");
   std::string thread_env = env == nullptr ? "1": std::string(env);
   thread_env = "8";
@@ -304,4 +349,5 @@ int main(int argc, char **argv)
           "hpx.os_threads!=" + thread_env
   };
   return hpx::init(argc, argv, cfg);
+   */
 }

@@ -57,6 +57,7 @@ include_directories(third_party/googletest/googletest/include)
 # GOOGLE BENCHMARK
 ################################
 set(BENCHMARK_ENABLE_TESTING False)
+set(BENCHMARK_ENABLE_GTEST_TESTS False)
 add_subdirectory(third_party/google-benchmark)
 include_directories(third_party/google-benchmark/include)
 
