@@ -251,19 +251,24 @@ ad_utility::HashMap<Id, Id> createInternalMapping(ItemVec* elsPtr) {
 void writeMappedIdsToExtVec(const TripleVec& input, const ad_utility::HashMap<Id, Id>& map,
                             TripleVec::bufwriter_type* writePtr) {
   auto& writer = *writePtr;
-  for (const auto& curTriple : input) {
+  for (const auto& curTripleConst : input) {
+    auto curTriple = curTripleConst;
     // for all triple elements find their mapping from partial to global ids
-    ad_utility::HashMap<Id, Id>::const_iterator iterators[3];
+    // only have to map Strings
     for (size_t k = 0; k < 3; ++k) {
-      iterators[k] = map.find(curTriple[k]);
-      if (iterators[k] == map.end()) {
-        LOG(INFO) << "not found in partial local Vocab: " << curTriple[k] << '\n';
+      if (curTriple[k].type_ != Datatype::String) {
+        continue;
+      }
+      auto iterator = map.find(curTriple[k].value_);
+      if (iterator == map.end()) {
+        LOG(INFO) << "not found in partial local Vocab: " << curTriple[k].value_ << '\n';
         AD_CHECK(false);
       }
+      curTriple[k].value_ = iterator->second;
     }
 
     // update the Element
-    writer << array<Id, 3>{{iterators[0]->second, iterators[1]->second, iterators[2]->second}};
+    writer << curTriple;
   }
 }
 

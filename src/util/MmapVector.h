@@ -166,6 +166,12 @@ class MmapVector {
   void open(size_t size, string filename,
             AccessPattern pattern = AccessPattern::None);
 
+  // no size -> 0 elements
+  void open(string filename,
+            AccessPattern pattern = AccessPattern::None) {
+    open(0, std::move(filename), pattern);
+  }
+
   // create from given Iterator range
   // It must be an iterator type whose value Type must be convertible to T
   // TODO<joka921>: use enable_if or constexpr if or concepts/ranges one they're

@@ -8,6 +8,10 @@
 #include "../src/global/Pattern.h"
 #include "../src/index/Index.h"
 
+// lift to String Entity
+IdWithDatatype l(Id x) {
+  return {x, Datatype::String};
+}
 string getStxxlConfigFileName(const string& location) {
   std::ostringstream os;
   os << location << ".stxxl";
@@ -67,20 +71,20 @@ TEST(IndexTest, createFromTsvTest) {
     Index index;
     index.createFromOnDiskIndex("_testindex");
 
-    ASSERT_TRUE(index._PSO.metaData().relationExists(3));
-    ASSERT_TRUE(index._PSO.metaData().relationExists(4));
-    ASSERT_FALSE(index._PSO.metaData().relationExists(2));
-    ASSERT_FALSE(index._PSO.metaData().relationExists(1));
-    ASSERT_FALSE(index._PSO.metaData().getRmd(3).isFunctional());
-    ASSERT_TRUE(index._PSO.metaData().getRmd(4).isFunctional());
-    ASSERT_FALSE(index._PSO.metaData().getRmd(3).hasBlocks());
+    ASSERT_TRUE(index._PSO.metaData().relationExists(l(3)));
+    ASSERT_TRUE(index._PSO.metaData().relationExists(l(4)));
+    ASSERT_FALSE(index._PSO.metaData().relationExists(l(2)));
+    ASSERT_FALSE(index._PSO.metaData().relationExists(l(1)));
+    ASSERT_FALSE(index._PSO.metaData().getRmd(l(3)).isFunctional());
+    ASSERT_TRUE(index._PSO.metaData().getRmd(l(4)).isFunctional());
+    ASSERT_FALSE(index._PSO.metaData().getRmd(l(3)).hasBlocks());
 
-    ASSERT_TRUE(index.POS().metaData().relationExists(3));
-    ASSERT_TRUE(index.POS().metaData().relationExists(4));
-    ASSERT_FALSE(index.POS().metaData().relationExists(2));
-    ASSERT_FALSE(index.POS().metaData().relationExists(5));
-    ASSERT_TRUE(index.POS().metaData().getRmd(3).isFunctional());
-    ASSERT_TRUE(index.POS().metaData().getRmd(4).isFunctional());
+    ASSERT_TRUE(index.POS().metaData().relationExists(l(3)));
+    ASSERT_TRUE(index.POS().metaData().relationExists(l(4)));
+    ASSERT_FALSE(index.POS().metaData().relationExists(l(2)));
+    ASSERT_FALSE(index.POS().metaData().relationExists(l(5)));
+    ASSERT_TRUE(index.POS().metaData().getRmd(l(3)).isFunctional());
+    ASSERT_TRUE(index.POS().metaData().getRmd(l(4)).isFunctional());
 
     ad_utility::File psoFile("_testindex.index.pso", "r");
     size_t nofbytes =
@@ -157,14 +161,14 @@ TEST(IndexTest, createFromTsvTest) {
     Index index;
     index.createFromOnDiskIndex("_testindex");
 
-    ASSERT_TRUE(index._PSO.metaData().relationExists(8));
-    ASSERT_FALSE(index._PSO.metaData().relationExists(2));
+    ASSERT_TRUE(index._PSO.metaData().relationExists(l(8)));
+    ASSERT_FALSE(index._PSO.metaData().relationExists(l(2)));
 
-    ASSERT_FALSE(index._PSO.metaData().getRmd(8).isFunctional());
-    ASSERT_FALSE(index._PSO.metaData().getRmd(8).hasBlocks());
+    ASSERT_FALSE(index._PSO.metaData().getRmd(l(8)).isFunctional());
+    ASSERT_FALSE(index._PSO.metaData().getRmd(l(8)).hasBlocks());
 
-    ASSERT_TRUE(index.POS().metaData().relationExists(8));
-    ASSERT_FALSE(index.POS().metaData().getRmd(8).isFunctional());
+    ASSERT_TRUE(index.POS().metaData().relationExists(l(8)));
+    ASSERT_FALSE(index.POS().metaData().getRmd(l(8)).isFunctional());
 
     ad_utility::File psoFile("_testindex.index.pso", "r");
     size_t nofbytes =
@@ -459,21 +463,21 @@ TEST(IndexTest, createFromOnDiskIndexTest) {
   Index index;
   index.createFromOnDiskIndex("_testindex2");
 
-  ASSERT_TRUE(index.PSO().metaData().relationExists(3));
-  ASSERT_TRUE(index.PSO().metaData().relationExists(4));
-  ASSERT_FALSE(index.PSO().metaData().relationExists(2));
-  ASSERT_FALSE(index.PSO().metaData().relationExists(5));
-  ASSERT_FALSE(index.PSO().metaData().getRmd(3).isFunctional());
-  ASSERT_TRUE(index.PSO().metaData().getRmd(4).isFunctional());
-  ASSERT_FALSE(index.PSO().metaData().getRmd(3).hasBlocks());
-  ASSERT_FALSE(index.PSO().metaData().getRmd(4).hasBlocks());
+  ASSERT_TRUE(index.PSO().metaData().relationExists(l(3)));
+  ASSERT_TRUE(index.PSO().metaData().relationExists(l(4)));
+  ASSERT_FALSE(index.PSO().metaData().relationExists(l(2)));
+  ASSERT_FALSE(index.PSO().metaData().relationExists(l(5)));
+  ASSERT_FALSE(index.PSO().metaData().getRmd(l(3)).isFunctional());
+  ASSERT_TRUE(index.PSO().metaData().getRmd(l(4)).isFunctional());
+  ASSERT_FALSE(index.PSO().metaData().getRmd(l(3)).hasBlocks());
+  ASSERT_FALSE(index.PSO().metaData().getRmd(l(4)).hasBlocks());
 
-  ASSERT_TRUE(index.POS().metaData().relationExists(3));
-  ASSERT_TRUE(index.POS().metaData().relationExists(4));
-  ASSERT_FALSE(index.POS().metaData().relationExists(2));
-  ASSERT_FALSE(index.POS().metaData().relationExists(5));
-  ASSERT_TRUE(index.POS().metaData().getRmd(3).isFunctional());
-  ASSERT_TRUE(index.POS().metaData().getRmd(4).isFunctional());
+  ASSERT_TRUE(index.POS().metaData().relationExists(l(3)));
+  ASSERT_TRUE(index.POS().metaData().relationExists(l(4)));
+  ASSERT_FALSE(index.POS().metaData().relationExists(l(2)));
+  ASSERT_FALSE(index.POS().metaData().relationExists(l(5)));
+  ASSERT_TRUE(index.POS().metaData().getRmd(l(3)).isFunctional());
+  ASSERT_TRUE(index.POS().metaData().getRmd(l(4)).isFunctional());
 
   remove("_testtmp3.tsv");
   remove("_testindex2.index.pso");

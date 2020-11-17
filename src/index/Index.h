@@ -40,9 +40,10 @@ using std::vector;
 
 using json = nlohmann::json;
 
+
 // a simple struct for better naming
 struct VocabularyData {
-  using TripleVec = stxxl::vector<array<Id, 3>>;
+  using TripleVec = stxxl::vector<array<IdWithDatatype, 3>>;
   // The total number of distinct words in the complete Vocabulary
   size_t nofWords;
   // Id lower and upper bound of @lang@<predicate> predicates
@@ -64,7 +65,7 @@ class TurtleParserDummy {};
 
 class Index {
  public:
-  using TripleVec = stxxl::vector<array<Id, 3>>;
+  using TripleVec = VocabularyData::TripleVec;
   // Block Id, Context Id, Word Id, Score, entity
   using TextVec = stxxl::vector<tuple<Id, Id, Id, Score, bool>>;
   using Posting = std::tuple<Id, Id, Score>;
@@ -333,9 +334,9 @@ class Index {
   template <class PermutationImpl>
   vector<float> getMultiplicities(const string& key,
                                   const PermutationImpl& p) const {
-    Id keyId;
+    IdWithDatatype keyId;
     vector<float> res;
-    if (_vocab.getId(key, &keyId) && p._meta.relationExists(keyId)) {
+    if (_vocab.getIdWithDatatype(key, &keyId) && p._meta.relationExists(keyId)) {
       auto rmd = p._meta.getRmd(keyId);
       auto logM1 = rmd.getCol1LogMultiplicity();
       res.push_back(static_cast<float>(pow(2, logM1)));
@@ -370,7 +371,7 @@ class Index {
    * Index class).
    */
   template <class Permutation>
-  void scan(Id key, IdTable* result, const Permutation& p) const {
+  void scan(IdWithDatatype key, IdTable* result, const Permutation& p) const {
     if (p._meta.relationExists(key)) {
       const FullRelationMetaData& rmd = p._meta.getRmd(key)._rmdPairs;
       result->reserve(rmd.getNofElements() + 2);
@@ -394,8 +395,8 @@ class Index {
   void scan(const string& key, IdTable* result, const Permutation& p) const {
     LOG(DEBUG) << "Performing " << p._readableName
                << " scan for full list for: " << key << "\n";
-    Id relId;
-    if (_vocab.getId(key, &relId)) {
+    IdWithDatatype relId;
+    if (_vocab.getIdWithDatatype(key, &relId)) {
       LOG(TRACE) << "Successfully got key ID.\n";
       scan(relId, result, p);
     }
@@ -422,9 +423,9 @@ class Index {
             const PermutationInfo& p) const {
     LOG(DEBUG) << "Performing " << p._readableName << "  scan of relation "
                << keyFirst << " with fixed subject: " << keySecond << "...\n";
-    Id relId;
-    Id subjId;
-    if (_vocab.getId(keyFirst, &relId) && _vocab.getId(keySecond, &subjId)) {
+    IdWithDatatype relId;
+    IdWithDatatype subjId;
+    if (_vocab.getIdWithDatatype(keyFirst, &relId) && _vocab.getIdWithDatatype(keySecond, &subjId)) {
       if (p._meta.relationExists(relId)) {
         auto rmd = p._meta.getRmd(relId);
         if (rmd.hasBlocks()) {
@@ -448,7 +449,10 @@ class Index {
           p._file.read(fullRelation.data(),
                        rmd.getNofElements() * 2 * sizeof(Id),
                        rmd._rmdPairs._startFullIndex);
-          getRhsForSingleLhs(fullRelation, subjId, result);
+          // TODO<joka921> this will break for other datatypes,
+          // so we know where to start
+          AD_CHECK(subjId.type_ == Datatype::String)
+          getRhsForSingleLhs(fullRelation, subjId.value_, result);
         }
       } else {
         LOG(DEBUG) << "No such relation.\n";
@@ -549,8 +553,8 @@ class Index {
                             size_t c2);
 
   pair<FullRelationMetaData, BlockBasedRelationMetaData> writeSwitchedRel(
-      ad_utility::File* out, off_t lastOffset, Id currentRel,
-      ad_utility::BufferedVector<array<Id, 2>>* buffer);
+      ad_utility::File* out, off_t lastOffset, IdWithDatatype currentRel,
+      DatatypeInfoMerged* bufPtr);
 
   // _______________________________________________________________________
   // Create a pair of permutations. Only works for valid pairs (PSO-POS,
@@ -649,27 +653,28 @@ class Index {
   //   The Meta Data (Permutation offsets) for this relation,
   //   Careful: only multiplicity for first column is valid in return value
   static pair<FullRelationMetaData, BlockBasedRelationMetaData> writeRel(
-      ad_utility::File& out, off_t currentOffset, Id relId,
-      const BufferedVector<array<Id, 2>>& data, size_t distinctC1,
+      ad_utility::File& out, off_t currentOffset, IdWithDatatype relId,
+      const DatatypeInfo& data, size_t distinctC1,
       bool functional);
 
   static void writeFunctionalRelation(
-      const BufferedVector<array<Id, 2>>& data,
+      const DatatypeInfo& data,
       pair<FullRelationMetaData, BlockBasedRelationMetaData>& rmd);
 
   static void writeNonFunctionalRelation(
-      ad_utility::File& out, const BufferedVector<array<Id, 2>>& data,
+      ad_utility::File& out, const DatatypeInfo& data,
       pair<FullRelationMetaData, BlockBasedRelationMetaData>& rmd);
 
   void openTextFileHandle();
 
-  void scanFunctionalRelation(const pair<off_t, size_t>& blockOff, Id lhsId,
+  void scanFunctionalRelation(const pair<off_t, size_t>& blockOff,
+                              IdWithDatatype lhsId,
                               ad_utility::File& indexFile,
                               IdTable* result) const;
 
   void scanNonFunctionalRelation(const pair<off_t, size_t>& blockOff,
                                  const pair<off_t, size_t>& followBlock,
-                                 Id lhsId, ad_utility::File& indexFile,
+                                 IdWithDatatype lhsId, ad_utility::File& indexFile,
                                  off_t upperBound, IdTable* result) const;
 
   void addContextToVector(TextVec::bufwriter_type& writer, Id context,

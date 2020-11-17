@@ -286,7 +286,7 @@ Join::ScanMethodType Join::getScanMethod(
   const auto& idx = _executionContext->getIndex();
   const auto scanLambda = [&idx](const auto& perm) {
     return
-        [&idx, &perm](Id id, IdTable* idTable) { idx.scan(id, idTable, perm); };
+        [&idx, &perm](IdWithDatatype id, IdTable* idTable) { idx.scan(id, idTable, perm); };
   };
 
   switch (scan.getType()) {
@@ -336,7 +336,8 @@ void Join::doComputeJoinWithFullScanDummyLeft(const IdTable& ndr,
       // Do a scan.
       LOG(TRACE) << "Inner scan with ID: " << currentJoinId << endl;
       IdTable jr(2);
-      scan(currentJoinId, &jr);
+      // TODO<joka921> Here we also will have to change the types
+      scan(IdWithDatatype{currentJoinId, Datatype::String}, &jr);
       LOG(TRACE) << "Got #items: " << jr.size() << endl;
       // Build the cross product.
       appendCrossProduct(jr.begin(), jr.end(), joinItemFrom, joinItemEnd, res);
@@ -349,7 +350,7 @@ void Join::doComputeJoinWithFullScanDummyLeft(const IdTable& ndr,
   // Do the scan for the final element.
   LOG(TRACE) << "Inner scan with ID: " << currentJoinId << endl;
   IdTable jr(2);
-  scan(currentJoinId, &jr);
+  scan(IdWithDatatype{currentJoinId, Datatype::String}, &jr);
   LOG(TRACE) << "Got #items: " << jr.size() << endl;
   // Build the cross product.
   appendCrossProduct(jr.begin(), jr.end(), joinItemFrom, joinItemEnd, res);
@@ -377,7 +378,7 @@ void Join::doComputeJoinWithFullScanDummyRight(const IdTable& ndr,
       // Do a scan.
       LOG(TRACE) << "Inner scan with ID: " << currentJoinId << endl;
       IdTable jr(2);
-      scan(currentJoinId, &jr);
+      scan(IdWithDatatype{currentJoinId, Datatype::String}, &jr);
       LOG(TRACE) << "Got #items: " << jr.size() << endl;
       // Build the cross product.
       appendCrossProduct(joinItemFrom, joinItemEnd, jr.begin(), jr.end(), res);
@@ -390,7 +391,7 @@ void Join::doComputeJoinWithFullScanDummyRight(const IdTable& ndr,
   // Do the scan for the final element.
   LOG(TRACE) << "Inner scan with ID: " << currentJoinId << endl;
   IdTable jr(2);
-  scan(currentJoinId, &jr);
+  scan(IdWithDatatype{currentJoinId, Datatype::String}, &jr);
   LOG(TRACE) << "Got #items: " << jr.size() << endl;
   // Build the cross product.
   appendCrossProduct(joinItemFrom, joinItemEnd, jr.begin(), jr.end(), res);

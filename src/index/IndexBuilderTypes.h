@@ -10,11 +10,79 @@
 #include "../util/TupleHelpers.h"
 #include "./ConstantsIndexCreation.h"
 #include "./StringSortComparator.h"
+#include "../util/BufferedVector.h"
 
 #ifndef QLEVER_INDEXBUILDERTYPES_H
 #define QLEVER_INDEXBUILDERTYPES_H
 
 using Triple = std::array<std::string, 3>;
+
+enum class Datatype {
+  String,
+  Int,
+  Float,
+  Date
+};
+
+struct ElementWithDatatype {
+  using Var = std::variant<std::string, Id>; // either a string, or some numeric value like Int, Float, Date
+    Var value_;
+    Datatype type_;
+};
+
+namespace std {
+ template<>
+ struct hash<ElementWithDatatype> {
+   uint64_t operator()(const ElementWithDatatype& el) {
+     return std::hash<ElementWithDatatype::Var>{}(el.value_) ^ std::hash<Datatype>{}(el.type_);
+   }
+ };
+}
+
+struct IdWithDatatype {
+  Id value_;
+  Datatype type_;
+
+  bool operator!=(const IdWithDatatype& rhs) const {
+    return value_ != rhs.value_ || type_ != rhs.type_;
+  }
+
+  bool operator==(const IdWithDatatype& rhs) const {
+    return value_ == rhs.value_ && type_ == rhs.type_;
+  }
+
+  bool operator<(const IdWithDatatype& rhs) const {
+    if (type_ != rhs.type_) {
+      return type_ < rhs.type_;
+    }
+    return value_ < rhs.value_;
+  }
+  bool operator>=(const IdWithDatatype& rhs) const {
+    if (type_ != rhs.type_) {
+      return type_ >= rhs.type_;
+    }
+    return value_ >= rhs.value_;
+  }
+  bool operator>(const IdWithDatatype& rhs) const {
+    if (type_ != rhs.type_) {
+      return type_ > rhs.type_;
+    }
+    return value_ > rhs.value_;
+  }
+};
+
+namespace std {
+template<>
+struct hash<IdWithDatatype> {
+  size_t operator()(IdWithDatatype x) const {
+    // hashing the Id should be enough since we expect few overlaps
+    return  std::hash<decltype(x.value_)>{}(x.value_);
+  }
+};
+
+}
+
+using TripleWithDatatype = std::array<ElementWithDatatype, 3>;
 
 /// named value type for the ItemMap
 struct IdAndSplitVal {
@@ -47,18 +115,22 @@ struct ItemMapManager {
   Id assignNextId(const string& key) {
     if (!_map.count(key)) {
       Id res = _map.size() + _minId;
-      _map[key] = {res, m_comp->extractAndTransformComparable(
-                            key, TripleComponentComparator::Level::IDENTICAL)};
+        _map[key] = {res,
+                     m_comp->extractAndTransformComparable(
+                         key, TripleComponentComparator::Level::IDENTICAL)};
       return res;
     } else {
       return _map[key].m_id;
     }
   }
 
+  /*
   /// call assignNextId for each of the Triple elements.
-  std::array<Id, 3> assignNextId(const Triple& t) {
+
+  std::array<Id, 3> assignNextId(const TripleWithDatatype & t) {
     return {assignNextId(t[0]), assignNextId(t[1]), assignNextId(t[2])};
   }
+   */
   ItemMap _map;
   Id _minId = 0;
   const TripleComponentComparator* m_comp = nullptr;
@@ -68,7 +140,7 @@ struct ItemMapManager {
 /// language tag of its object.
 struct LangtagAndTriple {
   std::string _langtag;
-  Triple _triple;
+  TripleWithDatatype _triple;
 };
 
 /**
@@ -107,12 +179,11 @@ auto getIdMapLambdas(std::array<ItemMapManager, Parallelism>* itemArrayPtr,
   auto& itemArray = *itemArrayPtr;
   for (size_t j = 0; j < Parallelism; ++j) {
     itemArray[j] = ItemMapManager(j * 100 * maxNumberOfTriples, comp);
-    itemArray[j].assignNextId(
-        LANGUAGE_PREDICATE);  // not really needed here, but also not harmful
+    itemArray[j].assignNextId(LANGUAGE_PREDICATE);  // not really needed here, but also not harmful
                               // and needed to make some completely unrelated
                               // unit tests pass.
   }
-  using OptionalIds = std::array<std::optional<std::array<Id, 3>>, 3>;
+  using OptionalIds = std::array<std::optional<std::array<IdWithDatatype, 3>>, 3>;
 
   /* given an index idx, returns a lambda that
    * - Takes a triple and a language tag
@@ -126,7 +197,16 @@ auto getIdMapLambdas(std::array<ItemMapManager, Parallelism>* itemArrayPtr,
     return [&map = itemArray[idx]](LangtagAndTriple&& lt) {
       OptionalIds res;
       // get Ids for the actual triple and store them in the result.
-      res[0] = map.assignNextId(lt._triple);
+      res[0] = std::array<IdWithDatatype, 3>{};
+      for (size_t i = 0; i < lt._triple.size(); ++i ) {
+        if (auto ptr = std::get_if<std::string>(&lt._triple[i].value_)) {
+          AD_CHECK(lt._triple[i].type_ == Datatype::String);
+          res[0].value()[i] = {map.assignNextId(*ptr), lt._triple[i].type_};
+        } else {
+          res[0].value()[i] = {std::get<Id>(lt._triple[i].value_), lt._triple[i].type_};
+        }
+
+      }
       if (!lt._langtag.empty()) {  // the object of the triple was a literal
                                    // with a language tag
         // get the Id for the corresponding langtag Entity
@@ -135,13 +215,13 @@ auto getIdMapLambdas(std::array<ItemMapManager, Parallelism>* itemArrayPtr,
         // get the Id for the tagged predicate, e.g. @en@rdfs:label
         auto langTaggedPredId =
             map.assignNextId(ad_utility::convertToLanguageTaggedPredicate(
-                lt._triple[1], lt._langtag));
+                std::get<std::string>(lt._triple[1].value_), lt._langtag));
         auto& spoIds = *(res[0]);  // ids of original triple
         // extra triple <subject> @language@<predicate> <object>
-        res[1].emplace(array<Id, 3>{spoIds[0], langTaggedPredId, spoIds[2]});
+        res[1].emplace(array<IdWithDatatype, 3>{spoIds[0], {langTaggedPredId, Datatype::String}, spoIds[2]});
         // extra triple <object> ql:language-tag <@language>
-        res[2].emplace(array<Id, 3>{
-            spoIds[2], map.assignNextId(LANGUAGE_PREDICATE), langTagId});
+        res[2].emplace(array<IdWithDatatype, 3>{
+            spoIds[2], {map.assignNextId(LANGUAGE_PREDICATE), Datatype::String}, langTagId});
       }
       return res;
     };
@@ -154,4 +234,13 @@ auto getIdMapLambdas(std::array<ItemMapManager, Parallelism>* itemArrayPtr,
           itemMapLamdaCreator);
   return itemMapLambdaTuple;
 }
+
+struct RelationWriter {
+  template <typename T>
+  using Buffer = ad_utility::BufferedVector<std::array<T, 2>>;
+  ad_utility::File* relationFile_;
+  ad_utility::File* datatypeFile_;
+  const Buffer<Id>* ids_;
+  const Buffer<Datatype>* datatypes_;
+};
 #endif  // QLEVER_INDEXBUILDERTYPES_H

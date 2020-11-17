@@ -27,6 +27,7 @@ using std::array;
 
 const uint32_t Index::PATTERNS_FILE_VERSION = 0;
 
+
 // _____________________________________________________________________________
 Index::Index()
     : _usePatterns(false),
@@ -297,21 +298,24 @@ void Index::convertPartialToGlobalIds(
     // update the triples for which this partial vocabulary was responsible
     for (size_t tmpNum = 0; tmpNum < actualLinesPerPartial[partialNum];
          ++tmpNum) {
-      std::array<Id, 3> curTriple = data[i];
+      std::array<IdWithDatatype, 3> curTriple = data[i];
+
 
       // for all triple elements find their mapping from partial to global ids
-      ad_utility::HashMap<Id, Id>::iterator iterators[3];
       for (size_t k = 0; k < 3; ++k) {
-        iterators[k] = idMap.find(curTriple[k]);
-        if (iterators[k] == idMap.end()) {
-          LOG(INFO) << "not found in partial Vocab: " << curTriple[k] << '\n';
-          AD_CHECK(false);
+        if (curTriple[k].type_ == Datatype::String) {
+          auto iterator = idMap.find(curTriple[k].value_);
+          if (iterator == idMap.end()) {
+            LOG(INFO) << "not found in partial Vocab: " << curTriple[k].value_ << '\n';
+            AD_CHECK(false);
+          }
+          curTriple[k].value_ = iterator->second;
         }
+        // no change needed for hardcoded value Ids
       }
 
       // update the Element
-      data[i] = array<Id, 3>{
-          {iterators[0]->second, iterators[1]->second, iterators[2]->second}};
+      data[i] = curTriple;
 
       ++i;
       if (i % 10000000 == 0) {
@@ -324,23 +328,23 @@ void Index::convertPartialToGlobalIds(
 }
 
 pair<FullRelationMetaData, BlockBasedRelationMetaData> Index::writeSwitchedRel(
-    ad_utility::File* out, off_t lastOffset, Id currentRel,
-    ad_utility::BufferedVector<array<Id, 2>>* bufPtr) {
+    ad_utility::File* out, off_t lastOffset, IdWithDatatype currentRel,
+    DatatypeInfoMerged* bufPtr) {
   // sort according to the "switched" relation.
   auto& buffer = *bufPtr;
 
-  for (auto& el : buffer) {
+  for (auto& el : buffer.ids_) {
     std::swap(el[0], el[1]);
   }
-  std::sort(buffer.begin(), buffer.end(), [](const auto& a, const auto& b) {
+  std::sort(buffer.ids_.begin(), buffer.ids_.end(), [](const auto& a, const auto& b) {
     return a[0] == b[0] ? a[1] < b[1] : a[0] < b[0];
   });
 
-  Id lastLhs = std::numeric_limits<Id>::max();
+  IdWithDatatype lastLhs = {std::numeric_limits<Id>::max(), Datatype::String};
 
   bool functional = true;
   size_t distinctC1 = 0;
-  for (const auto& el : buffer) {
+  for (const auto& el : buffer.ids_) {
     if (el[0] == lastLhs) {
       functional = false;
     } else {
@@ -349,7 +353,7 @@ pair<FullRelationMetaData, BlockBasedRelationMetaData> Index::writeSwitchedRel(
     lastLhs = el[0];
   }
 
-  return writeRel(*out, lastOffset, currentRel, buffer, distinctC1, functional);
+  return writeRel(*out, lastOffset, currentRel, buffer.splitColumns(), distinctC1, functional);
 }
 
 // _____________________________________________________________________________
@@ -363,9 +367,9 @@ Index::createPermutationPairImpl(const string& fileName1,
   typename MetaDataDispatcher::WriteType metaData1;
   typename MetaDataDispatcher::WriteType metaData2;
   if constexpr (metaData1._isMmapBased) {
-    metaData1.setup(_totalVocabularySize, FullRelationMetaData::empty,
+    metaData1.setup(
                     fileName1 + MMAP_FILE_SUFFIX);
-    metaData2.setup(_totalVocabularySize, FullRelationMetaData::empty,
+    metaData2.setup(
                     fileName2 + MMAP_FILE_SUFFIX);
   }
 
@@ -380,21 +384,22 @@ Index::createPermutationPairImpl(const string& fileName1,
             << " elements / facts." << std::endl;
   // Iterate over the vector and identify relation boundaries
   size_t from = 0;
-  Id currentRel = vec[0][c0];
+  IdWithDatatype currentRel = vec[0][c0];
   off_t lastOffset1 = 0;
   off_t lastOffset2 = 0;
-  ad_utility::BufferedVector<array<Id, 2>> buffer(
-      THRESHOLD_RELATION_CREATION, fileName1 + ".tmp.MmapBuffer");
+  DatatypeInfoMerged idsAndTypes{
+      THRESHOLD_RELATION_CREATION, fileName1 + ".tmp.MmapBuffer"};
+  auto& buffer = idsAndTypes.ids_;
   bool functional = true;
   size_t distinctC1 = 1;
   size_t sizeOfRelation = 0;
-  Id lastLhs = std::numeric_limits<Id>::max();
+  IdWithDatatype lastLhs {std::numeric_limits<Id>::max(), Datatype::String};
   for (TripleVec::bufreader_type reader(vec); !reader.empty(); ++reader) {
     if ((*reader)[c0] != currentRel) {
-      auto md = writeRel(out1, lastOffset1, currentRel, buffer, distinctC1,
+      auto md = writeRel(out1, lastOffset1, currentRel, idsAndTypes.splitColumns(), distinctC1,
                          functional);
       metaData1.add(md.first, md.second);
-      auto md2 = writeSwitchedRel(&out2, lastOffset2, currentRel, &buffer);
+      auto md2 = writeSwitchedRel(&out2, lastOffset2, currentRel, &idsAndTypes);
       metaData2.add(md2.first, md2.second);
       buffer.clear();
       distinctC1 = 1;
@@ -410,15 +415,15 @@ Index::createPermutationPairImpl(const string& fileName1,
         distinctC1++;
       }
     }
-    buffer.push_back(array<Id, 2>{{(*reader)[c1], (*reader)[c2]}});
+    buffer.push_back({(*reader)[c1], (*reader)[c2]});
     lastLhs = (*reader)[c1];
   }
   if (from < vec.size()) {
     auto md =
-        writeRel(out1, lastOffset1, currentRel, buffer, distinctC1, functional);
+        writeRel(out1, lastOffset1, currentRel, idsAndTypes.splitColumns(), distinctC1, functional);
     metaData1.add(md.first, md.second);
 
-    auto md2 = writeSwitchedRel(&out2, lastOffset2, currentRel, &buffer);
+    auto md2 = writeSwitchedRel(&out2, lastOffset2, currentRel, &idsAndTypes);
     metaData2.add(md2.first, md2.second);
   }
 
@@ -506,7 +511,7 @@ void Index::createPermutationPair(
 template <class MetaData>
 void Index::exchangeMultiplicities(MetaData* m1, MetaData* m2) {
   for (auto it = m1->data().begin(); it != m1->data().end(); ++it) {
-    const FullRelationMetaData& constRmd = it->second;
+    const FullRelationMetaData& constRmd = itToRmd(it);
     // our MetaData classes have a read-only interface because normally the
     // FuullRelationMetaData are created separately and then added and never
     // changed. This function forms an exception to this pattern
@@ -515,8 +520,8 @@ void Index::exchangeMultiplicities(MetaData* m1, MetaData* m2) {
     // exception: we delibarately write to a read-only data structure and are
     // knowing what we are doing
     FullRelationMetaData& rmd = const_cast<FullRelationMetaData&>(constRmd);
-    m2->data()[it->first].setCol2LogMultiplicity(rmd.getCol1LogMultiplicity());
-    rmd.setCol2LogMultiplicity(m2->data()[it->first].getCol1LogMultiplicity());
+    m2->data()[itToId(it)].setCol2LogMultiplicity(rmd.getCol1LogMultiplicity());
+    rmd.setCol2LogMultiplicity(m2->data()[itToId(it)].getCol1LogMultiplicity());
   }
 }
 
@@ -560,11 +565,14 @@ void Index::createPatternsImpl(const string& fileName,
                                double& fullHasPredicateMultiplicityPredicates,
                                size_t& fullHasPredicateSize,
                                const size_t maxNumPatterns,
-                               const Id langPredLowerBound,
-                               const Id langPredUpperBound,
+                               const Id langPredLowerBoundSimple,
+                               const Id langPredUpperBoundSimple,
                                const Args&... vecReaderArgs) {
   IndexMetaDataHmap meta;
   typedef std::unordered_map<Pattern, size_t> PatternsCountMap;
+
+  const IdWithDatatype langPredLowerBound{langPredLowerBoundSimple, Datatype::String};
+  const IdWithDatatype langPredUpperBound{langPredUpperBoundSimple, Datatype::String};
 
   LOG(INFO) << "Creating patterns file..." << std::endl;
   VecReaderType reader(vecReaderArgs...);
@@ -579,7 +587,7 @@ void Index::createPatternsImpl(const string& fileName,
 
   size_t patternIndex = 0;
   size_t numValidPatterns = 0;
-  Id currentSubj = (*reader)[0];
+  IdWithDatatype currentSubj = (*reader)[0];
 
   for (; !reader.empty(); ++reader) {
     auto triple = *reader;
@@ -597,10 +605,11 @@ void Index::createPatternsImpl(const string& fileName,
     }
 
     // don't list predicates twice
-    if (patternIndex == 0 || pattern[patternIndex - 1] != triple[1]) {
+    if (patternIndex == 0 || pattern[patternIndex - 1] != triple[1].value_) {
       // Ignore @..@ type language predicates
       if (triple[1] < langPredLowerBound || triple[1] >= langPredUpperBound) {
-        pattern.push_back(triple[1]);
+        // TODO<joka921> not always assuming Strings for patterns
+        pattern.push_back(triple[1].value_);
         patternIndex++;
       }
     }
@@ -726,13 +735,14 @@ void Index::createPatternsImpl(const string& fileName,
             predicateHashSet.insert(pattern[i]);
             fullHasPredicatePredicatesDistinctSize++;
           }
+          //TODO<joka921>:  properly ignore non-string subjectsx
           entityHasPredicate.push_back(
-              std::array<Id, 2>{currentSubj, pattern[i]});
+              std::array<Id, 2>{currentSubj.value_, pattern[i]});
         }
       } else {
         numEntitiesWithPatterns++;
         // The pattern does exist, add an entry to the has-pattern predicate
-        entityHasPattern.push_back(std::array<Id, 2>{currentSubj, it->second});
+        entityHasPattern.push_back(std::array<Id, 2>{currentSubj.value_, it->second});
         if (!haveCountedPattern[it->second]) {
           haveCountedPattern[it->second] = true;
           // iterate over the pattern once to
@@ -749,10 +759,11 @@ void Index::createPatternsImpl(const string& fileName,
       patternIndex = 0;
     }
     // don't list predicates twice
-    if (patternIndex == 0 || pattern[patternIndex - 1] != (triple[1])) {
+    if (patternIndex == 0 || pattern[patternIndex - 1] != (triple[1]).value_) {
       // Ignore @..@ type language predicates
       if (triple[1] < langPredLowerBound || triple[1] >= langPredUpperBound) {
-        pattern.push_back(triple[1]);
+        // TODO<joka921> Proper datatypes for patterns
+        pattern.push_back(triple[1].value_);
         patternIndex++;
       }
     }
@@ -765,7 +776,7 @@ void Index::createPatternsImpl(const string& fileName,
     numEntitiesWithoutPatterns++;
     // The pattern does not exist, use the has-relation predicate instead
     for (size_t i = 0; i < patternIndex; i++) {
-      entityHasPredicate.push_back(std::array<Id, 2>{currentSubj, pattern[i]});
+      entityHasPredicate.push_back(std::array<Id, 2>{currentSubj.value_, pattern[i]});
       if (predicateHashSet.find(pattern[i]) == predicateHashSet.end()) {
         predicateHashSet.insert(pattern[i]);
         fullHasPredicatePredicatesDistinctSize++;
@@ -774,7 +785,7 @@ void Index::createPatternsImpl(const string& fileName,
   } else {
     numEntitiesWithPatterns++;
     // The pattern does exist, add an entry to the has-pattern predicate
-    entityHasPattern.push_back(std::array<Id, 2>{currentSubj, last->second});
+    entityHasPattern.push_back(std::array<Id, 2>{currentSubj.value_, last->second});
     for (size_t i = 0; i < patternIndex; i++) {
       if (predicateHashSet.find(pattern[i]) == predicateHashSet.end()) {
         predicateHashSet.insert(pattern[i]);
@@ -882,8 +893,8 @@ void Index::createPatternsImpl(const string& fileName,
 
 // _____________________________________________________________________________
 pair<FullRelationMetaData, BlockBasedRelationMetaData> Index::writeRel(
-    ad_utility::File& out, off_t currentOffset, Id relId,
-    const ad_utility::BufferedVector<array<Id, 2>>& data, size_t distinctC1,
+    ad_utility::File& out, off_t currentOffset, IdWithDatatype relId,
+    const DatatypeInfo& data, size_t distinctC1,
     bool functional) {
   LOG(TRACE) << "Writing a relation ...\n";
   AD_CHECK_GT(data.size(), 0);
@@ -894,10 +905,18 @@ pair<FullRelationMetaData, BlockBasedRelationMetaData> Index::writeRel(
   LOG(TRACE) << "Done calculating multiplicities.\n";
   FullRelationMetaData rmd(
       relId, currentOffset, data.size(), multC1, multC2, functional,
-      !functional && data.size() > USE_BLOCKS_INDEX_SIZE_TRESHOLD);
+      !functional && data.size() > USE_BLOCKS_INDEX_SIZE_TRESHOLD,
+      data.uniqueTypes_[0], data.uniqueTypes_[1]);
 
   // Write the full pair index.
-  out.write(data.data(), data.size() * 2 * sizeof(Id));
+  // TODO<joka921> use sizeof(decltype...)
+  out.write(data.ids_.data(), data.ids_.size() * 2 * sizeof(Id));
+  if (data.uniqueTypes_[0]) {
+    out.write(data.types0_.data(), data.types0_.size() * 2 * sizeof(Datatype));
+  }
+  if (data.uniqueTypes_[1]) {
+    out.write(data.types1_.data(), data.types1_.size() * 2 * sizeof(Datatype));
+  }
   pair<FullRelationMetaData, BlockBasedRelationMetaData> ret;
   ret.first = rmd;
 
@@ -912,7 +931,7 @@ pair<FullRelationMetaData, BlockBasedRelationMetaData> Index::writeRel(
 
 // _____________________________________________________________________________
 void Index::writeFunctionalRelation(
-    const BufferedVector<array<Id, 2>>& data,
+    const DatatypeInfo& data,
     pair<FullRelationMetaData, BlockBasedRelationMetaData>& rmd) {
   // Only has to do something if there are blocks.
   if (rmd.first.hasBlocks()) {
@@ -926,22 +945,30 @@ void Index::writeFunctionalRelation(
     // Create the block data for the meta data.
     // Blocks are offsets into the full pair index for functional relations.
     size_t nofDistinctLhs = 0;
-    Id lastLhs = std::numeric_limits<Id>::max();
-    for (size_t i = 0; i < data.size(); ++i) {
-      if (data[i][0] != lastLhs) {
-        if (nofDistinctLhs % DISTINCT_LHS_PER_BLOCK == 0) {
-          rmd.second._blocks.emplace_back(BlockMetaData(
-              data[i][0], rmd.first._startFullIndex + i * 2 * sizeof(Id)));
-        }
-        ++nofDistinctLhs;
+    auto s = data.size();
+    for (size_t i = 0; i < s; ++i) {
+      // the Relation first starts with the Ids, then the types
+      // if the datatypes are unique, the wrong values for startOfTypeX are never read
+      // so we don't care
+
+      auto startOfIds = rmd.first._startFullIndex + i * 2 * sizeof(Id);
+      auto startOfType0 = rmd.first._startFullIndex + rmd.first.getNofElements() * 2 * sizeof(Id);
+      if (!rmd.first._firstColumnUniqueDatatype) {  // the datatypes are materialized
+        startOfType0 += i * sizeof(Datatype);
       }
+
+      if (nofDistinctLhs % DISTINCT_LHS_PER_BLOCK == 0) {
+        rmd.second._blocks.emplace_back(BlockMetaData(
+            IdWithDatatype{data.ids_[i][0], data.types0_[i]},startOfIds, startOfType0));
+      }
+      ++nofDistinctLhs;
     }
   }
 }
 
 // _____________________________________________________________________________
 void Index::writeNonFunctionalRelation(
-    ad_utility::File& out, const BufferedVector<array<Id, 2>>& data,
+    ad_utility::File& out, const DatatypeInfo& data,
     pair<FullRelationMetaData, BlockBasedRelationMetaData>& rmd) {
   // Only has to do something if there are blocks.
   if (rmd.first.hasBlocks()) {
@@ -949,18 +976,32 @@ void Index::writeNonFunctionalRelation(
     // Make a pass over the data and extract a RHS list for each LHS.
     // Prepare both in buffers.
     // TODO: add compression - at least to RHS.
-    pair<Id, off_t>* bufLhs = new pair<Id, off_t>[data.size()];
-    Id* bufRhs = new Id[data.size()];
+    auto bufLhs = new pair<Id, off_t>[data.size()];
+    auto bufRhs = new Id[data.size()];
+    auto lhsTypeUnique = static_cast<bool>(data.uniqueTypes_[0]);
+    auto rhsTypeUnique = static_cast<bool>(data.uniqueTypes_[1]);
+
+    auto bufLhsTypes = lhsTypeUnique ? nullptr : new pair<Datatype, off_t>[data.size()];
+    auto bufRhsTypes = rhsTypeUnique ? nullptr : new Datatype[data.size()];
     size_t nofDistinctLhs = 0;
     Id lastLhs = std::numeric_limits<Id>::max();
+    Datatype lastDatatype = Datatype::String;
     size_t nofRhsDone = 0;
     for (; nofRhsDone < data.size(); ++nofRhsDone) {
-      if (data[nofRhsDone][0] != lastLhs) {
-        bufLhs[nofDistinctLhs++] =
-            pair<Id, off_t>(data[nofRhsDone][0], nofRhsDone * sizeof(Id));
-        lastLhs = data[nofRhsDone][0];
+      if (data.ids_[nofRhsDone][0] != lastLhs || data.types0_[nofRhsDone] != lastDatatype) {
+        bufLhs[nofDistinctLhs] =
+            pair<Id, off_t>(data.ids_[nofRhsDone][0], nofRhsDone * sizeof(Id));
+
+        bufLhsTypes[nofDistinctLhs] = pair<Datatype, off_t>(
+            data.types0_[nofRhsDone], nofRhsDone * sizeof(Id));
+        nofDistinctLhs++;
+        lastLhs = data.ids_[nofRhsDone][0];
+        lastDatatype = data.types0_[nofRhsDone];
       }
-      bufRhs[nofRhsDone] = data[nofRhsDone][1];
+      bufRhs[nofRhsDone] = data.ids_[nofRhsDone][1];
+      if (!rhsTypeUnique) {
+        bufRhsTypes[nofRhsDone] = data.types1_[nofRhsDone];
+      }
     }
 
     // Go over the Lhs data once more and adjust the offsets.
@@ -975,22 +1016,42 @@ void Index::writeNonFunctionalRelation(
     out.write(bufLhs, nofDistinctLhs * (sizeof(Id) + sizeof(off_t)));
     out.write(bufRhs, data.size() * sizeof(Id));
 
+
     // Update meta data.
     rmd.second._startRhs = startRhs;
-    rmd.second._offsetAfter =
+    rmd.second._startLhsTypes =
         startRhs + rmd.first.getNofElements() * sizeof(Id);
+
+    //adjust the type offsets
+
+    auto sizeLhsTypes = nofDistinctLhs * (sizeof(bufLhsTypes[0]));
+    for (size_t i = 0; i < nofDistinctLhs; ++i) {
+      bufLhsTypes[i].second += rmd.second._startLhsTypes + sizeLhsTypes;
+    }
+
+    out.write(bufLhsTypes, sizeLhsTypes);
+    rmd.second._startRhsTypes = rmd.second._startLhsTypes + nofDistinctLhs * (sizeof(bufLhsTypes[0]));
+    rmd.second._offsetAfter = rmd.second._startRhsTypes;  // in case we have no rhsTypes b.c. they are unique
+    if (!rhsTypeUnique) {
+      out.write(bufRhsTypes, data.size() * sizeof(bufRhsTypes[0]));
+      rmd.second._offsetAfter = rmd.second._startRhsTypes + data.size() * sizeof(bufRhsTypes[0]);
+    }
+
 
     // Create the block data for the FullRelationMetaData.
     // Block are offsets into the LHS list for non-functional relations.
     for (size_t i = 0; i < nofDistinctLhs; ++i) {
       if (i % DISTINCT_LHS_PER_BLOCK == 0) {
         rmd.second._blocks.emplace_back(BlockMetaData(
-            bufLhs[i].first,
-            rmd.first.getStartOfLhs() + i * (sizeof(Id) + sizeof(off_t))));
+            IdWithDatatype{bufLhs[i].first, bufLhsTypes[i].first},
+            rmd.first.getStartOfLhs() + i * (sizeof(Id) + sizeof(off_t)),
+            rmd.second._startLhsTypes + i * sizeof(bufLhsTypes[0])));
       }
     }
     delete[] bufLhs;
     delete[] bufRhs;
+    delete[] bufLhsTypes;
+    delete[] bufRhsTypes;
   }
 }
 
@@ -1147,7 +1208,7 @@ size_t Index::getHasPredicateFullSize() const {
 
 // _____________________________________________________________________________
 void Index::scanFunctionalRelation(const pair<off_t, size_t>& blockOff,
-                                   Id lhsId, ad_utility::File& indexFile,
+                                   IdWithDatatype lhsId, ad_utility::File& indexFile,
                                    IdTable* result) const {
   if (blockOff.second == 0) {
     // TODO<joka921> this check should be in the callers, but for that I want to
@@ -1159,10 +1220,13 @@ void Index::scanFunctionalRelation(const pair<off_t, size_t>& blockOff,
   WidthTwoList block;
   block.resize(blockOff.second / (2 * sizeof(Id)));
   indexFile.read(block.data(), blockOff.second, blockOff.first);
+  AD_CHECK(lhsId.type_ == Datatype::String);
   auto it = std::lower_bound(
-      block.begin(), block.end(), lhsId,
+      block.begin(), block.end(), lhsId.value_,
       [](const array<Id, 2>& elem, Id key) { return elem[0] < key; });
-  if ((*it)[0] == lhsId) {
+
+  AD_CHECK(lhsId.type_ == Datatype::String); // TODO<joka921> make other types work
+  if ((*it)[0] == lhsId.value_) {
     result->push_back({(*it)[1]});
   }
   LOG(TRACE) << "Read " << result->size() << " RHS.\n";
@@ -1171,7 +1235,7 @@ void Index::scanFunctionalRelation(const pair<off_t, size_t>& blockOff,
 // _____________________________________________________________________________
 void Index::scanNonFunctionalRelation(const pair<off_t, size_t>& blockOff,
                                       const pair<off_t, size_t>& followBlock,
-                                      Id lhsId, ad_utility::File& indexFile,
+                                      IdWithDatatype lhsId, ad_utility::File& indexFile,
                                       off_t upperBound, IdTable* result) const {
   LOG(TRACE) << "Scanning non-functional relation ...\n";
 
@@ -1181,13 +1245,15 @@ void Index::scanNonFunctionalRelation(const pair<off_t, size_t>& blockOff,
     // nothing to do if the result is empty
     return;
   }
+  AD_CHECK(lhsId.type_ == Datatype::String); //TODO<joka921>
+  Id lhsSimple = lhsId.value_;
   vector<pair<Id, off_t>> block;
   block.resize(blockOff.second / (sizeof(Id) + sizeof(off_t)));
   indexFile.read(block.data(), blockOff.second, blockOff.first);
   auto it = std::lower_bound(
-      block.begin(), block.end(), lhsId,
+      block.begin(), block.end(), lhsSimple,
       [](const pair<Id, off_t>& elem, Id key) { return elem.first < key; });
-  if (it->first == lhsId) {
+  if (it->first == lhsSimple) {
     size_t nofBytes = 0;
     if ((it + 1) != block.end()) {
       LOG(TRACE) << "Obtained upper bound from same block!\n";
@@ -1216,8 +1282,8 @@ size_t Index::relationCardinality(const string& relationName) const {
   if (relationName == INTERNAL_TEXT_MATCH_PREDICATE) {
     return TEXT_PREDICATE_CARDINALITY_ESTIMATE;
   }
-  Id relId;
-  if (_vocab.getId(relationName, &relId)) {
+  IdWithDatatype relId;
+  if (_vocab.getIdWithDatatype(relationName, &relId)) {
     if (this->_PSO.metaData().relationExists(relId)) {
       return this->_PSO.metaData().getRmd(relId).getNofElements();
     }
@@ -1227,8 +1293,8 @@ size_t Index::relationCardinality(const string& relationName) const {
 
 // _____________________________________________________________________________
 size_t Index::subjectCardinality(const string& sub) const {
-  Id relId;
-  if (_vocab.getId(sub, &relId)) {
+  IdWithDatatype relId;
+  if (_vocab.getIdWithDatatype(sub, &relId)) {
     if (this->_SPO.metaData().relationExists(relId)) {
       return this->_SPO.metaData().getRmd(relId).getNofElements();
     }
@@ -1238,8 +1304,8 @@ size_t Index::subjectCardinality(const string& sub) const {
 
 // _____________________________________________________________________________
 size_t Index::objectCardinality(const string& obj) const {
-  Id relId;
-  if (_vocab.getId(obj, &relId)) {
+  IdWithDatatype relId;
+  if (_vocab.getIdWithDatatype(obj, &relId)) {
     if (this->_OSP.metaData().relationExists(relId)) {
       return this->_OSP.metaData().getRmd(relId).getNofElements();
     }
@@ -1405,12 +1471,13 @@ void Index::readConfiguration() {
 
 // ___________________________________________________________________________
 LangtagAndTriple Index::tripleToInternalRepresentation(Triple&& tripleIn) {
-  LangtagAndTriple res{"", std::move(tripleIn)};
-  auto& spo = res._triple;
+  LangtagAndTriple res;
+  auto& spo = tripleIn;
   for (auto& el : spo) {
     el = _vocab.getLocaleManager().normalizeUtf8(el);
   }
   size_t upperBound = 3;
+  // TODO<joka921> Here lands the actual conversion to datatypes
   if (ad_utility::isXsdValue(spo[2])) {
     spo[2] = ad_utility::convertValueLiteralToIndexWord(spo[2]);
     upperBound = 2;
@@ -1427,6 +1494,10 @@ LangtagAndTriple Index::tripleToInternalRepresentation(Triple&& tripleIn) {
         spo[k][0] = EXTERNALIZED_ENTITIES_PREFIX_CHAR;
       }
     }
+  }
+  // TODO<joka921> At some point, not everything will be a string
+  for (size_t i = 0; i < 3; ++i) {
+    res._triple[i] = {std::move(spo[i]), Datatype::String};
   }
   return res;
 }

@@ -26,11 +26,11 @@ MmapHandler convertHmapHandlerToMmap(const MetaWrapperHashMap& hmap,
     }
   }
   MmapHandler res;
-  res.setup(maxId + 1, FullRelationMetaData::empty, filename);
+  res.setup(filename);
   notifyCreated(filename, false);
 
   for (auto it = hmap.cbegin(); it != hmap.cend(); ++it) {
-    res.set(it->first, it->second);
+    res.add(it->first, it->second);
   }
 
   return res;

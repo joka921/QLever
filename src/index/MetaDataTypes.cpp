@@ -8,21 +8,26 @@
 #include <cmath>
 #include "../util/ReadableNumberFact.h"
 #include "./MetaDataHandler.h"
+#include "./IndexBuilderTypes.h"
 
-const FullRelationMetaData FullRelationMetaData::empty(-1, -1, -1, 1.0, 1.0,
-                                                       false, false);
+const FullRelationMetaData FullRelationMetaData::empty({ID_NO_VALUE, Datatype::String}, -1, -1, 1.0, 1.0,
+                                                       false, false, std::nullopt, std::nullopt);
 // _____________________________________________________________________________
 FullRelationMetaData::FullRelationMetaData()
-    : _relId(0), _startFullIndex(0), _typeMultAndNofElements(0) {}
+    : _relId{0, Datatype::String}, _startFullIndex(0), _typeMultAndNofElements(0) {}
 
 // _____________________________________________________________________________
-FullRelationMetaData::FullRelationMetaData(Id relId, off_t startFullIndex,
+FullRelationMetaData::FullRelationMetaData(IdWithDatatype relId, off_t startFullIndex,
                                            size_t nofElements, double col1Mult,
                                            double col2Mult, bool isFunctional,
-                                           bool hasBlocks)
+                                           bool hasBlocks, std::optional<Datatype> firstColumnDatatype,
+                                           std::optional<Datatype> secondColumnDatatype)
     : _relId(relId),
       _startFullIndex(startFullIndex),
-      _typeMultAndNofElements(nofElements) {
+      _firstColumnUniqueDatatype(firstColumnDatatype),
+       _secondColumnUniqueDatatype(secondColumnDatatype),
+      _typeMultAndNofElements(nofElements)
+  {
   assert(col1Mult >= 1);
   assert(col2Mult >= 1);
   double c1ml = log2(col1Mult);
@@ -101,12 +106,12 @@ uint8_t FullRelationMetaData::getCol2LogMultiplicity() const {
 
 // _____________________________________________________________________________
 pair<off_t, size_t> BlockBasedRelationMetaData::getBlockStartAndNofBytesForLhs(
-    Id lhs) const {
+    IdWithDatatype lhs) const {
   // get the first block where the first Id is greater or equal to what we are
   // looking for.
   auto it = std::lower_bound(
       _blocks.begin(), _blocks.end(), lhs,
-      [](const BlockMetaData& a, Id lhs) { return a._firstLhs < lhs; });
+      [](const BlockMetaData& a, IdWithDatatype lhs) { return a._firstLhs < lhs; });
 
   // Go back one block unless perfect lhs match.
   if (it == _blocks.end() || it->_firstLhs > lhs) {
@@ -134,10 +139,10 @@ pair<off_t, size_t> BlockBasedRelationMetaData::getBlockStartAndNofBytesForLhs(
 
 // _____________________________________________________________________________
 pair<off_t, size_t> BlockBasedRelationMetaData::getFollowBlockForLhs(
-    Id lhs) const {
+    IdWithDatatype lhs) const {
   auto it = std::lower_bound(
       _blocks.begin(), _blocks.end(), lhs,
-      [](const BlockMetaData& a, Id lhs) { return a._firstLhs < lhs; });
+      [](const BlockMetaData& a, IdWithDatatype lhs) { return a._firstLhs < lhs; });
 
   // Go back one block unless perfect lhs match.
   if (it == _blocks.end() || it->_firstLhs > lhs) {
@@ -171,10 +176,16 @@ pair<off_t, size_t> BlockBasedRelationMetaData::getFollowBlockForLhs(
 // _____________________________________________________________________________
 FullRelationMetaData& FullRelationMetaData::createFromByteBuffer(
     unsigned char* buffer) {
-  _relId = *reinterpret_cast<Id*>(buffer);
+  _relId = *reinterpret_cast<IdWithDatatype*>(buffer);
   _startFullIndex = *reinterpret_cast<off_t*>(buffer + sizeof(_relId));
   _typeMultAndNofElements =
-      *reinterpret_cast<uint64_t*>(buffer + sizeof(Id) + sizeof(off_t));
+      *reinterpret_cast<uint64_t*>(buffer + sizeof(_relId) + sizeof(_typeMultAndNofElements));
+
+  auto offsetPtr = buffer + sizeof(_relId) + sizeof(_startFullIndex) + sizeof(_typeMultAndNofElements);
+
+   _firstColumnUniqueDatatype = (*reinterpret_cast<decltype(_firstColumnUniqueDatatype)*>(offsetPtr));
+   offsetPtr += sizeof(_firstColumnUniqueDatatype);
+   _secondColumnUniqueDatatype = (*reinterpret_cast<decltype(_secondColumnUniqueDatatype)*>(offsetPtr));
   return *this;
 }
 
@@ -182,13 +193,17 @@ FullRelationMetaData& FullRelationMetaData::createFromByteBuffer(
 BlockBasedRelationMetaData& BlockBasedRelationMetaData::createFromByteBuffer(
     unsigned char* buffer) {
   _startRhs = *reinterpret_cast<off_t*>(buffer);
-  _offsetAfter = *reinterpret_cast<off_t*>(buffer + sizeof(_startRhs));
-  size_t nofBlocks = *reinterpret_cast<size_t*>(buffer + sizeof(_startRhs) +
-                                                sizeof(_offsetAfter));
+  buffer += sizeof(_startRhs);
+  _startLhsTypes = *reinterpret_cast<off_t*>(buffer);
+  buffer += sizeof(_startLhsTypes);
+  _startRhsTypes = *reinterpret_cast<off_t*>(buffer);
+  buffer += sizeof(_startRhsTypes);
+  _offsetAfter = *reinterpret_cast<off_t*>(buffer);
+  buffer += sizeof(_offsetAfter);
+  size_t nofBlocks = *reinterpret_cast<size_t*>(buffer);
+  buffer += sizeof(nofBlocks);
   _blocks.resize(nofBlocks);
-  memcpy(_blocks.data(),
-         buffer + sizeof(_startRhs) + sizeof(_offsetAfter) + sizeof(nofBlocks),
-         nofBlocks * sizeof(BlockMetaData));
+  memcpy(_blocks.data(),buffer, nofBlocks * sizeof(BlockMetaData));
 
   return *this;
 }
@@ -196,13 +211,33 @@ BlockBasedRelationMetaData& BlockBasedRelationMetaData::createFromByteBuffer(
 // _____________________________________________________________________________
 size_t FullRelationMetaData::bytesRequired() const {
   return sizeof(_relId) + sizeof(_startFullIndex) +
-         sizeof(_typeMultAndNofElements);
+         sizeof(_typeMultAndNofElements) +  sizeof(_firstColumnUniqueDatatype)
+       + sizeof(_secondColumnUniqueDatatype);
+
+
+}
+
+off_t FullRelationMetaData::getStartOfTypeData() const {
+  return _startFullIndex + 2 * sizeof(Id) * getNofElements();
+
 }
 
 // _____________________________________________________________________________
 off_t FullRelationMetaData::getStartOfLhs() const {
   AD_CHECK(hasBlocks());
-  return _startFullIndex + 2 * sizeof(Id) * getNofElements();
+  return getStartOfTypeData() + getSizeOfTypeData();
+}
+
+// ________________________________________________________________________
+off_t FullRelationMetaData::getSizeOfTypeData() const {
+  off_t res = 0;
+  if (!_firstColumnUniqueDatatype) {
+    res += getNofElements() * sizeof(Datatype);
+  }
+  if (!_secondColumnUniqueDatatype) {
+    res += getNofElements() * sizeof(Datatype);
+  }
+  return res;
 }
 
 // _____________________________________________________________________________

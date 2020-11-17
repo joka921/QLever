@@ -24,6 +24,7 @@
 #include "./CompressedString.h"
 #include "./StringSortComparator.h"
 #include "ExternalVocabulary.h"
+#include "IndexBuilderTypes.h"
 
 using std::string;
 using std::vector;
@@ -186,6 +187,11 @@ class Vocabulary {
     bool success = _externalLiterals.getId(word, id);
     *id += _words.size();
     return success;
+  }
+
+  bool getIdWithDatatype(const string& word, IdWithDatatype* tp) const {
+    tp->type_ = Datatype::String;
+    return getId(word, &(tp->value_));
   }
 
   Id getValueIdForLT(const string& indexWord, const SortLevel level) const {

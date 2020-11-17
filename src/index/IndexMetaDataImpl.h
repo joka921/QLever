@@ -16,7 +16,7 @@ void IndexMetaData<MapType>::add(const FullRelationMetaData& rmd,
                                  const BlockBasedRelationMetaData& bRmd) {
   // only add rmd to _data if it's not already present there
   if constexpr (!persistentRMD) {
-    _data.set(rmd._relId, rmd);
+    _data.add(rmd._relId, rmd);
   }
 
   off_t afterExpected =
@@ -51,9 +51,6 @@ void IndexMetaData<MapType>::createFromByteBuffer(unsigned char* buf) {
   buf += nameLength;
 
   size_t nofRelations = readFromBuf<size_t>(&buf);
-  if constexpr (_isMmapBased) {
-    _data.setSize(nofRelations);
-  }
   _offsetAfter = readFromBuf<off_t>(&buf);
 
   if constexpr (!_isMmapBased) {
@@ -76,7 +73,7 @@ void IndexMetaData<MapType>::createFromByteBuffer(unsigned char* buf) {
     // MmapBased
     if (version < V_BLOCK_LIST_AND_STATISTICS) {
       for (auto it = _data.cbegin(); it != _data.cend(); ++it) {
-        const FullRelationMetaData& rmd = (*it).second;
+        const FullRelationMetaData& rmd = itToRmd(it);
         if (rmd.hasBlocks()) {
           BlockBasedRelationMetaData bRmd;
           bRmd.createFromByteBuffer(buf);
@@ -94,7 +91,7 @@ void IndexMetaData<MapType>::createFromByteBuffer(unsigned char* buf) {
       // don't have blocks
       size_t numBlockData = readFromBuf<size_t>(&buf);
       for (size_t i = 0; i < numBlockData; ++i) {
-        Id id = readFromBuf<Id>(&buf);
+        IdWithDatatype id = readFromBuf<IdWithDatatype>(&buf);
         BlockBasedRelationMetaData bRmd;
         bRmd.createFromByteBuffer(buf);
         buf += bRmd.bytesRequired();
@@ -114,7 +111,7 @@ void IndexMetaData<MapType>::createFromByteBuffer(unsigned char* buf) {
 }
 // _____________________________________________________________________________
 template <class MapType>
-const RelationMetaData IndexMetaData<MapType>::getRmd(Id relId) const {
+const RelationMetaData IndexMetaData<MapType>::getRmd(IdWithDatatype relId) const {
   const FullRelationMetaData& full = _data.getAsserted(relId);
   RelationMetaData ret(full);
   if (full.hasBlocks()) {
@@ -125,7 +122,7 @@ const RelationMetaData IndexMetaData<MapType>::getRmd(Id relId) const {
 
 // _____________________________________________________________________________
 template <class MapType>
-bool IndexMetaData<MapType>::relationExists(Id relId) const {
+bool IndexMetaData<MapType>::relationExists(IdWithDatatype relId) const {
   return _data.count(relId) > 0;
 }
 
@@ -240,7 +237,8 @@ string IndexMetaData<MapType>::statistics() const {
 
 // _____________________________________________________________________________
 template <class MapType>
-size_t IndexMetaData<MapType>::getNofBlocksForRelation(const Id id) const {
+size_t IndexMetaData<MapType>::getNofBlocksForRelation(
+    const IdWithDatatype id) const {
   auto it = _blockData.find(id);
   if (it != _blockData.end()) {
     return it->second._blocks.size();
@@ -273,10 +271,9 @@ void IndexMetaData<MapType>::calculateExpensiveStatistics() {
   _totalBytes = 0;
   _totalBlocks = 0;
   for (auto it = _data.cbegin(); it != _data.cend(); ++it) {
-    auto el = *it;
-    _totalElements += el.second.getNofElements();
-    _totalBytes += getTotalBytesForRelation(el.second);
-    _totalBlocks += getNofBlocksForRelation(el.first);
+    _totalElements += itToRmd(it).getNofElements();
+    _totalBytes += getTotalBytesForRelation(itToRmd(it));
+    _totalBlocks += getNofBlocksForRelation(itToId(it));
   }
 }
 

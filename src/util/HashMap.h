@@ -35,6 +35,10 @@ class HashMap : private absl::flat_hash_map<K, V, HashFcn, EqualKey, Alloc> {
   // iterator equal to end() otherwise
   using Base::begin;
 
+  // Forward type declarations
+  using Base::key_type;
+  using Base::value_type;
+
   // Returns an iterator one past the end so that `it != m.end()` is a viable
   // stopping condition in a for loop
   using Base::end;

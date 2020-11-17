@@ -10,6 +10,7 @@
 #include "../global/Id.h"
 #include "../util/File.h"
 #include "../util/HashMap.h"
+#include "./IndexBuilderTypes.h"
 
 using std::array;
 using std::pair;
@@ -26,23 +27,77 @@ static const uint64_t HAS_BLOCKS_MASK = 0x0200000000000000;
 static const uint64_t NOF_ELEMENTS_MASK = 0x000000FFFFFFFFFF;
 static const uint64_t MAX_NOF_ELEMENTS = NOF_ELEMENTS_MASK;
 
+struct DatatypeInfo {
+  DatatypeInfo(size_t threshold, const std::string& basename):
+    ids_{threshold, basename + "-ids"}, types0_{threshold, basename + "-types0"}, types1_{threshold, basename + "-types1"} {}
+
+  ad_utility::BufferedVector<std::array<Id, 2>> ids_;
+  ad_utility::BufferedVector<Datatype>types0_;
+  ad_utility::BufferedVector<Datatype>types1_;
+  std::array<std::optional<Datatype>, 2> uniqueTypes_;
+
+  size_t  size() const {
+    AD_CHECK(ids_.size() == types0_.size() || uniqueTypes_[0]) ;
+    AD_CHECK(ids_.size() == types1_.size() || uniqueTypes_[1]);
+    return ids_.size();
+  }
+};
+
+struct DatatypeInfoMerged {
+  DatatypeInfoMerged (size_t threshold, std::string fileBasename) : ids_{threshold, fileBasename}, fileBasename_{std::move(fileBasename)}, threshold_{threshold} {}
+  ad_utility::BufferedVector<std::array<IdWithDatatype, 2>> ids_;
+  std::string fileBasename_;
+  size_t threshold_;
+
+  size_t  size() const {
+    return ids_.size();
+  }
+
+  DatatypeInfo splitColumns() const {
+    DatatypeInfo res{threshold_, fileBasename_ + ".split"};
+    if ( std::adjacent_find( ids_.begin(), ids_.end(), [](const auto& a, const auto& b) {return a[0].type_ != b[0].type_;} ) == ids_.end() ) {
+      res.uniqueTypes_[0] = ids_[0][0].type_;
+    } else {
+      for (const auto& el : ids_) {
+        res.types0_.push_back(el[0].type_);
+      }
+    }
+
+    if ( std::adjacent_find( ids_.begin(), ids_.end(), [](const auto& a, const auto& b) {return a[1].type_ != b[1].type_;} ) == ids_.end() ) {
+      res.uniqueTypes_[1] = ids_[0][1].type_;
+    } else {
+      for (const auto& el : ids_) {
+        res.types0_.push_back(el[1].type_);
+      }
+    }
+
+    for (const auto& el : ids_) {
+      res.ids_.push_back({el[0].value_, el[1].value_});
+    }
+    return res;
+
+    }
+};
+
 class BlockMetaData {
  public:
-  BlockMetaData() : _firstLhs(0), _startOffset(0) {}
+  BlockMetaData() : _firstLhs{0, Datatype::String}, _startOffset(0) {}
 
-  BlockMetaData(Id lhs, off_t start) : _firstLhs(lhs), _startOffset(start) {}
+  BlockMetaData(IdWithDatatype lhs, off_t start, off_t startType0) : _firstLhs(lhs), _startOffset(start), _startOffsetType0{startType0}  {}
 
-  Id _firstLhs;
+  IdWithDatatype _firstLhs;
   off_t _startOffset;
+  off_t _startOffsetType0 = 0;
 };
 
 class FullRelationMetaData {
  public:
   FullRelationMetaData();
 
-  FullRelationMetaData(Id relId, off_t startFullIndex, size_t nofElements,
+  FullRelationMetaData(IdWithDatatype relId, off_t startFullIndex, size_t nofElements,
                        double col1Mult, double col2Mult, bool isFunctional,
-                       bool hasBlocks);
+                       bool hasBlocks, std::optional<Datatype> firstColumnDatatype,
+                       std::optional<Datatype> secondColumnDatatype);
 
   static const FullRelationMetaData empty;
 
@@ -73,10 +128,18 @@ class FullRelationMetaData {
   // The size this object will require when serialized to file.
   size_t bytesRequired() const;
 
+  // I think this is only for blocks
   off_t getStartOfLhs() const;
+  off_t getStartOfTypeData() const;
+  off_t getSizeOfTypeData() const;
 
-  Id _relId;
+  off_t getStartOfBlockTypes() const;
+
+  IdWithDatatype _relId;
   off_t _startFullIndex;
+  std::optional<Datatype> _firstColumnUniqueDatatype;
+  std::optional<Datatype> _secondColumnUniqueDatatype;
+
 
   friend ad_utility::File& operator<<(ad_utility::File& f,
                                       const FullRelationMetaData& rmd);
@@ -107,6 +170,10 @@ inline ad_utility::File& operator<<(ad_utility::File& f,
   f.write(&rmd._relId, sizeof(rmd._relId));
   f.write(&rmd._startFullIndex, sizeof(rmd._startFullIndex));
   f.write(&rmd._typeMultAndNofElements, sizeof(rmd._typeMultAndNofElements));
+
+  f.write(&rmd._firstColumnUniqueDatatype, sizeof(rmd._firstColumnUniqueDatatype));
+  f.write(&rmd._secondColumnUniqueDatatype, sizeof(rmd._secondColumnUniqueDatatype));
+
   return f;
 }
 
@@ -132,16 +199,18 @@ class BlockBasedRelationMetaData {
   // the desired lhs if such a block exists at all.
   // If the lhs does not exists at all, this will only be clear after reading
   // said block.
-  pair<off_t, size_t> getBlockStartAndNofBytesForLhs(Id lhs) const;
+  pair<off_t, size_t> getBlockStartAndNofBytesForLhs(IdWithDatatype lhs) const;
 
   // Gets the block after the one returned by getBlockStartAndNofBytesForLhs.
   // This is necessary for finding rhs upper bounds for the last item in a
   // block.
   // If this is equal to the block returned by getBlockStartAndNofBytesForLhs,
   // it means it is the last block and the offsetAfter can be used.
-  pair<off_t, size_t> getFollowBlockForLhs(Id lhs) const;
+  pair<off_t, size_t> getFollowBlockForLhs(IdWithDatatype lhs) const;
 
   off_t _startRhs;
+  off_t _startLhsTypes;
+  off_t _startRhsTypes;
   off_t _offsetAfter;
   vector<BlockMetaData> _blocks;
 };
@@ -149,6 +218,8 @@ class BlockBasedRelationMetaData {
 inline ad_utility::File& operator<<(ad_utility::File& f,
                                     const BlockBasedRelationMetaData& rmd) {
   f.write(&rmd._startRhs, sizeof(rmd._startRhs));
+  f.write(&rmd._startLhsTypes, sizeof(rmd._startLhsTypes));
+  f.write(&rmd._startRhsTypes, sizeof(rmd._startRhsTypes));
   f.write(&rmd._offsetAfter, sizeof(rmd._offsetAfter));
   auto nofBlocks = rmd._blocks.size();
   f.write(&nofBlocks, sizeof(nofBlocks));

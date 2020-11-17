@@ -102,7 +102,7 @@ class IndexMetaData {
 
   off_t getOffsetAfter() const;
 
-  const RelationMetaData getRmd(Id relId) const;
+  const RelationMetaData getRmd(IdWithDatatype relId) const;
 
   // Persistent meta data MapTypes (called MmapBased here) have to be separated
   // from RAM-based (e.g. hashMap based sparse) ones at compile time, this is
@@ -142,7 +142,7 @@ class IndexMetaData {
   // of file.
   void readFromFile(ad_utility::File* file);
 
-  bool relationExists(Id relId) const;
+  bool relationExists(IdWithDatatype relId) const;
 
   // calculate and save statistics that are expensive to calculate so we only
   // have to do this during the index build and not at server startup
@@ -169,7 +169,7 @@ class IndexMetaData {
   string _filename;
 
   MapType _data;
-  ad_utility::HashMap<Id, BlockBasedRelationMetaData> _blockData;
+  ad_utility::HashMap<IdWithDatatype, BlockBasedRelationMetaData> _blockData;
   size_t _totalElements = 0;
   size_t _totalBytes = 0;
   size_t _totalBlocks = 0;
@@ -194,7 +194,7 @@ class IndexMetaData {
   friend ad_utility::File& operator<<(ad_utility::File& f,
                                       const IndexMetaData<U>& rmd);
 
-  size_t getNofBlocksForRelation(const Id relId) const;
+  size_t getNofBlocksForRelation(const IdWithDatatype relId) const;
 
   size_t getTotalBytesForRelation(const FullRelationMetaData& frmd) const;
 };
@@ -210,9 +210,9 @@ using MetaWrapperMmap =
 using MetaWrapperMmapView =
     MetaDataWrapperDense<ad_utility::MmapVectorView<FullRelationMetaData>>;
 using MetaWrapperHashMap =
-    MetaDataWrapperHashMap<ad_utility::HashMap<Id, FullRelationMetaData>>;
+    MetaDataWrapperHashMap<ad_utility::HashMap<IdWithDatatype, FullRelationMetaData>>;
 using IndexMetaDataHmap = IndexMetaData<
-    MetaDataWrapperHashMap<ad_utility::HashMap<Id, FullRelationMetaData>>>;
+    MetaDataWrapperHashMap<ad_utility::HashMap<IdWithDatatype, FullRelationMetaData>>>;
 using IndexMetaDataMmap = IndexMetaData<
     MetaDataWrapperDense<ad_utility::MmapVector<FullRelationMetaData>>>;
 using IndexMetaDataMmapView = IndexMetaData<

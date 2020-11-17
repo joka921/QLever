@@ -7,8 +7,14 @@
 #include "../src/index/IndexMetaData.h"
 #include "../src/util/File.h"
 
+
+// lift to String Entity
+IdWithDatatype l(Id x) {
+  return {x, Datatype::String};
+}
+
 TEST(FullRelationMetaDataTest, testFunctionAndBlockFlagging) {
-  FullRelationMetaData rmd(0, 0, 5, 1, 1, false, false);
+  FullRelationMetaData rmd(l(0), 0, 5, 1, 1, false, false, Datatype::String, Datatype::String);
   ASSERT_EQ(5u, rmd.getNofElements());
   ASSERT_FALSE(rmd.hasBlocks());
   ASSERT_FALSE(rmd.isFunctional());
@@ -51,7 +57,7 @@ TEST(FullRelationMetaDataTest, testFunctionAndBlockFlagging) {
   ASSERT_EQ(1u, rmd.getCol1LogMultiplicity());
   ASSERT_EQ(200u, rmd.getCol2LogMultiplicity());
 
-  FullRelationMetaData rmd2(0, 0, 5, 1, 1, true, true);
+  FullRelationMetaData rmd2(l(0), 0, 5, 1, 1, true, true, Datatype::String, Datatype::String);
   rmd2.setIsFunctional(true);
   ASSERT_EQ(5u, rmd2.getNofElements());
   ASSERT_TRUE(rmd2.hasBlocks());

@@ -96,7 +96,7 @@ class Join : public Operation {
 
   void computeResultForJoinWithFullScanDummy(ResultTable* result) const;
 
-  using ScanMethodType = std::function<void(Id, IdTable*)>;
+  using ScanMethodType = std::function<void(IdWithDatatype, IdTable*)>;
 
   ScanMethodType getScanMethod(
       std::shared_ptr<QueryExecutionTree> fullScanDummyTree) const;
