@@ -105,7 +105,8 @@ uint8_t FullRelationMetaData::getCol2LogMultiplicity() const {
 }
 
 // _____________________________________________________________________________
-pair<off_t, size_t> BlockBasedRelationMetaData::getBlockStartAndNofBytesForLhs(
+std::pair<off_t, size_t>
+BlockBasedRelationMetaData::getBlockStartAndNofBytesForLhs(
     IdWithDatatype lhs) const {
   // get the first block where the first Id is greater or equal to what we are
   // looking for.

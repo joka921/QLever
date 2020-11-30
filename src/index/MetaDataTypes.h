@@ -179,6 +179,13 @@ inline ad_utility::File& operator<<(ad_utility::File& f,
 
 class BlockBasedRelationMetaData {
  public:
+  // contains offsets and number of bytes to read for a single block
+  struct OffsetsForBlock {
+    off_t startIds;
+    size_t IdSize;
+    off_t startDatatypes;
+    size_t sizeDatatypes;
+  };
   BlockBasedRelationMetaData();
 
   BlockBasedRelationMetaData(off_t startRhs, off_t offsetAfter,
@@ -207,6 +214,7 @@ class BlockBasedRelationMetaData {
   // If this is equal to the block returned by getBlockStartAndNofBytesForLhs,
   // it means it is the last block and the offsetAfter can be used.
   pair<off_t, size_t> getFollowBlockForLhs(IdWithDatatype lhs) const;
+
 
   off_t _startRhs;
   off_t _startLhsTypes;

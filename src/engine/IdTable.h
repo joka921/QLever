@@ -1009,7 +1009,7 @@ class IdTableTemplated : private IdTableImpl<COLS, DATA> {
    * This is an expensive operation and so it has an explicit name.
    * @return
    */
-  template <typename = std::enable_if_t<!DATA::ManagesStorage>>
+  template <typename X = DATA, typename = std::enable_if_t<!X::ManagesStorage>>
   const IdTableTemplated<COLS, IdTableVectorWrapper> clone() const {
     return IdTableTemplated<COLS, IdTableVectorWrapper>(*this);
   };
