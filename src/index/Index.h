@@ -553,7 +553,7 @@ class Index {
                             size_t c2);
 
   pair<FullRelationMetaData, BlockBasedRelationMetaData> writeSwitchedRel(
-      ad_utility::File* out, off_t lastOffset, IdWithDatatype currentRel,
+      ad_utility::File* out, IdWithDatatype currentRel,
       DatatypeInfoMerged* bufPtr);
 
   // _______________________________________________________________________
@@ -653,7 +653,7 @@ class Index {
   //   The Meta Data (Permutation offsets) for this relation,
   //   Careful: only multiplicity for first column is valid in return value
   static pair<FullRelationMetaData, BlockBasedRelationMetaData> writeRel(
-      ad_utility::File& out, off_t currentOffset, IdWithDatatype relId,
+      ad_utility::File& out, IdWithDatatype relId,
       const DatatypeInfo& data, size_t distinctC1,
       bool functional);
 

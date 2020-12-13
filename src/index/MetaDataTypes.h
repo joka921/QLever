@@ -79,15 +79,24 @@ struct DatatypeInfoMerged {
     }
 };
 
+// TODO<joka921> Comment and cleanup
+struct BlockInfoNonFunctional {
+  off_t startLhs = 0;
+  size_t nOfBytesLhs = 0;
+  off_t startRhs = 0;
+  size_t nOfBytesRhs = 0;
+  off_t startRhsTypes = 0;
+  size_t nOfBytesRhsTypes = 0;
+};
+
 class BlockMetaData {
  public:
-  BlockMetaData() : _firstLhs{0, Datatype::String}, _startOffset(0) {}
+  BlockMetaData() : _firstLhs{0, Datatype::String}{}
 
-  BlockMetaData(IdWithDatatype lhs, off_t start, off_t startType0) : _firstLhs(lhs), _startOffset(start), _startOffsetType0{startType0}  {}
+  BlockMetaData(IdWithDatatype lhs, BlockInfoNonFunctional offsets) : _firstLhs{lhs}, _offsets{offsets}  {}
 
   IdWithDatatype _firstLhs;
-  off_t _startOffset;
-  off_t _startOffsetType0 = 0;
+  BlockInfoNonFunctional _offsets{};
 };
 
 class FullRelationMetaData {
@@ -102,6 +111,27 @@ class FullRelationMetaData {
   static const FullRelationMetaData empty;
 
   size_t getNofBytesForFulltextIndex() const;
+
+  off_t getLhsTypeOffset() const {
+    return _startFullIndex + getNofBytesForFulltextIndex();
+  }
+
+  off_t getRhsTypeOffset() const {
+    auto res = getLhsTypeOffset();
+    if (! _firstColumnUniqueDatatype) {
+      res += getNofElements() * sizeof(Datatype);
+    }
+    return res;
+  }
+
+  off_t getOffsetAfter() const {
+    auto res = getRhsTypeOffset();
+    if (! _secondColumnUniqueDatatype) {
+      res += getNofElements() * sizeof(Datatype);
+    }
+    return res;
+  }
+
 
   // Returns true if there is exactly one RHS for each LHS in the relation
   bool isFunctional() const;
@@ -181,10 +211,11 @@ class BlockBasedRelationMetaData {
  public:
   // contains offsets and number of bytes to read for a single block
   struct OffsetsForBlock {
-    off_t startIds;
-    size_t IdSize;
-    off_t startDatatypes;
-    size_t sizeDatatypes;
+    //default initialized to be empty
+    off_t startIds = 0;
+    size_t IdSize = 0;
+    off_t startDatatypes = 0;
+    size_t sizeDatatypes = 0;
   };
   BlockBasedRelationMetaData();
 
@@ -197,6 +228,9 @@ class BlockBasedRelationMetaData {
   // Restores meta data from raw memory.
   // Needed when registering an index on startup.
   BlockBasedRelationMetaData& createFromByteBuffer(unsigned char* buffer);
+
+
+  BlockInfoNonFunctional getBlockMetaDataForNonfunctional(IdWithDatatype lhs) const;
 
   // Takes a LHS and returns the offset into the file at which the
   // corresponding block can be read as well as the nof bytes to read.
@@ -215,18 +249,17 @@ class BlockBasedRelationMetaData {
   // it means it is the last block and the offsetAfter can be used.
   pair<off_t, size_t> getFollowBlockForLhs(IdWithDatatype lhs) const;
 
-
   off_t _startRhs;
-  off_t _startLhsTypes;
   off_t _startRhsTypes;
   off_t _offsetAfter;
   vector<BlockMetaData> _blocks;
+  BlockInfoNonFunctional getBlockMetaDataForNonfunctional(
+      IdWithDatatype lhs, ad_utility::File& f) const;
 };
 
 inline ad_utility::File& operator<<(ad_utility::File& f,
                                     const BlockBasedRelationMetaData& rmd) {
   f.write(&rmd._startRhs, sizeof(rmd._startRhs));
-  f.write(&rmd._startLhsTypes, sizeof(rmd._startLhsTypes));
   f.write(&rmd._startRhsTypes, sizeof(rmd._startRhsTypes));
   f.write(&rmd._offsetAfter, sizeof(rmd._offsetAfter));
   auto nofBlocks = rmd._blocks.size();

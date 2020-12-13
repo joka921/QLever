@@ -104,75 +104,6 @@ uint8_t FullRelationMetaData::getCol2LogMultiplicity() const {
   return uint8_t((_typeMultAndNofElements & 0x0000FF0000000000) >> 40);
 }
 
-// _____________________________________________________________________________
-std::pair<off_t, size_t>
-BlockBasedRelationMetaData::getBlockStartAndNofBytesForLhs(
-    IdWithDatatype lhs) const {
-  // get the first block where the first Id is greater or equal to what we are
-  // looking for.
-  auto it = std::lower_bound(
-      _blocks.begin(), _blocks.end(), lhs,
-      [](const BlockMetaData& a, IdWithDatatype lhs) { return a._firstLhs < lhs; });
-
-  // Go back one block unless perfect lhs match.
-  if (it == _blocks.end() || it->_firstLhs > lhs) {
-    // if we already are at the first block this means that we
-    // will have an empty result since the first
-    // entry is already too big. In this case our result will
-    // be empty and we can perform a short cut.
-    if (it == _blocks.begin()) {
-      // Empty result: scan 0 bytes from a valid start index.
-      return {it->_startOffset, 0};
-    }
-
-    it--;
-  }
-
-  off_t after;
-  if ((it + 1) != _blocks.end()) {
-    after = (it + 1)->_startOffset;
-  } else {
-    after = _startRhs;
-  }
-
-  return {it->_startOffset, after - it->_startOffset};
-}
-
-// _____________________________________________________________________________
-pair<off_t, size_t> BlockBasedRelationMetaData::getFollowBlockForLhs(
-    IdWithDatatype lhs) const {
-  auto it = std::lower_bound(
-      _blocks.begin(), _blocks.end(), lhs,
-      [](const BlockMetaData& a, IdWithDatatype lhs) { return a._firstLhs < lhs; });
-
-  // Go back one block unless perfect lhs match.
-  if (it == _blocks.end() || it->_firstLhs > lhs) {
-    // if we already are at the first block this means that we
-    // will have an empty result since the first
-    // entry is already too big. In this case our result will
-    // be empty and we can perform a short cut.
-    if (it == _blocks.begin()) {
-      // Empty result: scan 0 bytes from a valid start index.
-      return {it->_startOffset, 0};
-    }
-    it--;
-  }
-
-  // Advance one block again if possible
-  if ((it + 1) != _blocks.end()) {
-    ++it;
-  }
-
-  off_t after;
-  if ((it + 1) != _blocks.end()) {
-    after = (it + 1)->_startOffset;
-  } else {
-    // In this case after is the beginning of the rhs list,
-    after = _startRhs;
-  }
-
-  return pair<off_t, size_t>(it->_startOffset, after - it->_startOffset);
-}
 
 // _____________________________________________________________________________
 FullRelationMetaData& FullRelationMetaData::createFromByteBuffer(
@@ -195,8 +126,6 @@ BlockBasedRelationMetaData& BlockBasedRelationMetaData::createFromByteBuffer(
     unsigned char* buffer) {
   _startRhs = *reinterpret_cast<off_t*>(buffer);
   buffer += sizeof(_startRhs);
-  _startLhsTypes = *reinterpret_cast<off_t*>(buffer);
-  buffer += sizeof(_startLhsTypes);
   _startRhsTypes = *reinterpret_cast<off_t*>(buffer);
   buffer += sizeof(_startRhsTypes);
   _offsetAfter = *reinterpret_cast<off_t*>(buffer);

@@ -328,7 +328,7 @@ void Index::convertPartialToGlobalIds(
 }
 
 pair<FullRelationMetaData, BlockBasedRelationMetaData> Index::writeSwitchedRel(
-    ad_utility::File* out, off_t lastOffset, IdWithDatatype currentRel,
+    ad_utility::File* out, IdWithDatatype currentRel,
     DatatypeInfoMerged* bufPtr) {
   // sort according to the "switched" relation.
   auto& buffer = *bufPtr;
@@ -353,7 +353,7 @@ pair<FullRelationMetaData, BlockBasedRelationMetaData> Index::writeSwitchedRel(
     lastLhs = el[0];
   }
 
-  return writeRel(*out, lastOffset, currentRel, buffer.splitColumns(), distinctC1, functional);
+  return writeRel(*out, currentRel, buffer.splitColumns(), distinctC1, functional);
 }
 
 // _____________________________________________________________________________
@@ -385,8 +385,6 @@ Index::createPermutationPairImpl(const string& fileName1,
   // Iterate over the vector and identify relation boundaries
   size_t from = 0;
   IdWithDatatype currentRel = vec[0][c0];
-  off_t lastOffset1 = 0;
-  off_t lastOffset2 = 0;
   DatatypeInfoMerged idsAndTypes{
       THRESHOLD_RELATION_CREATION, fileName1 + ".tmp.MmapBuffer"};
   auto& buffer = idsAndTypes.ids_;
@@ -396,15 +394,13 @@ Index::createPermutationPairImpl(const string& fileName1,
   IdWithDatatype lastLhs {std::numeric_limits<Id>::max(), Datatype::String};
   for (TripleVec::bufreader_type reader(vec); !reader.empty(); ++reader) {
     if ((*reader)[c0] != currentRel) {
-      auto md = writeRel(out1, lastOffset1, currentRel, idsAndTypes.splitColumns(), distinctC1,
+      auto md = writeRel(out1, currentRel, idsAndTypes.splitColumns(), distinctC1,
                          functional);
       metaData1.add(md.first, md.second);
-      auto md2 = writeSwitchedRel(&out2, lastOffset2, currentRel, &idsAndTypes);
+      auto md2 = writeSwitchedRel(&out2, currentRel, &idsAndTypes);
       metaData2.add(md2.first, md2.second);
       buffer.clear();
       distinctC1 = 1;
-      lastOffset1 = metaData1.getOffsetAfter();
-      lastOffset2 = metaData2.getOffsetAfter();
       currentRel = (*reader)[c0];
       functional = true;
     } else {
@@ -420,10 +416,10 @@ Index::createPermutationPairImpl(const string& fileName1,
   }
   if (from < vec.size()) {
     auto md =
-        writeRel(out1, lastOffset1, currentRel, idsAndTypes.splitColumns(), distinctC1, functional);
+        writeRel(out1, currentRel, idsAndTypes.splitColumns(), distinctC1, functional);
     metaData1.add(md.first, md.second);
 
-    auto md2 = writeSwitchedRel(&out2, lastOffset2, currentRel, &idsAndTypes);
+    auto md2 = writeSwitchedRel(&out2, currentRel, &idsAndTypes);
     metaData2.add(md2.first, md2.second);
   }
 
@@ -893,7 +889,7 @@ void Index::createPatternsImpl(const string& fileName,
 
 // _____________________________________________________________________________
 pair<FullRelationMetaData, BlockBasedRelationMetaData> Index::writeRel(
-    ad_utility::File& out, off_t currentOffset, IdWithDatatype relId,
+    ad_utility::File& out, IdWithDatatype relId,
     const DatatypeInfo& data, size_t distinctC1,
     bool functional) {
   LOG(TRACE) << "Writing a relation ...\n";
@@ -904,7 +900,7 @@ pair<FullRelationMetaData, BlockBasedRelationMetaData> Index::writeRel(
   double multC2 = 42.42;
   LOG(TRACE) << "Done calculating multiplicities.\n";
   FullRelationMetaData rmd(
-      relId, currentOffset, data.size(), multC1, multC2, functional,
+      relId, out.tell(), data.size(), multC1, multC2, functional,
       !functional && data.size() > USE_BLOCKS_INDEX_SIZE_TRESHOLD,
       data.uniqueTypes_[0], data.uniqueTypes_[1]);
 
@@ -937,11 +933,13 @@ void Index::writeFunctionalRelation(
   if (rmd.first.hasBlocks()) {
     LOG(TRACE) << "Writing part for functional relation ...\n";
     // Do not write extra LHS and RHS lists.
+    // this is only a dummy information
     rmd.second._startRhs =
         rmd.first._startFullIndex + rmd.first.getNofBytesForFulltextIndex();
     // Since the relation is functional, there are no lhs lists and thus this
     // is trivial.
-    rmd.second._offsetAfter = rmd.second._startRhs;
+    rmd.second._startRhsTypes = rmd.first.getRhsTypeOffset();
+    rmd.second._offsetAfter = rmd.first.getOffsetAfter();
     // Create the block data for the meta data.
     // Blocks are offsets into the full pair index for functional relations.
     size_t nofDistinctLhs = 0;
@@ -952,14 +950,12 @@ void Index::writeFunctionalRelation(
       // so we don't care
 
       auto startOfIds = rmd.first._startFullIndex + i * 2 * sizeof(Id);
-      auto startOfType0 = rmd.first._startFullIndex + rmd.first.getNofElements() * 2 * sizeof(Id);
-      if (!rmd.first._firstColumnUniqueDatatype) {  // the datatypes are materialized
-        startOfType0 += i * sizeof(Datatype);
-      }
 
       if (nofDistinctLhs % DISTINCT_LHS_PER_BLOCK == 0) {
+        BlockInfoNonFunctional x;
+        x.startLhs = startOfIds;
         rmd.second._blocks.emplace_back(BlockMetaData(
-            IdWithDatatype{data.ids_[i][0], data.types0_[i]},startOfIds, startOfType0));
+            IdWithDatatype{data.ids_[i][0], data.types0_[i]},x));
       }
       ++nofDistinctLhs;
     }
@@ -976,82 +972,58 @@ void Index::writeNonFunctionalRelation(
     // Make a pass over the data and extract a RHS list for each LHS.
     // Prepare both in buffers.
     // TODO: add compression - at least to RHS.
-    auto bufLhs = new pair<Id, off_t>[data.size()];
-    auto bufRhs = new Id[data.size()];
-    auto lhsTypeUnique = static_cast<bool>(data.uniqueTypes_[0]);
+
+    // the second entry is how many rhs entries come before this one
+    auto bufLhs = std::vector<pair<IdWithDatatype, size_t>>{};
+    auto bufRhs = std::vector<Id>{};
     auto rhsTypeUnique = static_cast<bool>(data.uniqueTypes_[1]);
 
-    auto bufLhsTypes = lhsTypeUnique ? nullptr : new pair<Datatype, off_t>[data.size()];
-    auto bufRhsTypes = rhsTypeUnique ? nullptr : new Datatype[data.size()];
-    size_t nofDistinctLhs = 0;
-    Id lastLhs = std::numeric_limits<Id>::max();
-    Datatype lastDatatype = Datatype::String;
+    auto bufRhsTypes = std::vector<Datatype>{};
+    bufLhs.reserve(data.size());
+    bufRhs.reserve(data.size());
+    if (!rhsTypeUnique) {
+      bufRhsTypes.reserve(data.size());
+    }
+
+    auto writeBlock = [&]() {
+      if (bufLhs.empty()) {
+        return;
+      }
+      BlockInfoNonFunctional x;
+      x.startLhs = out.tell();
+      out.write(bufLhs.data(), sizeof(bufLhs[0]) * bufLhs.size());
+      x.startRhs = out.tell();
+      x.nOfBytesLhs = x.startRhs - x.startLhs;
+      out.write(bufRhs.data(), sizeof(bufRhs[0]) * bufRhs.size());
+      x.startRhsTypes = out.tell();
+      x.nOfBytesRhs = x.startRhsTypes - x.startRhs;
+      out.write(bufRhsTypes.data(), sizeof(bufRhsTypes[0]) * bufRhsTypes.size());
+      x.nOfBytesRhsTypes = out.tell() - x.startRhsTypes;
+      rmd.second._blocks.emplace_back(
+          bufLhs.back().first, x);
+          bufLhs.clear();
+      bufRhs.clear();
+      bufRhsTypes.clear();
+    };
+
+    IdWithDatatype lastLhs {std::numeric_limits<Id>::max(), Datatype::String};
     size_t nofRhsDone = 0;
     for (; nofRhsDone < data.size(); ++nofRhsDone) {
-      if (data.ids_[nofRhsDone][0] != lastLhs || data.types0_[nofRhsDone] != lastDatatype) {
-        bufLhs[nofDistinctLhs] =
-            pair<Id, off_t>(data.ids_[nofRhsDone][0], nofRhsDone * sizeof(Id));
-
-        bufLhsTypes[nofDistinctLhs] = pair<Datatype, off_t>(
-            data.types0_[nofRhsDone], nofRhsDone * sizeof(Id));
-        nofDistinctLhs++;
-        lastLhs = data.ids_[nofRhsDone][0];
-        lastDatatype = data.types0_[nofRhsDone];
+      IdWithDatatype curLhs{data.ids_[nofRhsDone][0], data.types0_[nofRhsDone]};
+      if (curLhs != lastLhs) {
+        if (bufLhs.size() % DISTINCT_LHS_PER_BLOCK == 0) {
+          writeBlock();
+        }
+        bufLhs.emplace_back(curLhs, nofRhsDone);
+        lastLhs = curLhs;
       }
-      bufRhs[nofRhsDone] = data.ids_[nofRhsDone][1];
+        bufRhs.push_back(data.ids_[nofRhsDone][1]);
       if (!rhsTypeUnique) {
-        bufRhsTypes[nofRhsDone] = data.types1_[nofRhsDone];
+        bufRhsTypes.push_back(data.types1_[nofRhsDone]);
       }
     }
+    writeBlock(); // in case there is an incomplete block at the end;
 
-    // Go over the Lhs data once more and adjust the offsets.
-    off_t startRhs = rmd.first.getStartOfLhs() +
-                     nofDistinctLhs * (sizeof(Id) + sizeof(off_t));
-
-    for (size_t i = 0; i < nofDistinctLhs; ++i) {
-      bufLhs[i].second += startRhs;
-    }
-
-    // Write to file.
-    out.write(bufLhs, nofDistinctLhs * (sizeof(Id) + sizeof(off_t)));
-    out.write(bufRhs, data.size() * sizeof(Id));
-
-
-    // Update meta data.
-    rmd.second._startRhs = startRhs;
-    rmd.second._startLhsTypes =
-        startRhs + rmd.first.getNofElements() * sizeof(Id);
-
-    //adjust the type offsets
-
-    auto sizeLhsTypes = nofDistinctLhs * (sizeof(bufLhsTypes[0]));
-    for (size_t i = 0; i < nofDistinctLhs; ++i) {
-      bufLhsTypes[i].second += rmd.second._startLhsTypes + sizeLhsTypes;
-    }
-
-    out.write(bufLhsTypes, sizeLhsTypes);
-    rmd.second._startRhsTypes = rmd.second._startLhsTypes + nofDistinctLhs * (sizeof(bufLhsTypes[0]));
-    rmd.second._offsetAfter = rmd.second._startRhsTypes;  // in case we have no rhsTypes b.c. they are unique
-    if (!rhsTypeUnique) {
-      out.write(bufRhsTypes, data.size() * sizeof(bufRhsTypes[0]));
-      rmd.second._offsetAfter = rmd.second._startRhsTypes + data.size() * sizeof(bufRhsTypes[0]);
-    }
-
-
-    // Create the block data for the FullRelationMetaData.
-    // Block are offsets into the LHS list for non-functional relations.
-    for (size_t i = 0; i < nofDistinctLhs; ++i) {
-      if (i % DISTINCT_LHS_PER_BLOCK == 0) {
-        rmd.second._blocks.emplace_back(BlockMetaData(
-            IdWithDatatype{bufLhs[i].first, bufLhsTypes[i].first},
-            rmd.first.getStartOfLhs() + i * (sizeof(Id) + sizeof(off_t)),
-            rmd.second._startLhsTypes + i * sizeof(bufLhsTypes[0])));
-      }
-    }
-    delete[] bufLhs;
-    delete[] bufRhs;
-    delete[] bufLhsTypes;
-    delete[] bufRhsTypes;
   }
 }
 
@@ -1233,10 +1205,10 @@ void Index::scanFunctionalRelation(const pair<off_t, size_t>& blockOff,
 }
 
 // _____________________________________________________________________________
-void Index::scanNonFunctionalRelation(const pair<off_t, size_t>& blockOff,
-                                      const pair<off_t, size_t>& followBlock,
+void Index::scanNonFunctionalRelation(const FullRelationMetaData& rmd,
                                       IdWithDatatype lhsId, ad_utility::File& indexFile,
                                       off_t upperBound, IdTable* result) const {
+
   LOG(TRACE) << "Scanning non-functional relation ...\n";
 
   if (blockOff.second == 0) {
@@ -1247,8 +1219,10 @@ void Index::scanNonFunctionalRelation(const pair<off_t, size_t>& blockOff,
   }
   AD_CHECK(lhsId.type_ == Datatype::String); //TODO<joka921>
   Id lhsSimple = lhsId.value_;
-  vector<pair<Id, off_t>> block;
-  block.resize(blockOff.second / (sizeof(Id) + sizeof(off_t)));
+  // TODO<joka921> use type alias so that reading and writing are consistent
+  vector<pair<IdWithDatatype, size_t>> block;
+
+  block.resize(blockOff.second / (sizeof(block[0])));
   indexFile.read(block.data(), blockOff.second, blockOff.first);
   auto it = std::lower_bound(
       block.begin(), block.end(), lhsSimple,
