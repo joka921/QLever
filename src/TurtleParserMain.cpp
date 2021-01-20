@@ -54,8 +54,8 @@ void writeLabel(std::ostream& out, const std::string& filename) {
   }
   for (const auto& t : entities) {
     if (ad_utility::startsWith(t, "<")) {
-      std::cout << t << " <qlever_label> \"" << t.substr(1, t.size() - 2)
-                << "\" .\n";
+      std::cout << t << " <qlever_label> \"\"\"" << t.substr(1, t.size() - 2)
+                << "\"\"\" .\n";
     }
   }
 }
