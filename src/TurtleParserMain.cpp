@@ -36,6 +36,17 @@ void writeNTImpl(std::ostream& out, const std::string& filename) {
   }
 }
 
+std::string simplifyString(const std::string& s) {
+  std::string res;
+  res.reserve(s.size());
+  for (auto c : s) {
+    if (std::isalnum(c)) {
+      res.push_back(c);
+    }
+  }
+  return res;
+}
+
 template <class Parser>
 void writeLabel(std::ostream& out, const std::string& filename) {
   Parser p(filename);
@@ -54,8 +65,8 @@ void writeLabel(std::ostream& out, const std::string& filename) {
   }
   for (const auto& t : entities) {
     if (ad_utility::startsWith(t, "<")) {
-      std::cout << t << " <qlever_label> \"\"\"" << t.substr(1, t.size() - 2)
-                << "\"\"\" .\n";
+      std::cout << t << " <qlever_simple_label> \"\"\""
+                << simplifyString(t.substr(1, t.size() - 2)) << "\"\"\" .\n";
     }
   }
 }
