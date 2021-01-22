@@ -998,17 +998,18 @@ void Index::writeNonFunctionalRelation(
 void Index::createFromOnDiskIndex(const string& onDiskBase) {
   setOnDiskBase(onDiskBase);
   readConfiguration();
-  _vocab.readFromFile(_onDiskBase + ".vocabulary",
-                      _onDiskLiterals ? _onDiskBase + ".literals-index" : "");
+  /*  _vocab.readFromFile(_onDiskBase + ".vocabulary",
+                        _onDiskLiterals ? _onDiskBase + ".literals-index" : "");
 
-  _totalVocabularySize = _vocab.size() + _vocab.getExternalVocab().size();
-  LOG(INFO) << "total vocab size is " << _totalVocabularySize << std::endl;
-  _PSO.loadFromDisk(_onDiskBase);
-  _POS.loadFromDisk(_onDiskBase);
-  _OPS.loadFromDisk(_onDiskBase);
-  _OSP.loadFromDisk(_onDiskBase);
-  _SPO.loadFromDisk(_onDiskBase);
-  _SOP.loadFromDisk(_onDiskBase);
+    _totalVocabularySize = _vocab.size() + _vocab.getExternalVocab().size();
+    LOG(INFO) << "total vocab size is " << _totalVocabularySize << std::endl;
+    _PSO.loadFromDisk(_onDiskBase);
+    _POS.loadFromDisk(_onDiskBase);
+    _OPS.loadFromDisk(_onDiskBase);
+    _OSP.loadFromDisk(_onDiskBase);
+    _SPO.loadFromDisk(_onDiskBase);
+    _SOP.loadFromDisk(_onDiskBase);
+  */
 
   if (_usePatterns) {
     // Read the pattern info from the patterns file
@@ -1098,6 +1099,12 @@ void Index::createFromOnDiskIndex(const string& onDiskBase) {
       _hasPredicate.build(hasPredicateTmp);
     }
   }
+
+  LOG(INFO) << "hasPredicate size is" << _hasPredicate.reportSize()
+            << std::endl;
+  LOG(INFO) << "hasPattern size is" << _hasPattern.size() << std::endl;
+  LOG(INFO) << "total pattern size is" << _patterns.reportSize() << std::endl;
+  throw std::runtime_error("This is only for reporting pattern sizes");
 }
 
 // _____________________________________________________________________________

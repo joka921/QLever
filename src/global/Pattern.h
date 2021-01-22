@@ -164,6 +164,15 @@ class CompactStringVector {
     return _dataSize + 2 * sizeof(size_t);
   }
 
+  std::string reportSize() const {
+    std::stringstream s;
+    size_t els = (_dataSize - (_size + 1) * sizeof(IndexT)) / sizeof(DataT);
+    s << "Number of Indices : " << _size << "; "
+      << "Total number of Elements " << els << "; "
+      << "Number of Bytes " << _dataSize << ";";
+    return s.str();
+  }
+
   bool ready() const { return _data != nullptr; }
 
   /**
