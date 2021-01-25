@@ -48,6 +48,26 @@ std::string simplifyString(const std::string& s) {
 }
 
 template <class Parser>
+void writeStatistics(const std::string& filename) {
+  Parser p(filename);
+  std::array<std::string, 3> triple;
+  // this call by reference is necesary because of the TSV-Parsers interface
+  size_t numTriples = 0;
+  std::unordered_set<std::string> subjects;
+  std::unordered_set<std::string> predicates;
+  while (p.getLine(triple)) {
+    subjects.insert(std::move(triple[0]));
+    predicates.insert(std::move(triple[1]));
+    numTriples++;
+    if (numTriples % 10000000 == 0) {
+      LOG(INFO) << "Parsed " << numTriples << " triples" << std::endl;
+    }
+  }
+  std::cout << "Number of subjects " << subjects.size() << std::endl;
+  std::cout << "Number of predicates" << predicates.size() << std::endl;
+}
+
+template <class Parser>
 void writeLabel(std::ostream& out, const std::string& filename) {
   Parser p(filename);
   std::array<std::string, 3> triple;
@@ -82,7 +102,7 @@ template <class Tokenizer_T>
 void writeNT(std::ostream& out, const string& fileFormat,
              const std::string& filename) {
   if (fileFormat == "ttl") {
-    writeLabel<TurtleStreamParser<Tokenizer_T>>(out, filename);
+    writeStatistics<TurtleStreamParser<Tokenizer_T>>(filename);
     // writeNTImpl<TurtleStreamParser<Tokenizer_T>>(out, filename);
   } else if (fileFormat == "tsv") {
     writeNTImpl<TsvParser>(out, filename);
