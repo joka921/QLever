@@ -61,6 +61,8 @@ void writeStatistics(const std::string& filename) {
     numTriples++;
     if (numTriples % 10000000 == 0) {
       LOG(INFO) << "Parsed " << numTriples << " triples" << std::endl;
+      std::cout << "Number of subjects " << subjects.size() << std::endl;
+      std::cout << "Number of predicates" << predicates.size() << std::endl;
     }
   }
   std::cout << "Number of subjects " << subjects.size() << std::endl;
