@@ -137,11 +137,7 @@ auto getIdMapLambdas(std::array<ItemMapManager, Parallelism>* itemArrayPtr,
             map.assignNextId(ad_utility::convertToLanguageTaggedPredicate(
                 lt._triple[1], lt._langtag));
         auto& spoIds = *(res[0]);  // ids of original triple
-        // extra triple <subject> @language@<predicate> <object>
-        res[1].emplace(array<Id, 3>{spoIds[0], langTaggedPredId, spoIds[2]});
-        // extra triple <object> ql:language-tag <@language>
-        res[2].emplace(array<Id, 3>{
-            spoIds[2], map.assignNextId(LANGUAGE_PREDICATE), langTagId});
+        // no extra triples here
       }
       return res;
     };

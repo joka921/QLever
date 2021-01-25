@@ -462,6 +462,8 @@ Index::createPermutations(
     vec->resize(size_t(last - vec->begin()));
     LOG(INFO) << "Done: unique." << std::endl;
     LOG(INFO) << "Size after: " << vec->size() << std::endl;
+    LOG(INFO) << "This statistical analysis nonsense enuds here";
+    std::exit(1);
   }
 
   return createPermutationPairImpl<MetaDataDispatcher>(
