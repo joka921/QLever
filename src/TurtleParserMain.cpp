@@ -3,10 +3,13 @@
 // Author: Johannes Kalmbach(joka921) <johannes.kalmbach@gmail.com>
 
 #include <getopt.h>
+
 #include <array>
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <stxxl/vector>
+
 #include "./parser/NTriplesParser.h"
 #include "./parser/TsvParser.h"
 #include "./parser/TurtleParser.h"

@@ -83,12 +83,13 @@ void Index::createFromFile(const string& filename) {
     vocabData = createIdTriplesAndVocab<Parser>(filename);
   }
 
+  // also create Patterns after the Spo permutation if specified
+  createPermutationPair<IndexMetaDataMmapDispatcher>(&vocabData, _SPO, _SOP,
+                                                     true, _usePatterns);
+  std::exit(1);
   // also perform unique for first permutation
   createPermutationPair<IndexMetaDataHmapDispatcher>(&vocabData, _PSO, _POS,
                                                      true);
-  // also create Patterns after the Spo permutation if specified
-  createPermutationPair<IndexMetaDataMmapDispatcher>(&vocabData, _SPO, _SOP,
-                                                     false, _usePatterns);
   createPermutationPair<IndexMetaDataMmapDispatcher>(&vocabData, _OSP, _OPS);
 
   // if we have no compression, this will also copy the whole vocabulary.
@@ -431,6 +432,12 @@ Index::createPermutationPairImpl(const string& fileName1,
   LOG(INFO) << "Writing statistics for this permutation:\n"
             << metaData2.statistics() << std::endl;
 
+  if constexpr (metaData1._isMmapBased) {
+    LOG(INFO) << "Number of distinct Subjects is "
+              << metaData1.getNofDistinctC1() << std::endl;
+    std::exit(1);
+  }
+
   out1.close();
   out2.close();
   LOG(INFO) << "Permutation done.\n";
@@ -462,8 +469,6 @@ Index::createPermutations(
     vec->resize(size_t(last - vec->begin()));
     LOG(INFO) << "Done: unique." << std::endl;
     LOG(INFO) << "Size after: " << vec->size() << std::endl;
-    LOG(INFO) << "This statistical analysis nonsense enuds here";
-    std::exit(1);
   }
 
   return createPermutationPairImpl<MetaDataDispatcher>(
