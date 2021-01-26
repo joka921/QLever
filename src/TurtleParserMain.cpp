@@ -59,7 +59,6 @@ void writeStatistics(const std::string& filename) {
   std::unordered_set<std::string> subjects;
   std::unordered_set<std::string> predicates;
   while (p.getLine(triple)) {
-    subjects.insert(std::move(triple[0]));
     predicates.insert(std::move(triple[1]));
     numTriples++;
     if (numTriples % 10000000 == 0) {
