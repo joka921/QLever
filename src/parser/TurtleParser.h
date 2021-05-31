@@ -139,7 +139,7 @@ class TurtleParser {
     throw ParseException(msg, getParsePosition());
   }
 
- private:
+ protected:
   /* private Member Functions */
 
   bool directive();
@@ -286,7 +286,9 @@ class TurtleStringParser : public TurtleParser<Tokenizer_T> {
   // load a string object directly to the buffer
   // allows easier testing without a file object
   void parseUtf8String(const std::string& toParse) {
-    _tmpToParse = toParse;
+    _tmpToParse.clear();
+    _tmpToParse.reserve(toParse.size());
+    _tmpToParse.insert(_tmpToParse.end(), toParse.begin(), toParse.end());
     this->_tok.reset(_tmpToParse.data(), _tmpToParse.size());
     // directly parse the whole triple
     this->turtleDoc();
@@ -296,13 +298,21 @@ class TurtleStringParser : public TurtleParser<Tokenizer_T> {
   // the various ways to store the input to this parser
   // used when parsing directly from a string
   // TODO: move this to a separate class.
-  std::string _tmpToParse = "";
+  std::vector<char> _tmpToParse;
 
   // testing interface for reusing a parser
   // only specifies the tokenizers input stream.
   // Does not alter the tokenizers state
-  void setInputStream(const string& utf8String) {
-    _tmpToParse = utf8String;
+  void setInputStream(const string& toParse) {
+    _tmpToParse.clear();
+    _tmpToParse.reserve(toParse.size());
+    _tmpToParse.insert(_tmpToParse.end(), toParse.begin(), toParse.end());
+    this->_tok.reset(_tmpToParse.data(), _tmpToParse.size());
+  }
+
+  // __________________________________________________________
+  void setInputStream(std::vector<char> toParse) {
+    _tmpToParse = std::move(toParse);
     this->_tok.reset(_tmpToParse.data(), _tmpToParse.size());
   }
 
@@ -443,4 +453,39 @@ class TurtleMmapParser : public TurtleParser<Tokenizer_T> {
   using TurtleParser<Tokenizer_T>::_tok;
   using TurtleParser<Tokenizer_T>::_isParserExhausted;
   using TurtleParser<Tokenizer_T>::_triples;
+};
+
+/**
+ * This class is a TurtleParser that always assumes that
+ * its input file is an uncompressed .ttl file that will be read in
+ * chunks. Input file can also be a stream like stdin.
+ */
+template <class Tokenizer_T>
+class TurtleParallelParser : public TurtleParser<Tokenizer_T> {
+
+ public:
+  // Default construction needed for tests
+  TurtleParallelParser() = default;
+  explicit TurtleParallelParser(const string& filename) {
+    LOG(INFO) << "Initialize parallel Turtle Parsing from uncompressed file or stream "
+              << filename << '\n';
+    initialize(filename);
+  }
+
+  // inherit the wrapper overload
+  using TurtleParser<Tokenizer_T>::getLine;
+
+  bool getLine(std::array<string, 3>* triple) override;
+
+  void initialize(const string& filename) override;
+
+ private:
+  using TurtleParser<Tokenizer_T>::_tok;
+  using TurtleParser<Tokenizer_T>::_triples;
+  using TurtleParser<Tokenizer_T>::_isParserExhausted;
+
+  // this many characters will be buffered at once,
+  // defaults to a global constant
+  size_t _bufferSize = FILE_BUFFER_SIZE;
+  ParallelBufferWithEndRegex _fileBuffer{_bufferSize, "\\. *\\n"};
 };

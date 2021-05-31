@@ -656,6 +656,22 @@ bool TurtleStreamParser<T>::getLine(std::array<string, 3>* triple) {
   return true;
 }
 
+template<typename Tokenizer_T>
+void TurtleParallelParser<Tokenizer_T>::initialize(const string& filename) {
+  _fileBuffer.open(filename);
+  auto batch = _fileBuffer.getNextBlock();
+  if (!batch) {
+    throw std::runtime_error("Could not read from the input file or stream");
+  }
+  TurtleStringParser<Tokenizer_T> declarationParser{};
+  declarationParser.setInputStream(*batch);
+  while (declarationParser.declaration()) {
+
+  }
+  this->_prefixMap = std::move(declarationParser._prefixMap);
+  // TODO: continue here
+}
+
 // Explicit instantiations
 template class TurtleParser<Tokenizer>;
 template class TurtleParser<TokenizerCtre>;

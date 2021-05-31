@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 #include "../util/File.h"
+#include <re2/re2.h>
 
 /**
  * @brief Abstract base class for certain input buffers.
@@ -42,6 +43,8 @@ class ParallelBuffer {
    * @return The next bytes or std::nullopt to signal EOF.
    */
   virtual std::optional<std::vector<char>> getNextBlock() = 0;
+
+
 
  protected:
   size_t _blocksize = 100 * (2 << 20);
@@ -92,4 +95,81 @@ class ParallelFileBuffer : public ParallelBuffer {
   bool _eof = true;
   std::vector<char> _buf;
   std::future<size_t> _fut;
+};
+
+class ParallelBufferWithEndRegex : public ParallelBuffer {
+ public:
+
+  ParallelBufferWithEndRegex(size_t blocksize, std::string endRegex) : ParallelBuffer{blocksize}, _endRegex{endRegex} {}
+  std::optional<std::vector<char>> getNextBlock() override {
+    auto rawInput = _rawBuffer.getNextBlock();
+    if (! rawInput || _exhausted) {
+      _exhausted = true;
+      if (_exhausted) {
+        _remainder.clear();
+      }
+      if (_remainder.empty()) {
+        return std::nullopt;
+      }
+      return std::move(_remainder);
+    }
+
+    auto endPosition = findRegexNearEnd(rawInput.value(), _endRegex);
+    if (!endPosition) {
+      if (_rawBuffer.getNextBlock()) {
+        throw std::runtime_error("The regex which is guaranteed to end a statement was not found at all within a single Batch. Please increase the FILE_BUFFER_SIZE or choose a different parser");
+      }
+      _exhausted = true;
+      return std::move(_remainder);
+    }
+    std::vector<char> result;
+    result.reserve(_remainder.size() + *endPosition);
+    result.insert(result.end(), _remainder.begin(), _remainder.end());
+    result.insert(result.end(), rawInput->begin(), rawInput->begin() + *endPosition);
+    _remainder.clear();
+    _remainder.insert(_remainder.end(), rawInput->begin() + *endPosition, rawInput->end());
+    return result;
+  }
+  void open(const string &filename) override {
+    _rawBuffer.open(filename);
+  }
+ private:
+
+  static std::optional<size_t> findRegexNearEnd(const std::vector<char>& vec, const re2::RE2& regex) {
+    size_t chunkSize = 1000;
+    size_t inputSize = vec.size();
+    re2::StringPiece regexResult;
+    bool match = false;
+    while (true) {
+      if (chunkSize >= inputSize) {
+        break;
+      }
+      // TODO: do something here
+
+      auto startIdx = inputSize - chunkSize;
+      auto regexInput = re2::StringPiece{vec.data() + startIdx, chunkSize};
+
+
+
+      match = RE2::PartialMatch(regexInput, regex, &regexResult);
+      if (match) {
+        break;
+      }
+
+
+      if (chunkSize == inputSize - 1) {
+        break;
+      }
+      chunkSize = std::min(chunkSize * 2, inputSize - 1);
+    }
+    if (!match) {
+      return std::nullopt;
+    }
+
+    return regexResult.data() + regexResult.size() - vec.data();
+  }
+  ParallelFileBuffer _rawBuffer{_blocksize};
+  std::vector<char> _remainder;
+  re2::RE2 _endRegex;
+  bool _exhausted = false;
 };
