@@ -8,24 +8,39 @@
 #include "./ConstexprSmallString.h"
 #include <tuple>
 #include <atomic>
+#include <functional>
 #include "./HashMap.h"
 #include "./HashSet.h"
 
 namespace ad_utility {
 using ParameterName = ad_utility::ConstexprSmallString<100>;
 
+
+inline auto noop = [](auto&&...){};
+
 template <typename Type, typename FromString, typename ToString, ParameterName Name>
 struct Parameter {
+  using Callback = std::function<void(const Type&)>;
   constexpr static ParameterName name = Name;
   Parameter() = default;
   Parameter(Type defaultValue) : value{std::move(defaultValue)} {};
-  Parameter(const Parameter& rhs) : value{rhs.value.load()}{};
-  Parameter& operator=(const Parameter& rhs) {value = rhs.value.load();};
+  Parameter(const Parameter&)  = default;
+  Parameter& operator=(const Parameter&) = default;
+  // _______________________________________________________________
   void set(const std::string& stringInput) {
     value = FromString{}(stringInput);
+    callback(value);
   }
-  std::atomic<Type> value{};
 
+  // _______________________________________________________________
+  void registerCallback(Callback newCallback) {
+    callback = std::move(newCallback);
+    callback(value);
+  }
+  Type value{};
+  Callback callback = noop;
+
+  // ________________________________________________________________
   std::string toString() const {
     return ToString{}(value);
   }
@@ -33,7 +48,7 @@ struct Parameter {
 
 namespace detail::parameterShortNames {
 
-// TODO<joka921> Replace these by versionsj that actually parse the whole string.
+// TODO<joka921> Replace these by versions that actually parse the whole string.
 inline auto fl = [](const auto& s) {return std::stof(s);};
 inline auto dbl  = [](const auto& s) {return std::stod(s);};
 inline auto szt  = [](const auto& s) {return std::stoull(s);};
@@ -64,6 +79,18 @@ constexpr size_t getParameterIndex() {
 };
 
 template <typename... ParameterTypes>
+constexpr bool are_parameter_names_unique() {
+  std::array<ParameterName, sizeof...(ParameterTypes)> names {ParameterTypes::name...};
+  std::sort(names.begin(), names.end());
+  for (size_t i = 1; i < names.size(); ++i) {
+    if (names[i] == names[i-1]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+template <typename... ParameterTypes> requires (are_parameter_names_unique<ParameterTypes...>())
 struct Parameters {
   using Tuple = std::tuple<ParameterTypes...>;
   Tuple _parameters{};
@@ -83,6 +110,13 @@ struct Parameters {
     return std::get<getParameterIndex<0, Name, decltype(_parameters)>()>(
                _parameters)
         .value;
+  }
+
+  template <ParameterName Name, typename Callback>
+  void registerCallback(Callback callback) {
+    std::get<getParameterIndex<0, Name, decltype(_parameters)>()>(
+        _parameters)
+        .registerCallback(std::move(callback));
   }
 
   void set(const std::string& parameterName, const std::string& value) {

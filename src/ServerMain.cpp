@@ -109,7 +109,7 @@ int main(int argc, char** argv) {
   bool usePatterns = true;
   bool enablePatternTrick = true;
 
-  size_t memLimit = DEFAULT_MEM_FOR_QUERIES_IN_GB;
+  size_t memLimit = RuntimeParameters().wlock()->get<"max_mem_for_queries_in_gb">();
   size_t cacheMaxSizeGB = DEFAULT_CACHE_MAX_SIZE_GB;
   size_t cacheMaxSizeGBSingleEntry = DEFAULT_CACHE_MAX_SIZE_GB_SINGLE_ENTRY;
   size_t cacheMaxNumEntries = DEFAULT_CACHE_MAX_NUM_ENTRIES;

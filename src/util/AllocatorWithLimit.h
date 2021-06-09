@@ -36,23 +36,29 @@ class AllocationExceedsLimitException : public std::exception {
 // objects at the same time (hence the wrapper class and the synchronization
 // below).
 class AllocationMemoryLeft {
-  size_t free_;  // the number of free bytes
-                 // throw AllocationExceedsLimitException on failure
+  size_t maxNumBytes_; // the maximum number of bytes to be allocated
+  size_t numBytesAllocated_{0};  // the number bytes that is currently allocated
  public:
-  AllocationMemoryLeft(size_t n) : free_(n) {}
+  AllocationMemoryLeft(size_t n) : maxNumBytes_(n) {}
 
   // Called before memory is allocated.
   void decrease_if_enough_left(size_t n) {
-    if (n <= free_) {
-      free_ -= n;
+    if (n + numBytesAllocated_ <= maxNumBytes_) {
+      numBytesAllocated_ += n;
     } else {
-      throw AllocationExceedsLimitException{n, free_};
+      throw AllocationExceedsLimitException{n, maxNumBytes_ - numBytesAllocated_};
     }
   }
 
   // Called after memory is deallocated.
-  void increase(size_t n) { free_ += n; }
-  [[nodiscard]] size_t numFreeBytes() const { return free_; }
+  void increase(size_t n) { numBytesAllocated_ -= n; }
+  [[nodiscard]] size_t numFreeBytes() const { return maxNumBytes_ - numBytesAllocated_; }
+
+  // change the limit
+  void changeLimit(size_t maxNumBytes) {
+    maxNumBytes_ = maxNumBytes;
+  }
+
 };
 
 /*
@@ -162,6 +168,11 @@ class AllocatorWithLimit {
         ->memoryLeft_.ptr()
         ->wlock()
         ->numFreeBytes();
+  }
+
+  /// Change the memory limit
+  void changeMemoryLimit(size_t maxNumBytes) {
+    memoryLeft_.ptr()->wlock()->changeLimit(maxNumBytes);
   }
 
   // The STL needs two allocators to be equal if and only they refer to the same

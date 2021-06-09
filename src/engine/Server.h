@@ -39,7 +39,11 @@ class Server {
         _sortPerformanceEstimator(),
         _index(),
         _engine(),
-        _initialized(false) {}
+        _initialized(false) {
+    RuntimeParameters().wlock()->registerCallback<"max_mem_for_queries_in_gb">([&](double limit){
+      _allocator.changeMemoryLimit(static_cast<size_t>(limit * (1ul << 30ul)));
+    });
+  }
 
   virtual ~Server();
 

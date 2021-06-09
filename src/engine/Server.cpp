@@ -164,7 +164,7 @@ void Server::process(Socket* client) {
 
       if (ad_utility::getLowercase(params["cmd"]) == "get-settings") {
         LOG(INFO) << "Supplying settings..." << std::endl;
-        auto map = RuntimeParameters().toMap();
+        auto map = RuntimeParameters().wlock()->toMap();
         json settingsJson = map;
         contentType = "application/json";
         string httpResponse = createHttpResponse(settingsJson.dump(), contentType);
@@ -185,8 +185,8 @@ void Server::process(Socket* client) {
       }
 
       for (const auto& [key, value] : params) {
-        if (RuntimeParameters().getKeys().contains(key)) {
-          RuntimeParameters().set(key, value);
+        if (RuntimeParameters().wlock()->getKeys().contains(key)) {
+          RuntimeParameters().wlock()->set(key, value);
         }
       }
 

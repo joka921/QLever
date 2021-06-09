@@ -6,12 +6,11 @@
 #include <stdexcept>
 #include <string>
 #include "../util/Parameters.h"
+#include "../util/Synchronized.h"
 
 static const size_t STXXL_MEMORY_TO_USE = 1024L * 1024L * 1024L * 2L;
 static const size_t STXXL_DISK_SIZE_INDEX_BUILDER = 1000 * 1000;
 static const size_t STXXL_DISK_SIZE_INDEX_TEST = 10;
-
-static constexpr size_t DEFAULT_MEM_FOR_QUERIES_IN_GB = 4;
 
 static const size_t DEFAULT_CACHE_MAX_NUM_ENTRIES = 1000;
 static const size_t DEFAULT_CACHE_MAX_SIZE_GB = 30;
@@ -125,8 +124,12 @@ static constexpr size_t PERCENTAGE_OF_TRIPLES_FOR_SORT_ESTIMATE = 5;
 inline auto& RuntimeParameters() {
   using ad_utility::detail::parameterShortNames::SizeT;
   using ad_utility::detail::parameterShortNames::Double;
-  static ad_utility::Parameters params{Double<"SORT_ESTIMATE_CANCELLATION_FACTOR">{3.0}};
-  return params;
+  static auto concurrentParams = [&](){ ad_utility::Parameters params{
+    Double<"sort_estimate_cancellation_factor">{3.0},
+    Double<"max_mem_for_queries_in_gb">{4.0},
+};
+    return ad_utility::Synchronized<decltype(params)>{std::move(params)};}();
+  return concurrentParams;
 }
 
 #ifdef _PARALLEL_SORT

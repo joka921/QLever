@@ -76,6 +76,20 @@ struct ConstexprSmallString {
     return true;
   }
 
+  constexpr bool operator<(const ConstexprSmallString& rhs) const {
+    auto minSize = std::min(size(), rhs.size());
+    for (size_t i = 0; i < minSize; ++i) {
+      if (_characters[i] < rhs._characters[i]) {
+        return true;
+      } else if (_characters[i] > rhs._characters[i]) {
+        return false;
+      }
+    }
+    return size() < rhs.size();
+  }
+
+
+
 
 
   /// Implicit conversion to std::string_view
