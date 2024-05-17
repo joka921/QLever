@@ -54,10 +54,7 @@ inline bool isVariable(const TripleComponent& elem) {
   return elem.isVariable();
 }
 
-inline bool isVariable(const PropertyPath& elem) {
-  return elem._operation == PropertyPath::Operation::IRI &&
-         isVariable(elem._iri);
-}
+inline bool isVariable(const PropertyPath& elem) { return elem.isVariable(); }
 
 std::ostream& operator<<(std::ostream& out, const PropertyPath& p);
 
@@ -100,8 +97,9 @@ class SparqlTriple : public SparqlTripleBase<PropertyPath> {
   using Base::Base;
 
   // ___________________________________________________________________________
-  SparqlTriple(TripleComponent s, const std::string& p_iri, TripleComponent o)
-      : Base{std::move(s), PropertyPath::fromIri(p_iri), std::move(o)} {}
+  SparqlTriple(TripleComponent s, TripleComponent p, TripleComponent o)
+      : Base{std::move(s), PropertyPath::fromTripleComponent(std::move(p)),
+             std::move(o)} {}
 
   // ___________________________________________________________________________
   [[nodiscard]] string asString() const;
@@ -109,12 +107,8 @@ class SparqlTriple : public SparqlTripleBase<PropertyPath> {
   // Convert to a simple triple. Fails with an exception if the predicate
   // actually is a property path.
   SparqlTripleSimple getSimple() const {
-    AD_CONTRACT_CHECK(p_.isIri());
-    TripleComponent p =
-        isVariable(p_._iri)
-            ? TripleComponent{Variable{p_._iri}}
-            : TripleComponent(TripleComponent::Iri::fromIriref(p_._iri));
-    return {s_, p, o_, additionalScanColumns_};
+    AD_CONTRACT_CHECK(p_.isIri() || p_.isVariable());
+    return {s_, p_._iriOrVar, o_, additionalScanColumns_};
   }
 };
 

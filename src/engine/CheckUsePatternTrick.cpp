@@ -212,8 +212,9 @@ std::optional<PatternTrickTuple> isTripleSuitableForPatternTrick(
 
   const auto patternTrickDataIfTripleIsPossible =
       [&]() -> std::optional<PatternTrickData> {
-    if ((triple.p_._iri == HAS_PREDICATE_PREDICATE) && isVariable(triple.s_) &&
-        isVariable(triple.o_) && triple.s_ != triple.o_) {
+    if ((triple.p_._iriOrVar == HAS_PREDICATE_PREDICATE) &&
+        isVariable(triple.s_) && isVariable(triple.o_) &&
+        triple.s_ != triple.o_) {
       Variable predicateVariable{triple.o_.getVariable()};
       return PatternTrickData{predicateVariable,
                               triple.s_.getVariable(),
@@ -222,15 +223,14 @@ std::optional<PatternTrickTuple> isTripleSuitableForPatternTrick(
     } else if (isVariable(triple.s_) && isVariable(triple.p_) &&
                isVariable(triple.o_)) {
       // Check that the three variables are pairwise distinct.
-      std::vector<string> variables{triple.s_.getVariable().name(),
-                                    triple.o_.getVariable().name(),
-                                    triple.p_.asString()};
-      std::ranges::sort(variables);
-      if (std::unique(variables.begin(), variables.end()) != variables.end()) {
+      ad_utility::HashSet<Variable> variables{triple.s_.getVariable(),
+                                              triple.o_.getVariable(),
+                                              triple.p_.getVariable()};
+      if (variables.size() != 3) {
         return std::nullopt;
       }
 
-      Variable predicateVariable{triple.p_.getIri()};
+      Variable predicateVariable{triple.p_.getVariable()};
       return PatternTrickData{predicateVariable,
                               triple.s_.getVariable(),
                               {predicateVariable, triple.o_.getVariable()},

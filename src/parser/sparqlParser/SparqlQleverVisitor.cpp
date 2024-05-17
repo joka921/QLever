@@ -1195,7 +1195,8 @@ PathObjectPairsAndTriples Visitor::visit(Parser::TupleWithoutPathContext* ctx) {
     if (std::holds_alternative<Variable>(term)) {
       return std::get<Variable>(term);
     } else {
-      return PropertyPath::fromIri(term.toSparql());
+      return PropertyPath::fromIri(
+          TripleComponent::Iri::fromIriref(term.toSparql()));
     }
   };
   for (auto& triple : objectList.second) {
@@ -1291,8 +1292,7 @@ PropertyPath Visitor::visit(Parser::PathPrimaryContext* ctx) {
   //  simple `return visit(...)`. Then the three cases which are not the
   //  `special a` case can be merged into a `visitAlternative(...)`.
   if (ctx->iri()) {
-    return PropertyPath::fromIri(
-        std::string{visit(ctx->iri()).toStringRepresentation()});
+    return PropertyPath::fromIri(visit(ctx->iri()));
   } else if (ctx->path()) {
     return visit(ctx->path());
   } else if (ctx->pathNegatedPropertySet()) {
@@ -1300,8 +1300,8 @@ PropertyPath Visitor::visit(Parser::PathPrimaryContext* ctx) {
   } else {
     AD_CORRECTNESS_CHECK(ctx->getText() == "a");
     // Special keyword 'a'
-    return PropertyPath::fromIri(
-        "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>");
+    return PropertyPath::fromIri(TripleComponent::Iri::fromIriref(
+        "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>"));
   }
 }
 

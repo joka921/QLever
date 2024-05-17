@@ -4,9 +4,9 @@
 #include "PropertyPath.h"
 
 // _____________________________________________________________________________
-PropertyPath::PropertyPath(Operation op, std::string iri,
+PropertyPath::PropertyPath(Operation op, TripleComponent iri,
                            std::initializer_list<PropertyPath> children)
-    : _operation(op), _iri(std::move(iri)), _children(children) {}
+    : _operation(op), _iriOrVar(std::move(iri)), _children(children) {}
 
 // _____________________________________________________________________________
 PropertyPath PropertyPath::makeModified(PropertyPath child,
@@ -48,8 +48,8 @@ void PropertyPath::writeToStream(std::ostream& out) const {
       }
       out << ")";
       break;
-    case Operation::IRI:
-      out << _iri;
+    case Operation::IRI_OR_VAR:
+      out << _iriOrVar;
       break;
     case Operation::SEQUENCE:
       out << "(";
@@ -118,13 +118,26 @@ void PropertyPath::computeCanBeNull() {
 }
 
 // _____________________________________________________________________________
-const std::string& PropertyPath::getIri() const {
+const TripleComponent::Iri& PropertyPath::getIri() const {
   AD_CONTRACT_CHECK(isIri());
-  return _iri;
+  return _iriOrVar.getIri();
 }
 
 // _____________________________________________________________________________
-bool PropertyPath::isIri() const { return _operation == Operation::IRI; }
+const Variable& PropertyPath::getVariable() const {
+  AD_CONTRACT_CHECK(isVariable());
+  return _iriOrVar.getVariable();
+}
+
+// _____________________________________________________________________________
+bool PropertyPath::isIri() const {
+  return _operation == Operation::IRI_OR_VAR && _iriOrVar.isIri();
+}
+
+// _____________________________________________________________________________
+bool PropertyPath::isVariable() const {
+  return _operation == Operation::IRI_OR_VAR && _iriOrVar.isVariable();
+}
 
 // _____________________________________________________________________________
 std::ostream& operator<<(std::ostream& out, const PropertyPath& p) {

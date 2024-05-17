@@ -265,10 +265,9 @@ void ParsedQuery::GraphPattern::addLanguageFilter(const Variable& variable,
        _graphPatterns | stdv::transform(ad::getIf<BasicPattern>) |
            stdv::filter(ad::toBool)) {
     for (auto& triple : basicPattern->_triples) {
-      if (triple.o_ == variable &&
-          (triple.p_._operation == PropertyPath::Operation::IRI &&
-           !isVariable(triple.p_)) &&
-          !triple.p_._iri.starts_with(INTERNAL_ENTITIES_URI_PREFIX)) {
+      if (triple.o_ == variable && triple.p_.isIri() &&
+          !triple.p_.getIri().toStringRepresentation().starts_with(
+              INTERNAL_ENTITIES_URI_PREFIX)) {
         matchingTriples.push_back(&triple);
       }
     }
@@ -276,8 +275,8 @@ void ParsedQuery::GraphPattern::addLanguageFilter(const Variable& variable,
 
   // Replace all the matching triples.
   for (auto* triplePtr : matchingTriples) {
-    triplePtr->p_._iri = ad_utility::convertToLanguageTaggedPredicate(
-        triplePtr->p_._iri, langTag);
+    triplePtr->p_._iriOrVar = ad_utility::convertToLanguageTaggedPredicate(
+        triplePtr->p_._iriOrVar.getIri(), langTag);
   }
 
   // Handle the case, that no suitable triple (see above) was found. In this
@@ -302,7 +301,9 @@ void ParsedQuery::GraphPattern::addLanguageFilter(const Variable& variable,
                   ._triples;
 
     auto langEntity = ad_utility::convertLangtagToEntityUri(langTag);
-    SparqlTriple triple(variable, PropertyPath::fromIri(LANGUAGE_PREDICATE),
+    SparqlTriple triple(variable,
+                        PropertyPath::fromIri(TripleComponent::Iri::fromIriref(
+                            LANGUAGE_PREDICATE)),
                         langEntity);
     t.push_back(std::move(triple));
   }

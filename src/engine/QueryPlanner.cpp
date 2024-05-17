@@ -411,7 +411,7 @@ QueryPlanner::TripleGraph QueryPlanner::createTripleGraph(
   vector<const SparqlTriple*> entityTriples;
   // Add one or more nodes for each triple.
   for (auto& t : pattern->_triples) {
-    if (t.p_._iri == CONTAINS_WORD_PREDICATE) {
+    if (t.p_._iriOrVar == CONTAINS_WORD_PREDICATE) {
       std::string buffer = t.o_.toString();
       std::string_view sv{buffer};
       // Add one node for each word
@@ -424,7 +424,7 @@ QueryPlanner::TripleGraph QueryPlanner::createTripleGraph(
             tg);
         numNodesInTripleGraph++;
       }
-    } else if (t.p_._iri == CONTAINS_ENTITY_PREDICATE) {
+    } else if (t.p_._iriOrVar == CONTAINS_ENTITY_PREDICATE) {
       entityTriples.push_back(&t);
     } else {
       addNodeToTripleGraph(TripleGraph::Node(tg._nodeStorage.size(), t), tg);
@@ -679,11 +679,11 @@ auto QueryPlanner::seedWithScansAndText(
 
     // Property paths must have been handled previously.
     AD_CORRECTNESS_CHECK(node.triple_.p_._operation ==
-                         PropertyPath::Operation::IRI);
+                         PropertyPath::Operation::IRI_OR_VAR);
     // At this point, we know that the predicate is a simple IRI or a variable.
 
     if (_qec && !_qec->getIndex().hasAllPermutations() &&
-        isVariable(node.triple_.p_._iri)) {
+        isVariable(node.triple_.p_._iriOrVar)) {
       AD_THROW(
           "The query contains a predicate variable, but only the PSO "
           "and POS permutations were loaded. Rerun the server without "
@@ -691,7 +691,7 @@ auto QueryPlanner::seedWithScansAndText(
           "necessary also rebuild the index.");
     }
 
-    if (node.triple_.p_._iri == HAS_PREDICATE_PREDICATE) {
+    if (node.triple_.p_._iriOrVar == HAS_PREDICATE_PREDICATE) {
       pushPlan(makeSubtreePlan<HasPredicateScan>(_qec, node.triple_));
       continue;
     }
@@ -739,7 +739,7 @@ std::shared_ptr<ParsedQuery::GraphPattern> QueryPlanner::seedFromPropertyPath(
       return seedFromAlternative(left, path, right);
     case PropertyPath::Operation::INVERSE:
       return seedFromInverse(left, path, right);
-    case PropertyPath::Operation::IRI:
+    case PropertyPath::Operation::IRI_OR_VAR:
       return seedFromIri(left, path, right);
     case PropertyPath::Operation::SEQUENCE:
       return seedFromSequence(left, path, right);
@@ -889,7 +889,7 @@ QueryPlanner::SubtreePlan QueryPlanner::getTextLeafPlan(
   if (!textLimits.contains(cvar)) {
     textLimits[cvar] = parsedQuery::TextLimitMetaObject{{}, {}, 0};
   }
-  if (node.triple_.p_._iri == CONTAINS_ENTITY_PREDICATE) {
+  if (node.triple_.p_._iriOrVar == CONTAINS_ENTITY_PREDICATE) {
     if (node._variables.size() == 2) {
       // TODO<joka921>: This is not nice, refactor the whole TripleGraph class
       // to make these checks more explicity.
@@ -1300,9 +1300,10 @@ vector<vector<QueryPlanner::SubtreePlan>> QueryPlanner::fillDpTab(
 // _____________________________________________________________________________
 bool QueryPlanner::TripleGraph::isTextNode(size_t i) const {
   return _nodeMap.count(i) > 0 &&
-         (_nodeMap.find(i)->second->triple_.p_._iri ==
+         (_nodeMap.find(i)->second->triple_.p_._iriOrVar ==
               CONTAINS_ENTITY_PREDICATE ||
-          _nodeMap.find(i)->second->triple_.p_._iri == CONTAINS_WORD_PREDICATE);
+          _nodeMap.find(i)->second->triple_.p_._iriOrVar ==
+              CONTAINS_WORD_PREDICATE);
 }
 
 // _____________________________________________________________________________
@@ -1973,21 +1974,20 @@ void QueryPlanner::GraphPatternPlanner::visitBasicGraphPattern(
   // A basic graph patterns consists only of triples. First collect all
   // the bound variables.
   for (const SparqlTriple& t : v._triples) {
-    if (isVariable(t.s_)) {
-      boundVariables_.insert(t.s_.getVariable());
-    }
-    if (isVariable(t.p_)) {
-      boundVariables_.insert(Variable{t.p_._iri});
-    }
-    if (isVariable(t.o_)) {
-      boundVariables_.insert(t.o_.getVariable());
-    }
+    auto insertIfVariable = [this](const auto& el) {
+      if (isVariable(el)) {
+        boundVariables_.insert(el.getVariable());
+      }
+    };
+    insertIfVariable(t.s_);
+    insertIfVariable(t.p_);
+    insertIfVariable(t.o_);
   }
 
   // Then collect the triples. Transform each triple with a property path to an
   // equivalent form without property path (using `seedFromPropertyPath`).
   for (const auto& triple : v._triples) {
-    if (triple.p_._operation == PropertyPath::Operation::IRI) {
+    if (triple.p_._operation == PropertyPath::Operation::IRI_OR_VAR) {
       candidateTriples_._triples.push_back(triple);
     } else {
       auto children =

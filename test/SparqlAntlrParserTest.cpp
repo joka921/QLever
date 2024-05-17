@@ -678,7 +678,9 @@ TEST(SparqlParser, InlineData) {
 
 TEST(SparqlParser, propertyPaths) {
   auto expectPathOrVar = ExpectCompleteParse<&Parser::verbPathOrSimple>{};
-  auto Iri = &PropertyPath::fromIri;
+  auto Iri = [](const std::string& el) {
+    return PropertyPath::fromIri(iri(el));
+  };
   auto Sequence = &PropertyPath::makeSequence;
   auto Alternative = &PropertyPath::makeAlternative;
   auto ZeroOrMore = &PropertyPath::makeZeroOrMore;
@@ -749,7 +751,9 @@ TEST(SparqlParser, propertyListPathNotEmpty) {
       ExpectCompleteParse<&Parser::propertyListPathNotEmpty>{};
   auto expectPropertyListPathFails =
       ExpectParseFails<&Parser::propertyListPathNotEmpty>();
-  auto Iri = &PropertyPath::fromIri;
+  auto Iri = [](const std::string& el) {
+    return PropertyPath::fromIri(iri(el));
+  };
   expectPropertyListPath("<bar> ?foo", {{{Iri("<bar>"), Var{"?foo"}}}, {}});
   expectPropertyListPath(
       "<bar> ?foo ; <mehr> ?f",

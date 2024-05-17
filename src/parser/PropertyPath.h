@@ -7,7 +7,8 @@
 #include <string>
 #include <vector>
 
-#include "data/Variable.h"
+#include "parser/TripleComponent.h"
+#include "parser/data/Variable.h"
 
 using std::string;
 using std::vector;
@@ -18,30 +19,33 @@ class PropertyPath {
     SEQUENCE,
     ALTERNATIVE,
     INVERSE,
-    IRI,
+    IRI_OR_VAR,
     ZERO_OR_MORE,
     ONE_OR_MORE,
     ZERO_OR_ONE
   };
 
-  PropertyPath() : _operation(Operation::IRI) {}
+  PropertyPath() : _operation(Operation::IRI_OR_VAR) {}
   explicit PropertyPath(Operation op) : _operation(op) {
     if (op == Operation::ZERO_OR_MORE || op == Operation::ZERO_OR_ONE) {
       can_be_null_ = true;
     }
   }
-  PropertyPath(Operation op, std::string iri,
+  PropertyPath(Operation op, TripleComponent iri,
                std::initializer_list<PropertyPath> children);
 
-  static PropertyPath fromIri(std::string iri) {
-    PropertyPath p(PropertyPath::Operation::IRI);
-    p._iri = std::move(iri);
-    return p;
+  static PropertyPath fromVariable(Variable var) {
+    return fromTripleComponent(std::move(var));
   }
 
-  static PropertyPath fromVariable(Variable var) {
-    PropertyPath p(PropertyPath::Operation::IRI);
-    p._iri = std::move(var.name());
+  static PropertyPath fromIri(TripleComponent::Iri iri) {
+    return fromTripleComponent(std::move(iri));
+  }
+
+  static PropertyPath fromTripleComponent(TripleComponent tc) {
+    PropertyPath p(PropertyPath::Operation::IRI_OR_VAR);
+    AD_CONTRACT_CHECK(tc.isIri() || tc.isVariable());
+    p._iriOrVar = std::move(tc);
     return p;
   }
 
@@ -104,13 +108,16 @@ class PropertyPath {
 
   // ASSERT that this property path consists of a single IRI and return that
   // IRI.
-  [[nodiscard]] const std::string& getIri() const;
+  [[nodiscard]] const TripleComponent::Iri& getIri() const;
   bool isIri() const;
+
+  [[nodiscard]] const Variable& getVariable() const;
+  bool isVariable() const;
 
   Operation _operation;
 
   // In case of an iri
-  std::string _iri;
+  TripleComponent _iriOrVar;
 
   std::vector<PropertyPath> _children;
 

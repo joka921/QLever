@@ -43,15 +43,14 @@ class QueryPlanner {
 
     struct Node {
       Node(size_t id, SparqlTriple t) : id_(id), triple_(std::move(t)) {
-        if (isVariable(triple_.s_)) {
-          _variables.insert(triple_.s_.getVariable());
-        }
-        if (isVariable(triple_.p_)) {
-          _variables.insert(Variable{triple_.p_._iri});
-        }
-        if (isVariable(triple_.o_)) {
-          _variables.insert(triple_.o_.getVariable());
-        }
+        auto insertIfVariable = [this](const auto& el) {
+          if (isVariable(el)) {
+            _variables.insert(el.getVariable());
+          }
+        };
+        insertIfVariable(triple_.s_);
+        insertIfVariable(triple_.p_);
+        insertIfVariable(triple_.o_);
       }
 
       Node(size_t id, Variable cvar, std::string word, SparqlTriple t)
