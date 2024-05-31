@@ -264,7 +264,8 @@ inline auto Iri = [](const std::string& value) {
 // Returns a matcher that accepts a `VarOrPath` or `PropertyPath`.
 inline auto Predicate = [](const std::string& value) {
   return MultiVariantWith<ad_utility::sparql_types::VarOrPath, ::PropertyPath>(
-      AD_PROPERTY(::PropertyPath, getIri, testing::Eq(value)));
+      AD_PROPERTY(::PropertyPath, getIri,
+                  testing::Eq(TripleComponent::Iri::fromIriref(value))));
 };
 
 // Returns a matcher that accepts a `VarOrPath` or `PropertyPath`.

@@ -26,7 +26,7 @@ NormalizedStringView Iri::getContent() const {
 // __________________________________________
 Iri Iri::fromIriref(std::string_view stringWithBrackets) {
   auto first = stringWithBrackets.find('<');
-  AD_CORRECTNESS_CHECK(first != std::string_view::npos);
+  AD_CORRECTNESS_CHECK(first != std::string_view::npos, stringWithBrackets);
   return Iri{
       absl::StrCat(stringWithBrackets.substr(0, first + 1),
                    asStringViewUnsafe(RdfEscaping::normalizeIriWithBrackets(

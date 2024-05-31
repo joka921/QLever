@@ -23,6 +23,11 @@ class QueryPlanner {
       ad_utility::HashMap<Variable, parsedQuery::TextLimitMetaObject>;
   using CancellationHandle = ad_utility::SharedCancellationHandle;
 
+  TripleComponent::Iri containsWordPredicate_ =
+      TripleComponent::Iri::fromIriref(CONTAINS_WORD_PREDICATE);
+  TripleComponent::Iri containsEntityPredicate_ =
+      TripleComponent::Iri::fromIriref(CONTAINS_ENTITY_PREDICATE);
+
  public:
   explicit QueryPlanner(QueryExecutionContext* qec,
                         CancellationHandle cancellationHandle);
@@ -119,6 +124,12 @@ class QueryPlanner {
 
     vector<SparqlFilter> pickFilters(const vector<SparqlFilter>& origFilters,
                                      const vector<size_t>& nodes) const;
+
+   private:
+    TripleComponent::Iri containsWordPredicate_ =
+        TripleComponent::Iri::fromIriref("<someWord>");
+    TripleComponent::Iri containsEntityPredicate_ =
+        TripleComponent::Iri::fromIriref("<someOtherWord>");
   };
 
   class SubtreePlan {

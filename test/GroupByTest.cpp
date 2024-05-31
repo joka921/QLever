@@ -375,26 +375,26 @@ struct GroupByOptimizations : ::testing::Test {
       "<z> <label> \"zz\"@en .";
 
   QueryExecutionContext* qec = getQec(turtleInput);
-  SparqlTriple xyzTriple{Variable{"?x"}, "?y", Variable{"?z"}};
+  SparqlTriple xyzTriple{Variable{"?x"}, Variable{"?y"}, Variable{"?z"}};
   Tree xyzScanSortedByX =
       makeExecutionTree<IndexScan>(qec, Permutation::Enum::SOP, xyzTriple);
   Tree xyzScanSortedByY =
       makeExecutionTree<IndexScan>(qec, Permutation::Enum::POS, xyzTriple);
   Tree xScan = makeExecutionTree<IndexScan>(
       qec, Permutation::Enum::PSO,
-      SparqlTriple{iri("<x>"), {"<label>"}, Variable{"?x"}});
+      SparqlTriple{iri("<x>"), {iri("<label>")}, Variable{"?x"}});
   Tree xyScan = makeExecutionTree<IndexScan>(
       qec, Permutation::Enum::PSO,
-      SparqlTriple{Variable{"?x"}, {"<label>"}, Variable{"?y"}});
+      SparqlTriple{Variable{"?x"}, {iri("<label>")}, Variable{"?y"}});
   Tree yxScan = makeExecutionTree<IndexScan>(
       qec, Permutation::Enum::POS,
-      SparqlTriple{Variable{"?x"}, {"<label>"}, Variable{"?y"}});
+      SparqlTriple{Variable{"?x"}, {iri("<label>")}, Variable{"?y"}});
   Tree xScanIriNotInVocab = makeExecutionTree<IndexScan>(
       qec, Permutation::Enum::PSO,
-      SparqlTriple{{iri("<x>")}, {"<notInVocab>"}, Variable{"?x"}});
+      SparqlTriple{{iri("<x>")}, {iri("<notInVocab>")}, Variable{"?x"}});
   Tree xyScanIriNotInVocab = makeExecutionTree<IndexScan>(
       qec, Permutation::Enum::PSO,
-      SparqlTriple{Variable{"?x"}, {"<notInVocab>"}, Variable{"?y"}});
+      SparqlTriple{Variable{"?x"}, {iri("<notInVocab>")}, Variable{"?y"}});
 
   Tree invalidJoin = makeExecutionTree<Join>(qec, xScan, xScan, 0, 0);
   Tree validJoinWhenGroupingByX =
@@ -698,10 +698,10 @@ TEST_F(GroupByOptimizations, correctResultForHashMapOptimization) {
  */
   Tree zxScan = makeExecutionTree<IndexScan>(
       qec, Permutation::Enum::PSO,
-      SparqlTriple{Variable{"?z"}, {"<is-a>"}, Variable{"?x"}});
+      SparqlTriple{Variable{"?z"}, {iri("<is-a>")}, Variable{"?x"}});
   Tree zyScan = makeExecutionTree<IndexScan>(
       qec, Permutation::Enum::PSO,
-      SparqlTriple{Variable{"?z"}, {"<is>"}, Variable{"?y"}});
+      SparqlTriple{Variable{"?z"}, {iri("<is>")}, Variable{"?y"}});
   Tree join = makeExecutionTree<Join>(qec, zxScan, zyScan, 0, 0);
   std::vector<ColumnIndex> sortedColumns = {1};
   Tree sortedJoin = makeExecutionTree<Sort>(qec, join, sortedColumns);
@@ -1213,7 +1213,7 @@ TEST_F(GroupByOptimizations, hashMapOptimizationGroupConcatIndex) {
   QueryExecutionContext* qec = getQec(turtleInput);
 
   Tree xyScan = makeExecutionTree<IndexScan>(
-      qec, Permutation::Enum::PSO, SparqlTriple{varX, {"<label>"}, varY});
+      qec, Permutation::Enum::PSO, SparqlTriple{varX, {iri("<label>")}, varY});
 
   // Optimization will not be used if subtree is not sort
   std::vector<ColumnIndex> sortedColumns = {0};
@@ -1311,7 +1311,7 @@ TEST_F(GroupByOptimizations, hashMapOptimizationMinMaxIndex) {
   QueryExecutionContext* qec = getQec(turtleInput);
 
   Tree xyScan = makeExecutionTree<IndexScan>(
-      qec, Permutation::Enum::PSO, SparqlTriple{varX, {"<label>"}, varY});
+      qec, Permutation::Enum::PSO, SparqlTriple{varX, {iri("<label>")}, varY});
 
   // Optimization will not be used if subtree is not sort
   std::vector<ColumnIndex> sortedColumns = {0};
@@ -1355,10 +1355,10 @@ TEST_F(GroupByOptimizations, hashMapOptimizationNonTrivial) {
 
   Tree zxScan = makeExecutionTree<IndexScan>(
       qec, Permutation::Enum::PSO,
-      SparqlTriple{Variable{"?z"}, {"<is-a>"}, Variable{"?x"}});
+      SparqlTriple{Variable{"?z"}, iri("<is-a>"), Variable{"?x"}});
   Tree zyScan = makeExecutionTree<IndexScan>(
       qec, Permutation::Enum::PSO,
-      SparqlTriple{Variable{"?z"}, {"<is>"}, Variable{"?y"}});
+      SparqlTriple{Variable{"?z"}, iri("<is>"), Variable{"?y"}});
   Tree join = makeExecutionTree<Join>(qec, zxScan, zyScan, 0, 0);
   std::vector<ColumnIndex> sortedColumns = {1};
   Tree sortedJoin = makeExecutionTree<Sort>(qec, join, sortedColumns);

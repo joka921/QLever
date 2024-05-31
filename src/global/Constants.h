@@ -43,6 +43,9 @@ static const std::string INTERNAL_PREDICATE_PREFIX =
 constexpr auto makeInternalIri = [](auto&&... suffixes) {
   return absl::StrCat("<", INTERNAL_PREDICATE_PREFIX, suffixes..., ">");
 };
+constexpr auto makeInternalIriStrong = [](auto&&... suffixes) {
+  return absl::StrCat("<", INTERNAL_PREDICATE_PREFIX, suffixes..., ">");
+};
 static const std::string INTERNAL_ENTITIES_URI_PREFIX =
     absl::StrCat("<", INTERNAL_PREDICATE_PREFIX);
 static const std::string INTERNAL_PREDICATE_PREFIX_IRI = makeInternalIri("");

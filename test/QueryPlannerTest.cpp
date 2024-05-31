@@ -41,20 +41,20 @@ TEST(QueryPlanner, createTripleGraph) {
         TripleGraph(std::vector<std::pair<Node, std::vector<size_t>>>(
             {std::make_pair<Node, vector<size_t>>(
                  QueryPlanner::TripleGraph::Node(
-                     0,
-                     SparqlTriple(Var{"?x"}, "<http://rdf.myprefix.com/myrel>",
-                                  Var{"?y"})),
+                     0, SparqlTriple(Var{"?x"},
+                                     iri("<http://rdf.myprefix.com/myrel>"),
+                                     Var{"?y"})),
                  {1, 2}),
              std::make_pair<Node, vector<size_t>>(
                  QueryPlanner::TripleGraph::Node(
                      1, SparqlTriple(Var{"?y"},
-                                     "<http://rdf.myprefix.com/ns/myrel>",
+                                     iri("<http://rdf.myprefix.com/ns/myrel>"),
                                      Var{"?z"})),
                  {0, 2}),
              std::make_pair<Node, vector<size_t>>(
                  QueryPlanner::TripleGraph::Node(
                      2, SparqlTriple(Var{"?y"},
-                                     "<http://rdf.myprefix.com/xxx/rel2>",
+                                     iri("<http://rdf.myprefix.com/xxx/rel2>"),
                                      iri("<http://abc.de>"))),
                  {0, 1})}));
 
@@ -70,15 +70,15 @@ TEST(QueryPlanner, createTripleGraph) {
         TripleGraph(std::vector<std::pair<Node, std::vector<size_t>>>(
             {std::make_pair<Node, vector<size_t>>(
                  QueryPlanner::TripleGraph::Node(
-                     0, SparqlTriple(Var{"?x"}, "?p", iri("<X>"))),
+                     0, SparqlTriple(Var{"?x"}, Var{"?p"}, iri("<X>"))),
                  {1, 2}),
              std::make_pair<Node, vector<size_t>>(
                  QueryPlanner::TripleGraph::Node(
-                     1, SparqlTriple(Var{"?x"}, "?p2", iri("<Y>"))),
+                     1, SparqlTriple(Var{"?x"}, Var{"?p2"}, iri("<Y>"))),
                  {0}),
              std::make_pair<Node, vector<size_t>>(
                  QueryPlanner::TripleGraph::Node(
-                     2, SparqlTriple(iri("<X>"), "?p", iri("<Y>"))),
+                     2, SparqlTriple(iri("<X>"), Var{"?p"}, iri("<Y>"))),
                  {0})}));
     ASSERT_TRUE(tg.isSimilar(expected));
   }
@@ -94,11 +94,11 @@ TEST(QueryPlanner, createTripleGraph) {
         TripleGraph(std::vector<std::pair<Node, std::vector<size_t>>>({
             std::make_pair<Node, vector<size_t>>(
                 QueryPlanner::TripleGraph::Node(
-                    0, SparqlTriple(Var{"?x"}, "<is-a>", iri("<Book>"))),
+                    0, SparqlTriple(Var{"?x"}, iri("<is-a>"), iri("<Book>"))),
                 {1}),
             std::make_pair<Node, vector<size_t>>(
                 QueryPlanner::TripleGraph::Node(
-                    1, SparqlTriple(Var{"?x"}, "<Author>",
+                    1, SparqlTriple(Var{"?x"}, iri("<Author>"),
                                     iri("<Anthony_Newman_(Author)>"))),
                 {0}),
         }));

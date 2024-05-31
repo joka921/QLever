@@ -411,7 +411,7 @@ QueryPlanner::TripleGraph QueryPlanner::createTripleGraph(
   vector<const SparqlTriple*> entityTriples;
   // Add one or more nodes for each triple.
   for (auto& t : pattern->_triples) {
-    if (t.p_._iriOrVar == CONTAINS_WORD_PREDICATE) {
+    if (t.p_._iriOrVar == containsWordPredicate_) {
       std::string buffer = t.o_.toString();
       std::string_view sv{buffer};
       // Add one node for each word
@@ -424,7 +424,7 @@ QueryPlanner::TripleGraph QueryPlanner::createTripleGraph(
             tg);
         numNodesInTripleGraph++;
       }
-    } else if (t.p_._iriOrVar == CONTAINS_ENTITY_PREDICATE) {
+    } else if (t.p_._iriOrVar == containsEntityPredicate_) {
       entityTriples.push_back(&t);
     } else {
       addNodeToTripleGraph(TripleGraph::Node(tg._nodeStorage.size(), t), tg);
@@ -889,7 +889,7 @@ QueryPlanner::SubtreePlan QueryPlanner::getTextLeafPlan(
   if (!textLimits.contains(cvar)) {
     textLimits[cvar] = parsedQuery::TextLimitMetaObject{{}, {}, 0};
   }
-  if (node.triple_.p_._iriOrVar == CONTAINS_ENTITY_PREDICATE) {
+  if (node.triple_.p_._iriOrVar == containsEntityPredicate_) {
     if (node._variables.size() == 2) {
       // TODO<joka921>: This is not nice, refactor the whole TripleGraph class
       // to make these checks more explicity.
@@ -1301,9 +1301,9 @@ vector<vector<QueryPlanner::SubtreePlan>> QueryPlanner::fillDpTab(
 bool QueryPlanner::TripleGraph::isTextNode(size_t i) const {
   return _nodeMap.count(i) > 0 &&
          (_nodeMap.find(i)->second->triple_.p_._iriOrVar ==
-              CONTAINS_ENTITY_PREDICATE ||
+              containsEntityPredicate_ ||
           _nodeMap.find(i)->second->triple_.p_._iriOrVar ==
-              CONTAINS_WORD_PREDICATE);
+              containsWordPredicate_);
 }
 
 // _____________________________________________________________________________

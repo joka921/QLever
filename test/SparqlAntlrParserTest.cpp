@@ -784,7 +784,9 @@ TEST(SparqlParser, propertyListPathNotEmpty) {
 
 TEST(SparqlParser, triplesSameSubjectPath) {
   auto expectTriples = ExpectCompleteParse<&Parser::triplesSameSubjectPath>{};
-  auto PathIri = &PropertyPath::fromIri;
+  auto PathIri = [](std::string_view prop) {
+    return PropertyPath::fromIri(iri(prop));
+  };
   expectTriples("?foo <bar> ?baz",
                 {{Var{"?foo"}, PathIri("<bar>"), Var{"?baz"}}});
   expectTriples("?foo <bar> ?baz ; <mehr> ?t",
