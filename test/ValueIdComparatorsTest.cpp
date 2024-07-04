@@ -206,7 +206,7 @@ auto testGetRangesForEqualIds(auto begin, auto end, ValueId idBegin,
     for (auto [rangeBegin, rangeEnd] : ranges) {
       while (it != rangeBegin) {
         // TODO<joka921> Correctly determine, which of these cases we want.
-        ASSERT_THAT(compareWithEqualIds(*it, idBegin, idEnd, comparison),
+        ASSERT_THAT(compareIds(*it, idBegin, idEnd, comparison),
                     ::testing::AnyOf(False, Undef))
             << *it << " " << idBegin << ' ' << idEnd << ' '
             << static_cast<int>(comparison);
@@ -215,14 +215,14 @@ auto testGetRangesForEqualIds(auto begin, auto end, ValueId idBegin,
       while (it != rangeEnd) {
         // The "not equal" relation also yields true for different datatypes.
         ASSERT_TRUE(isMatchingDatatype(*it) || comparison == Comparison::NE);
-        ASSERT_EQ(compareWithEqualIds(*it, idBegin, idEnd, comparison), True)
+        ASSERT_EQ(compareIds(*it, idBegin, idEnd, comparison), True)
             << *it << ' ' << idBegin << ' ' << idEnd;
         ++it;
       }
     }
     while (it != end) {
       // TODO<joka921> Correctly determine, which of these cases we want.
-      ASSERT_THAT(compareWithEqualIds(*it, idBegin, idEnd, comparison),
+      ASSERT_THAT(compareIds(*it, idBegin, idEnd, comparison),
                   ::testing::AnyOf(False, Undef));
       ++it;
     }
@@ -308,9 +308,8 @@ TEST(ValueIdComparators, contractViolations) {
   auto I = ad_utility::testing::IntId;
   // Invalid value for the `Comparison` enum.
   ASSERT_ANY_THROW((compareIds(u, u, static_cast<Comparison>(542))));
-  ASSERT_ANY_THROW(
-      (compareWithEqualIds(u, u, u, static_cast<Comparison>(542))));
+  ASSERT_ANY_THROW((compareIds(u, u, u, static_cast<Comparison>(542))));
 
   // The third argument must be >= the second.
-  ASSERT_ANY_THROW((compareWithEqualIds(I(3), I(25), I(12), Comparison::LE)));
+  ASSERT_ANY_THROW((compareIds(I(3), I(25), I(12), Comparison::LE)));
 }

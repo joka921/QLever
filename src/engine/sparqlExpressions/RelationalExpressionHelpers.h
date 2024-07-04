@@ -112,27 +112,25 @@ constexpr Comparison getComparisonForSwappedArguments(Comparison comp) {
 // the byte level can still logically be equal, depending on the chosen Unicode
 // collation level.
 // TODO<joka921> Make the collation level configurable.
-inline std::pair<ValueId, ValueId> getRangeFromVocab(
+inline valueIdComparators::IdRangeAndLiteralOrIri getRangeFromVocab(
     const ad_utility::triple_component::LiteralOrIri& s,
     const EvaluationContext* context) {
   auto level = TripleComponentComparator::Level::QUARTERNARY;
+  const auto& vocab = context->_qec.getIndex().getVocab();
   // TODO<joka921> This should be `Vocab::equal_range`
-  const ValueId lower =
-      Id::makeFromVocabIndex(context->_qec.getIndex().getVocab().lower_bound(
-          s.toStringRepresentation(), level));
-  const ValueId upper =
-      Id::makeFromVocabIndex(context->_qec.getIndex().getVocab().upper_bound(
-          s.toStringRepresentation(), level));
-  return {lower, upper};
+  const ValueId lower = Id::makeFromVocabIndex(
+      vocab.lower_bound(s.toStringRepresentation(), level));
+  const ValueId upper = Id::makeFromVocabIndex(
+      vocab.upper_bound(s.toStringRepresentation(), level));
+  return {lower, upper, s};
 }
 
 // A concept for various types that either represent a string, an ID or a
 // consecutive range of IDs. For its usage see below.
 template <typename S>
-concept StoresStringOrId =
-    ad_utility::SimilarToAny<S, ValueId,
-                             ad_utility::triple_component::LiteralOrIri,
-                             IdOrLiteralOrIri, std::pair<Id, Id>>;
+concept StoresStringOrId = ad_utility::SimilarToAny<
+    S, ValueId, ad_utility::triple_component::LiteralOrIri, IdOrLiteralOrIri,
+    valueIdComparators::IdRangeFromVocab>;
 // Convert a string or `IdOrLiteralOrIri` value into the (possibly empty) range
 // of corresponding `ValueIds` (denoted by a `std::pair<Id, Id>`, see
 // `getRangeFromVocab` above for details). This function also takes `ValueId`s
@@ -142,7 +140,8 @@ template <StoresStringOrId S>
 auto makeValueId(const S& value, const EvaluationContext* context) {
   if constexpr (ad_utility::isSimilar<S, ValueId>) {
     return value;
-  } else if constexpr (ad_utility::isSimilar<S, std::pair<Id, Id>>) {
+  } else if constexpr (ad_utility::isSimilar<
+                           S, valueIdComparators::IdRangeFromVocab>) {
     return value;
   } else if constexpr (ad_utility::isSimilar<S, IdOrLiteralOrIri>) {
     auto visitor = [context](const auto& x) {
@@ -151,7 +150,8 @@ auto makeValueId(const S& value, const EvaluationContext* context) {
         // We need the same return type on all cases when visiting a variant, so
         // we need to return a pair here. As the second element is an upper
         // bound, we have to increment it by one.
-        return std::pair{res, ValueId::fromBits(res.getBits() + 1)};
+        return valueIdComparators::IdRangeFromVocab{
+            res, ValueId::fromBits(res.getBits() + 1)};
       } else {
         return res;
       }
@@ -190,28 +190,11 @@ inline const auto compareIdsOrStrings =
       // Compare two `ValueId`s
       return valueIdComparators::compareIds<comparisonForIncompatibleTypes>(
           x, y, Comp);
-    } else if constexpr (requires {
-                           valueIdComparators::compareWithEqualIds(
-                               x, y.first, y.second, Comp);
-                         }) {
-      // Compare `ValueId` with range of equal `ValueId`s (used when `value2`
-      // is `string` or `vector<string>`.
-      return valueIdComparators::compareWithEqualIds<
-          comparisonForIncompatibleTypes>(x, y.first, y.second, Comp);
-    } else if constexpr (requires {
-                           valueIdComparators::compareWithEqualIds(
-                               y, x.first, x.second, Comp);
-                         }) {
-      // Compare `ValueId` with range of equal `ValueId`s (used when `value2`
-      // is `string` or `vector<string>`.
-      return valueIdComparators::compareWithEqualIds<
-          comparisonForIncompatibleTypes>(
-          y, x.first, x.second, getComparisonForSwappedArguments(Comp));
     } else {
-      // The `variant` is such that both types are shown in the compiler error
-      // message once the `static_assert` fails.
-      static_assert(
-          ad_utility::alwaysFalse<std::variant<decltype(x), decltype(y)>>);
+      static_assert(requires { valueIdComparators::compareIds(y, x, Comp); });
+      // Compare two `ValueId`s
+      return valueIdComparators::compareIds<comparisonForIncompatibleTypes>(
+          y, x, getComparisonForSwappedArguments(Comp));
     }
   }
 };

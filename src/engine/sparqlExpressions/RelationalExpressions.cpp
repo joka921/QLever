@@ -152,8 +152,8 @@ requires AreComparable<S1, S2> ExpressionResult evaluateRelationalExpression(
         constexpr static bool value2IsString =
             !ad_utility::isSimilar<decltype(valueId), Id>;
         if constexpr (value2IsString) {
-          return evaluateWithBinarySearch<Comp>(value1, valueId.first,
-                                                valueId.second, context);
+          return evaluateWithBinarySearch<Comp>(value1, valueId.begin_,
+                                                valueId.end_, context);
         } else {
           return evaluateWithBinarySearch<Comp>(value1, valueId, std::nullopt,
                                                 context);
