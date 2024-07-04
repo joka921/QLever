@@ -530,13 +530,132 @@ inline ComparisonResult compareIds(ValueId a, ValueId b,
   }
 }
 
+template <ComparisonForIncompatibleTypes comparisonForIncompatibleTypes =
+              ComparisonForIncompatibleTypes::AlwaysUndef>
+inline ComparisonResult compareIdAndLiteralOrIri(
+    ValueId a, ValueId b,
+    const ad_utility::triple_component::LiteralOrIri& litOrIri,
+    Comparison comparison) {
+  // A helper lambda to factor out common code
+  auto compare = [&](auto comparator) {
+    // For the `compareByType` mode, which is used by ORDER BY, we also need a
+    // proper order of NaN values to not run into undefined behavior.
+    if (a.getDatatype() == Datatype::LocalVocabIndex) {
+      return comparator(*a.getLocalVocabIndex(), litOrIri);
+    }
+    if constexpr (comparisonForIncompatibleTypes ==
+                  ComparisonForIncompatibleTypes::CompareByType) {
+      return detail::compareIdsImpl<comparisonForIncompatibleTypes>(
+          a, b, ad_utility::makeComparatorForNans(comparator));
+    } else {
+      return detail::compareIdsImpl<comparisonForIncompatibleTypes>(a, b,
+                                                                    comparator);
+    }
+  };
+
+  using enum Comparison;
+  switch (comparison) {
+    case LT:
+      return compare(std::less{});
+    case LE:
+      return compare(std::less_equal{});
+    case EQ:
+      return compare(std::equal_to{});
+    case NE:
+      return compare(std::not_equal_to{});
+    case GE:
+      return compare(std::greater_equal{});
+    case GT:
+      return compare(std::greater{});
+    default:
+      AD_FAIL();
+  }
+}
+
+struct IdRangeFromVocab {
+  ValueId begin_;
+  ValueId end_;
+};
+
 // Similar to `compareIds` above but takes a range [bBegin, bEnd) of Ids that
 // are considered to be equal.
 template <ComparisonForIncompatibleTypes comparisonForIncompatibleTypes =
               ComparisonForIncompatibleTypes::AlwaysUndef>
-inline ComparisonResult compareWithEqualIds(ValueId a, ValueId bBegin,
-                                            ValueId bEnd,
+inline ComparisonResult compareIds(ValueId a, IdRangeFromVocab b,
+                                   Comparison comparison) {
+  // The case `bBegin == bEnd` happens when IDs from QLever's vocabulary are
+  // compared to "pseudo"-IDs that represent words that are not part of the
+  // vocabulary. In this case the ID `bBegin` is the ID of the smallest
+  // vocabulary entry that is larger than the non-existing word that it
+  // represents.
+  const auto& [bBegin, bEnd] = b;
+  AD_CONTRACT_CHECK(bBegin <= bEnd);
+
+  static constexpr auto mode = comparisonForIncompatibleTypes;
+
+  // The comparison for `equal` is also used for the `not equal` case, so we
+  // factor it out.
+  auto compareEqual = [&]() {
+    return toBoolNotUndef(detail::compareIdsImpl<mode>(
+               a, bBegin, std::greater_equal<>())) &&
+           toBoolNotUndef(detail::compareIdsImpl<mode>(a, bEnd, std::less<>()));
+  };
+  using enum Comparison;
+  switch (comparison) {
+    case LT:
+      return detail::compareIdsImpl<mode>(a, bBegin, std::less<>());
+    case LE:
+      return detail::compareIdsImpl<mode>(a, bEnd, std::less<>());
+    case EQ: {
+      if constexpr (mode == ComparisonForIncompatibleTypes::AlwaysUndef) {
+        bool typesAreCompatible =
+            detail::areTypesCompatible(a.getDatatype(), bBegin.getDatatype());
+        return typesAreCompatible ? fromBool(compareEqual())
+                                  : ComparisonResult::Undef;
+      } else {
+        return fromBool(compareEqual());
+      }
+    }
+    case NE: {
+      // If the datatypes are not compatible then we always yield `false`. This
+      // is the correct behavior for SPARQL filters where this is called an
+      // `expression error`.
+      bool typesAreCompatible =
+          detail::areTypesCompatible(a.getDatatype(), bBegin.getDatatype());
+      if constexpr (mode == ComparisonForIncompatibleTypes::AlwaysUndef) {
+        return typesAreCompatible ? fromBool(!compareEqual())
+                                  : ComparisonResult::Undef;
+      } else {
+        return fromBool(!typesAreCompatible || !compareEqual());
+      }
+    }
+    case GE:
+      return detail::compareIdsImpl<mode>(a, bBegin, std::greater_equal<>());
+    case GT:
+      return detail::compareIdsImpl<mode>(a, bEnd, std::greater_equal<>());
+    default:
+      AD_FAIL();
+  }
+}
+
+struct IdRangeAndLiteralOrIri {
+  ValueId begin_;
+  ValueId end_;
+  const ad_utility::triple_component::LiteralOrIri& literalOrIri_;
+};
+
+// Similar to `compareIds` above but takes a range [bBegin, bEnd) of Ids that
+// are considered to be equal.
+template <ComparisonForIncompatibleTypes comparisonForIncompatibleTypes =
+              ComparisonForIncompatibleTypes::AlwaysUndef>
+inline ComparisonResult compareWithEqualIds(ValueId a,
+                                            const IdRangeAndLiteralOrIri& b,
                                             Comparison comparison) {
+  const auto& [bBegin, bEnd, literalOrIri] = b;
+
+  if (a.getDatatype() == Datatype::LocalVocabIndex) {
+    return compareIdAndLiteralOrIri(a, bBegin, literalOrIri, comparison);
+  }
   // The case `bBegin == bEnd` happens when IDs from QLever's vocabulary are
   // compared to "pseudo"-IDs that represent words that are not part of the
   // vocabulary. In this case the ID `bBegin` is the ID of the smallest
