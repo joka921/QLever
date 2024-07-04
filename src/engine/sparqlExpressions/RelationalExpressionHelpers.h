@@ -138,12 +138,12 @@ concept StoresStringOrId = ad_utility::SimilarToAny<
 // the usage of this function easier.
 template <StoresStringOrId S>
 auto makeValueId(const S& value, const EvaluationContext* context) {
-  if constexpr (ad_utility::isSimilar<S, ValueId>) {
-    return value;
-  } else if constexpr (ad_utility::isSimilar<
-                           S, valueIdComparators::IdRangeFromVocab>) {
+  if constexpr (ad_utility::SimilarToAny<
+                    S, ValueId, valueIdComparators::IdRangeFromVocab>) {
     return value;
   } else if constexpr (ad_utility::isSimilar<S, IdOrLiteralOrIri>) {
+    // TODO<joka921> We can't really (efficiently) have a single return type
+    // here. We have to thing about
     auto visitor = [context](const auto& x) {
       auto res = makeValueId(x, context);
       if constexpr (ad_utility::isSimilar<decltype(res), Id>) {
@@ -158,10 +158,11 @@ auto makeValueId(const S& value, const EvaluationContext* context) {
     };
     return std::visit(visitor, value);
 
-  } else {
-    static_assert(
-        ad_utility::isSimilar<S, ad_utility::triple_component::LiteralOrIri>);
+  } else if constexpr (ad_utility::isSimilar<
+                           S, ad_utility::triple_component::LiteralOrIri>) {
     return getRangeFromVocab(value, context);
+  } else {
+    static_assert(ad_utility::alwaysFalse<S>);
   }
 };
 
@@ -186,7 +187,25 @@ inline const auto compareIdsOrStrings =
   } else {
     auto x = makeValueId(a, ctx);
     auto y = makeValueId(b, ctx);
-    if constexpr (requires { valueIdComparators::compareIds(x, y, Comp); }) {
+    if constexpr (std::is_same_v<decltype(x), ValueId> &&
+                  std::is_same_v<decltype(y), ValueId>) {
+      auto vocabLookup = [ctx](ValueId id) {
+        AD_CORRECTNESS_CHECK(id.getDatatype() == Datatype::VocabIndex);
+        return ad_utility::triple_component::LiteralOrIri::
+            fromStringRepresentation(ctx->_qec.getIndex()
+                                         .idToOptionalString(id.getVocabIndex())
+                                         .value());
+      };
+      auto complexComparator =
+          ctx->_qec.getIndex().getVocab().getCaseComparator();
+      return valueIdComparators::compareIds(
+          valueIdComparators::TwoIdsAndVocabLookup<decltype(vocabLookup),
+                                                   decltype(complexComparator)>{
+              a, b, vocabLookup, complexComparator},
+          Comp);
+    } else if constexpr (requires {
+                           valueIdComparators::compareIds(x, y, Comp);
+                         }) {
       // Compare two `ValueId`s
       return valueIdComparators::compareIds<comparisonForIncompatibleTypes>(
           x, y, Comp);

@@ -18,6 +18,7 @@
 #include <memory_resource>
 
 #include "global/Constants.h"
+#include "parser/TripleComponent.h"
 #include "util/Exception.h"
 #include "util/StringUtils.h"
 
@@ -615,7 +616,14 @@ class TripleComponentComparator {
 
   /// Compare two string_views from the Vocabulary. Return value according to
   /// std::strcmp
-  [[nodiscard]] int compare(std::string_view a, std::string_view b,
+  template <typename T>
+  static constexpr bool StringLikeOrLiteralOrIri =
+      std::convertible_to<T, std::string_view> ||
+      ad_utility::isSimilar<T, ad_utility::triple_component::LiteralOrIri>;
+
+  template <typename T, typename U>
+  requires(StringLikeOrLiteralOrIri<T> && StringLikeOrLiteralOrIri<U>)
+  [[nodiscard]] int compare(const T& a, const U& b,
                             const Level level = Level::QUARTERNARY) const {
     auto splitA = extractComparable<SplitValNonOwning>(a, level, false);
     auto splitB = extractComparable<SplitValNonOwning>(b, level, false);
@@ -805,6 +813,14 @@ class TripleComponentComparator {
     } else {
       static_assert(ad_utility::alwaysFalse<SplitValType>);
     }
+  }
+
+  template <std::same_as<SplitValNonOwning> SplitVal>
+  [[nodiscard]] SplitVal extractComparable(
+      const ad_utility::triple_component::LiteralOrIri& a,
+      [[maybe_unused]] const Level level, bool isExternal) const {
+    return extractComparable<SplitVal>(a.toStringRepresentation(), level,
+                                       isExternal);
   }
 };
 

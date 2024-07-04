@@ -484,22 +484,20 @@ ComparisonResult compareIdsImpl(ValueId a, ValueId b, auto comparator) {
 }
 }  // namespace detail
 
-// Compare two `ValueId`s by their actual value.
-// Returns true iff the following conditions are met:
-// 1. The condition aValue `comparison` bValue is fulfilled, where aValue and
-// bValue are the values contained in `a` and `b`.
-// 2. The datatype of `a` and `b` are compatible, s.t. the comparison in
-// condition one is well-defined.
-// For the definition of the template parameter `comparisonForIncompatibleTypes`
-// see the documentation of the enum `ComparisonForIncompatibleTypes` above.
 template <ComparisonForIncompatibleTypes comparisonForIncompatibleTypes =
               ComparisonForIncompatibleTypes::AlwaysUndef>
-inline ComparisonResult compareIds(ValueId a, ValueId b,
-                                   Comparison comparison) {
+inline ComparisonResult compareIdAndLiteralOrIri(
+    ValueId a, ValueId b,
+    const ad_utility::triple_component::LiteralOrIri& litOrIri,
+    Comparison comparison) {
   // A helper lambda to factor out common code
   auto compare = [&](auto comparator) {
     // For the `compareByType` mode, which is used by ORDER BY, we also need a
     // proper order of NaN values to not run into undefined behavior.
+    if (a.getDatatype() == Datatype::LocalVocabIndex) {
+      // TODO<joka921> Use ICU-based comparisons here
+      return fromBool(comparator(*a.getLocalVocabIndex(), litOrIri));
+    }
     if constexpr (comparisonForIncompatibleTypes ==
                   ComparisonForIncompatibleTypes::CompareByType) {
       return detail::compareIdsImpl<comparisonForIncompatibleTypes>(
@@ -528,20 +526,22 @@ inline ComparisonResult compareIds(ValueId a, ValueId b,
       AD_FAIL();
   }
 }
-
+// Compare two `ValueId`s by their actual value.
+// Returns true iff the following conditions are met:
+// 1. The condition aValue `comparison` bValue is fulfilled, where aValue and
+// bValue are the values contained in `a` and `b`.
+// 2. The datatype of `a` and `b` are compatible, s.t. the comparison in
+// condition one is well-defined.
+// For the definition of the template parameter `comparisonForIncompatibleTypes`
+// see the documentation of the enum `ComparisonForIncompatibleTypes` above.
 template <ComparisonForIncompatibleTypes comparisonForIncompatibleTypes =
               ComparisonForIncompatibleTypes::AlwaysUndef>
-inline ComparisonResult compareIdAndLiteralOrIri(
-    ValueId a, ValueId b,
-    const ad_utility::triple_component::LiteralOrIri& litOrIri,
-    Comparison comparison) {
+inline ComparisonResult compareIds(ValueId a, ValueId b,
+                                   Comparison comparison) {
   // A helper lambda to factor out common code
   auto compare = [&](auto comparator) {
     // For the `compareByType` mode, which is used by ORDER BY, we also need a
     // proper order of NaN values to not run into undefined behavior.
-    if (a.getDatatype() == Datatype::LocalVocabIndex) {
-      return comparator(*a.getLocalVocabIndex(), litOrIri);
-    }
     if constexpr (comparisonForIncompatibleTypes ==
                   ComparisonForIncompatibleTypes::CompareByType) {
       return detail::compareIdsImpl<comparisonForIncompatibleTypes>(
@@ -656,6 +656,73 @@ inline ComparisonResult compareIds(ValueId a, const IdRangeAndLiteralOrIri& b,
   }
 
   return compareIds(a, IdRangeFromVocab{bBegin, bEnd}, comparison);
+}
+// Compare two `ValueId`s by their actual value.
+// Returns true iff the following conditions are met:
+// 1. The condition aValue `comparison` bValue is fulfilled, where aValue and
+// bValue are the values contained in `a` and `b`.
+// 2. The datatype of `a` and `b` are compatible, s.t. the comparison in
+// condition one is well-defined.
+// For the definition of the template parameter `comparisonForIncompatibleTypes`
+// see the documentation of the enum `ComparisonForIncompatibleTypes` above.
+
+template <ad_utility::InvocableWithConvertibleReturnType<
+              const ad_utility::triple_component::LiteralOrIri&, ValueId>
+              VocabLookup,
+          typename ComplexComparator>
+struct TwoIdsAndVocabLookup {
+  ValueId a_;
+  ValueId b_;
+  VocabLookup vocabLookup_;
+  ComplexComparator complexComparator_;
+};
+template <ComparisonForIncompatibleTypes comparisonForIncompatibleTypes =
+              ComparisonForIncompatibleTypes::AlwaysUndef>
+inline ComparisonResult compareIds(
+    ad_utility::isInstantiation<TwoIdsAndVocabLookup> auto const& input,
+    Comparison comparison) {
+  const auto& [a, b, vocabLookup, complexComparator] = input;
+  // A helper lambda to factor out common code
+  auto compare = [&](auto comparator, auto checkInt) {
+    // For the `compareByType` mode, which is used by ORDER BY, we also need a
+    // proper order of NaN values to not run into undefined behavior.
+    auto aType = a.getDatatype();
+    auto bType = b.getDatatype();
+    if (aType == Datatype::LocalVocabIndex && bType == Datatype::VocabIndex) {
+      return fromBool(checkInt(
+          complexComparator.compare(*a.getLocalVocabIndex(), vocabLookup(b))));
+    } else if (aType == Datatype::VocabIndex &&
+               bType == Datatype::LocalVocabIndex) {
+      return fromBool(checkInt(
+          complexComparator.compare(vocabLookup(a), *b.getLocalVocabIndex())));
+    }
+    if constexpr (comparisonForIncompatibleTypes ==
+                  ComparisonForIncompatibleTypes::CompareByType) {
+      return detail::compareIdsImpl<comparisonForIncompatibleTypes>(
+          a, b, ad_utility::makeComparatorForNans(comparator));
+    } else {
+      return detail::compareIdsImpl<comparisonForIncompatibleTypes>(a, b,
+                                                                    comparator);
+    }
+  };
+
+  using enum Comparison;
+  switch (comparison) {
+    case LT:
+      return compare(std::less{}, [](int i) { return i < 0; });
+    case LE:
+      return compare(std::less_equal{}, [](int i) { return i <= 0; });
+    case EQ:
+      return compare(std::equal_to{}, [](int i) { return i == 0; });
+    case NE:
+      return compare(std::not_equal_to{}, [](int i) { return i != 0; });
+    case GE:
+      return compare(std::greater_equal{}, [](int i) { return i >= 0; });
+    case GT:
+      return compare(std::greater{}, [](int i) { return i > 0; });
+    default:
+      AD_FAIL();
+  }
 }
 
 }  // namespace valueIdComparators
