@@ -8,8 +8,10 @@
 #include <string>
 #include <vector>
 
-#include "../src/util/Random.h"
-#include "../src/util/Views.h"
+#include "util/EnumerateView.h"
+#include "util/ParallelMultiwayMergePrecomputedBorders.h"
+#include "util/Random.h"
+#include "util/Views.h"
 
 TEST(Views, BufferedAsyncView) {
   auto testWithVector = []<typename T>(const T& inputVector) {
@@ -260,4 +262,17 @@ TEST(Views, verifyLineByLineWorksWithChunksBiggerThanLines) {
 
   ++iterator;
   ASSERT_EQ(iterator, lineByLineGenerator.end());
+}
+
+TEST(Views, enumerate) {
+  std::vector<int> v{3, 4, 5};
+  auto x = ad_utility::ranges::views::enumerate(v);
+  for (auto [a, b] : x) {
+    std::cerr << a << ' ' << b << std::endl;
+  }
+}
+TEST(Views, parallelBla) {
+  using namespace ad_utility::parallelMultiwayMergeBorders;
+  std::vector<std::vector<BlockMetadata<int>>> i;
+  getMergeParts(i, 20);
 }
