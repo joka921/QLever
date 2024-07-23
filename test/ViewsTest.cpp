@@ -266,13 +266,25 @@ TEST(Views, verifyLineByLineWorksWithChunksBiggerThanLines) {
 
 TEST(Views, enumerate) {
   std::vector<int> v{3, 4, 5};
-  auto x = ad_utility::ranges::views::enumerate(v);
+  [[maybe_unused]] auto x = ad_utility::ranges::views::enumerate(v);
+  /*
   for (auto [a, b] : x) {
     std::cerr << a << ' ' << b << std::endl;
   }
+   */
 }
+
+// TODO<joka921> Move somewhere else
 TEST(Views, parallelBla) {
   using namespace ad_utility::parallelMultiwayMergeBorders;
-  std::vector<std::vector<BlockMetadata<int>>> i;
-  getMergeParts(i, 20);
+
+  using B = MergeRange<int>::Blocks;
+  std::vector<BlockMetadata<int>> b1, b2;
+  b1.push_back({3, 7});
+  b2.push_back({1, 6});
+  b2.push_back({9, 13});
+  std::vector<std::vector<BlockMetadata<int>>> i{b1, b2};
+  auto res = getMergeParts(i, 20);
+  EXPECT_EQ(res[0].last_, 6);
+  EXPECT_THAT(res[0].blocks_, ::testing::ElementsAre(B{0, 1}, B{0, 1}));
 }
