@@ -96,9 +96,6 @@ std::vector<MergeRange<T>> getMergeParts(
 
       auto diff = itFinished - relevantBlocks.begin();
       numFinishedBlocks += diff;
-      if (diff > 0) {
-        std::cerr << "bumm";
-      }
       if (itFinished != relevantBlocks.end()) {
         firstUnfinishedBlock[idx] = std::get<0>(*itFinished);
       } else {
