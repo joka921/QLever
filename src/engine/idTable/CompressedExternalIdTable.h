@@ -17,6 +17,8 @@
 #include "util/CompressionUsingZstd/ZstdWrapper.h"
 #include "util/File.h"
 #include "util/MemorySize/MemorySize.h"
+#include "util/ParallelMultiwayMergePrecomputedBorders.h"
+#include "util/ThreadSafeQueue.h"
 #include "util/TransparentFunctors.h"
 #include "util/Views.h"
 
@@ -73,6 +75,13 @@ class CompressedExternalIdTableWriter {
   // contents.
   size_t numActiveGenerators_ = 0;
 
+  using Row = typename IdTableStatic<0>::row_type;
+  using BlockMetadata =
+      ad_utility::parallelMultiwayMergeBorders::BlockMetadata<Row>;
+  using MergeMetadata =
+      ad_utility::parallelMultiwayMergeBorders::MergeRange<Row>;
+  std::vector<std::vector<BlockMetadata>> blockMetadata_;
+
  public:
   // Constructor. The file at `filename` will be overwritten. Each of the
   // `IdTables` that will be passed in has to have exactly `numCols` columns.
@@ -98,7 +107,6 @@ class CompressedExternalIdTableWriter {
   const MemorySize& blockSizeUncompressed() const {
     return blockSizeUncompressed_;
   }
-
   // Store an `idTable`.
   void writeIdTable(const IdTable& table) {
     if (numActiveGenerators_ != 0) {
@@ -111,6 +119,16 @@ class CompressedExternalIdTableWriter {
     size_t blockSize = blockSizeUncompressed_.getBytes() / sizeof(Id);
     AD_CONTRACT_CHECK(blockSize > 0);
     startOfSingleIdTables_.push_back(blocksPerColumn_.at(0).size());
+    blockMetadata_.emplace_back();
+    for (size_t lower = 0; lower < table.numRows(); lower += blockSize) {
+      size_t upper = std::min(lower + blockSize, table.numRows());
+      using Row = IdTableStatic<0>::row_type;
+      Row first = table[lower];
+      Row last = table[upper - 1];
+      blockMetadata_.back().emplace_back(
+          std::move(first), std::move(last), upper - lower,
+          (upper - lower) * table.numColumns() * sizeof(Id));
+    }
     // The columns are compressed and stored in parallel.
     // TODO<joka921> Use parallelism per block instead of per column (more
     // fine-grained) but only once we have a reasonable abstraction for
@@ -143,16 +161,30 @@ class CompressedExternalIdTableWriter {
     }
   }
 
+  using BlockBound = MergeMetadata::Blocks;
+  using BlockBounds = std::optional<std::vector<BlockBound>>;
+
+  const std::vector<std::vector<BlockMetadata>>& blockMetadata() const {
+    return blockMetadata_;
+  }
+
   // Return a vector of generators where the `i-th` generator generates the
   // `i-th` IdTable that was stored. The IdTables are yielded in (smaller)
   // blocks which are `IdTables` themselves.
   template <size_t N = 0>
-  std::vector<cppcoro::generator<const IdTableStatic<N>>> getAllGenerators() {
+  std::vector<cppcoro::generator<const IdTableStatic<N>>> getAllGenerators(
+      BlockBounds bounds = std::nullopt) {
+    if (bounds.has_value()) {
+      AD_CORRECTNESS_CHECK(bounds->size() == startOfSingleIdTables_.size());
+    }
     file_.wlock()->flush();
     std::vector<cppcoro::generator<const IdTableStatic<N>>> result;
     result.reserve(startOfSingleIdTables_.size());
     for (auto i : std::views::iota(0u, startOfSingleIdTables_.size())) {
-      result.push_back(makeGeneratorForIdTable<N>(i));
+      std::optional<BlockBound> bound =
+          bounds.has_value() ? std::optional{bounds.value().at(i)}
+                             : std::nullopt;
+      result.push_back(makeGeneratorForIdTable<N>(i, bound));
     }
     return result;
   }
@@ -160,12 +192,20 @@ class CompressedExternalIdTableWriter {
   // Return a vector of generators where the `i-th` generator generates the
   // `i-th` IdTable that was stored. The IdTables are yielded row by row.
   template <size_t N = 0>
-  auto getAllRowGenerators() {
+  auto getAllRowGenerators(BlockBounds bounds = std::nullopt) {
+    if (bounds.has_value()) {
+      AD_CORRECTNESS_CHECK(bounds->size() == startOfSingleIdTables_.size());
+    }
     file_.wlock()->flush();
-    std::vector<decltype(makeGeneratorForRows<N>(0))> result;
+    std::vector<decltype(makeGeneratorForRows<N>(
+        0, std::declval<std::optional<BlockBound>>()))>
+        result;
     result.reserve(startOfSingleIdTables_.size());
     for (auto i : std::views::iota(0u, startOfSingleIdTables_.size())) {
-      result.push_back(makeGeneratorForRows<N>(i));
+      std::optional<BlockBound> bound =
+          bounds.has_value() ? std::optional{bounds.value().at(i)}
+                             : std::nullopt;
+      result.push_back(makeGeneratorForRows<N>(i, bound));
     }
     return result;
   }
@@ -196,31 +236,43 @@ class CompressedExternalIdTableWriter {
  private:
   // Get the row generator for a single IdTable, specified by the `index`.
   template <size_t N = 0>
-  auto makeGeneratorForRows(size_t index) {
+  auto makeGeneratorForRows(size_t index, std::optional<BlockBound> bound) {
     return std::views::join(
-        ad_utility::OwningView{makeGeneratorForIdTable<N>(index)});
+        ad_utility::OwningView{makeGeneratorForIdTable<N>(index, bound)});
   }
   // Get the block generator for a single IdTable, specified by the `index`.
   template <size_t NumCols = 0>
   cppcoro::generator<const IdTableStatic<NumCols>> makeGeneratorForIdTable(
-      size_t index) {
+      size_t index, std::optional<BlockBound> bound) {
     // The following line has the effect that `writeIdTable` and `clear` also
     // throw an exception if a generator has been created but not yet
     // started.
     ++numActiveGenerators_;
     return makeGeneratorForIdTableImpl<NumCols>(
-        index, absl::Cleanup{[this] { --numActiveGenerators_; }});
+        index, bound, absl::Cleanup{[this] { --numActiveGenerators_; }});
   }
 
   // The actual implementation of `makeGeneratorForIdTable` above.
   template <size_t NumCols = 0>
   cppcoro::generator<const IdTableStatic<NumCols>> makeGeneratorForIdTableImpl(
-      size_t index, auto cleanup) {
+      size_t index, std::optional<BlockBound> bound, auto cleanup) {
     using Table = IdTableStatic<NumCols>;
     auto firstBlock = startOfSingleIdTables_.at(index);
     auto lastBlock = index + 1 < startOfSingleIdTables_.size()
                          ? startOfSingleIdTables_.at(index + 1)
                          : blocksPerColumn_.at(0).size();
+
+    if (bound.has_value()) {
+      size_t numBlocks = lastBlock - firstBlock;
+      AD_CORRECTNESS_CHECK(bound->firstBlockIdx_ <= numBlocks &&
+                           bound->endBlockIdx_ <= numBlocks);
+      lastBlock = firstBlock + bound->endBlockIdx_;
+      firstBlock += bound->firstBlockIdx_;
+    }
+
+    if (firstBlock == lastBlock) {
+      co_return;
+    }
     std::future<Table> fut;
 
     // Yield one block after the other. While one block is yielded the next
@@ -692,6 +744,34 @@ class CompressedExternalIdTableSorter
       }
       co_return;
     }
+
+    // TODO<joka921> Handle all the blocksize business.
+
+    if (blocksize == std::nullopt) {
+      std::cout << "using the new merge routine" << std::endl;
+      auto mergeRes = ad_utility::parallelMultiwayMergeBorders::getMergeParts(
+          this->writer_.blockMetadata(),
+          this->writer_.blockMetadata().size() * 5, comparator_);
+      std::atomic<size_t> nextIndex = 0;
+      auto producer =
+          [&]() -> std::optional<std::pair<size_t, IdTableStatic<N>>> {
+        auto myIndex = nextIndex.fetch_add(1);
+        if (myIndex >= mergeRes.size()) {
+          return std::nullopt;
+        }
+        auto block = mergeSingleBlock<N>(mergeRes.at(myIndex));
+        return std::pair{myIndex, std::move(block)};
+      };
+
+      auto queue = ad_utility::data_structures::queueManager<
+          ad_utility::data_structures::OrderedThreadSafeQueue<
+              IdTableStatic<N>>>(9, 3, producer);
+      for (auto& block : queue) {
+        co_yield (block);
+      }
+      std::cout << "finished the new merge routine" << std::endl;
+      co_return;
+    }
     auto rowGenerators =
         this->writer_.template getAllRowGenerators<NumStaticCols>();
 
@@ -742,6 +822,76 @@ class CompressedExternalIdTableSorter
       co_yield std::move(result).template toStatic<N>();
     }
     AD_CORRECTNESS_CHECK(numPopped == this->numElementsPushed_);
+  }
+  // Transition from the input phase, where `push()` may be called, to the
+  // output phase and return a generator that yields the sorted elements. This
+  // function may be called exactly once.
+  using MergeRes = ad_utility::parallelMultiwayMergeBorders::MergeRange<
+      typename IdTableStatic<0>::row_type>;
+  template <size_t N = NumStaticCols>
+  requires(N == NumStaticCols || N == 0)
+  IdTableStatic<N> mergeSingleBlock(MergeRes metadata) {
+    auto rowGenerators =
+        this->writer_.template getAllRowGenerators<NumStaticCols>(
+            metadata.blocks_);
+
+    using P = std::pair<decltype(rowGenerators[0].begin()),
+                        decltype(rowGenerators[0].end())>;
+    auto projection = [](const auto& el) -> decltype(auto) {
+      return *el.first;
+    };
+    // NOTE: We have to switch the arguments, because the heap operations by
+    // default order descending...
+    auto comp = [&, this](const auto& a, const auto& b) {
+      return comparator_(projection(b), projection(a));
+    };
+    std::vector<P> pq;
+
+    for (auto& gen : rowGenerators) {
+      pq.emplace_back(gen.begin(), gen.end());
+      const auto& [begin, end] = pq.back();
+      if (begin == end) {
+        pq.pop_back();
+      }
+    }
+    std::ranges::make_heap(pq, comp);
+    IdTableStatic<NumStaticCols> result(this->writer_.numColumns(),
+                                        this->writer_.allocator());
+    // TODO Proper reserve.
+    // result.reserve(blockSizeOutput);
+    while (!pq.empty()) {
+      std::ranges::pop_heap(pq, comp);
+      auto& min = pq.back();
+      result.push_back(*min.first);
+      ++(min.first);
+      if (min.first == min.second) {
+        pq.pop_back();
+      } else {
+        std::ranges::push_heap(pq, comp);
+      }
+    }
+
+    // Remove the duplicate rows (don't ignore the first and last
+    // element). If this is a performance bottleneck, then we can also
+    // filter them out earlier in the incoming generators.
+    auto lower =
+        metadata.firstNonInclusive_.has_value()
+            ? std::ranges::upper_bound(
+                  result, metadata.firstNonInclusive_.value(), comparator_)
+            : result.begin();
+    auto upper =
+        std::ranges::upper_bound(result, metadata.last_.value(), comparator_);
+
+    auto numMerged = result.size();
+    auto numKep = upper - lower;
+    std::cout << "kept " << numKep << " of " << numMerged << " entries "
+              << std::endl;
+
+    size_t lowerIdx = lower - result.begin();
+    result.erase(upper, result.end());
+    result.erase(result.begin(), result.begin() + lowerIdx);
+
+    return std::move(result).template toStatic<N>();
   }
 
   // _____________________________________________________________

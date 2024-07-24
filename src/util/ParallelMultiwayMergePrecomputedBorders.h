@@ -32,14 +32,14 @@ struct MergeRange {
     }
   };
   std::vector<Blocks> blocks_;
-  std::optional<T> first_;
+  std::optional<T> firstNonInclusive_;
   std::optional<T> last_;
 };
 
-template <typename T>
+template <typename T, typename Comparator = std::ranges::less>
 std::vector<MergeRange<T>> getMergeParts(
     std::vector<std::vector<BlockMetadata<T>>> input,
-    [[maybe_unused]] size_t sizeLimitPerBlock) {
+    size_t minNumberFinishedBlocks, Comparator comparator = {}) {
   std::vector<size_t> firstUntouchedBlock(input.size(), 0);
   std::vector<size_t> firstUnfinishedBlock(input.size(), 0);
 
@@ -60,11 +60,11 @@ std::vector<MergeRange<T>> getMergeParts(
 
   auto findNextBlock = [&]() {
     auto unfinishedBlocks = unfinishedBlockGenerator();
-    auto it =
-        std::ranges::min_element(unfinishedBlocks, {}, [&](const auto& p) {
-          const auto& [a, b] = p;
-          return input.at(a).at(b).last_;
-        });
+    auto it = std::ranges::min_element(unfinishedBlocks, comparator,
+                                       [&](const auto& p) {
+                                         const auto& [a, b] = p;
+                                         return input.at(a).at(b).last_;
+                                       });
     return it == unfinishedBlocks.end() ? std::nullopt : std::optional{*it};
   };
 
@@ -80,12 +80,12 @@ std::vector<MergeRange<T>> getMergeParts(
           enumerate(blocks) | std::views::drop(firstUnfinishedBlock[idx]);
       auto itFinished = std::upper_bound(
           relevantBlocks.begin(), relevantBlocks.end(), highestElement,
-          [](const T& value, const auto& idxAndBlock) {
-            return value < std::get<1>(idxAndBlock).last_;
+          [&comparator](const T& value, const auto& idxAndBlock) {
+            return comparator(value, std::get<1>(idxAndBlock).last_);
           });
       auto itLarger = std::ranges::find_if(
           itFinished, relevantBlocks.end(), [&](const auto& idxAndBlock) {
-            return std::get<1>(idxAndBlock).first_ > highestElement;
+            return comparator(highestElement, std::get<1>(idxAndBlock).first_);
           });
 
       if (itLarger != relevantBlocks.end()) {
@@ -105,24 +105,45 @@ std::vector<MergeRange<T>> getMergeParts(
   };
 
   std::vector<MergeRange<T>> result;
-  while (true) {
-    MergeRange<T> r;
-    r.blocks_.resize(input.size());
-    size_t numFinishedBlocks = 0;
-    while (numFinishedBlocks < 3) {
-      auto opt = findNextBlock();
-      if (!opt.has_value()) {
-        if (numFinishedBlocks > 0) {
-          result.push_back(std::move(r));
+  std::optional<T> firstNonInclusive;
+  [&]() {
+    while (true) {
+      MergeRange<T> r;
+      r.firstNonInclusive_ = firstNonInclusive;
+      r.blocks_.resize(input.size());
+      size_t numFinishedBlocks = 0;
+      while (numFinishedBlocks < minNumberFinishedBlocks) {
+        auto opt = findNextBlock();
+        if (!opt.has_value()) {
+          if (numFinishedBlocks > 0) {
+            result.push_back(std::move(r));
+          }
+          return;
         }
-        return result;
+        const auto& [a, b] = *opt;
+        const auto& block = input.at(a).at(b);
+        addAllRequiredBlocks(r, block.last_, numFinishedBlocks);
+        r.last_ = block.last_;
+        firstNonInclusive = block.last_;
       }
-      const auto& [a, b] = *opt;
-      const auto& block = input.at(a).at(b);
-      addAllRequiredBlocks(r, block.last_, numFinishedBlocks);
-      r.last_ = block.last_;
+      result.push_back(std::move(r));
     }
-    result.push_back(std::move(r));
+  }();
+
+  std::cerr << "Logging the merge Res" << std::endl;
+  for (const auto& i : result) {
+    /*
+    for (const auto& j : i.blocks_) {
+      std::cerr << j.firstBlockIdx_ << ' ' << j.endBlockIdx_ << "   ";
+    }
+     */
+    if (i.firstNonInclusive_.has_value()) {
+      std::cerr << i.firstNonInclusive_.value();
+    } else {
+      std::cerr << "firstBlock";
+    }
+    std::cerr << "     " << i.last_.value() << std::endl;
+    std::cerr << " next merge res" << std::endl;
   }
   return result;
 }
