@@ -1047,6 +1047,28 @@ auto CompressedRelationWriter::createPermutationPair(
     relation.clear();
     numBlocksCurrentRel = 0;
   };
+
+  auto addToRelation = [&relation, &addBlockForLargeRelation, &blocksize](
+                           const auto& input, size_t startIdx, size_t endIdx) {
+    auto oldSize = relation.size();
+    relation.resize(oldSize + (endIdx - startIdx));
+    for (size_t i = 0; i < relation.numColumns(); ++i) {
+      const auto& inCol = input.getColumn(i);
+      decltype(auto) target = relation.getColumn(i);
+      std::copy(inCol.begin() + startIdx, inCol.begin() + endIdx,
+                target.begin() + oldSize);
+    }
+
+    // TODO<joka921> This is inefficient yet, we can do with less allocations.
+    while (relation.size() > blocksize) {
+      decltype(relation) newRelation{relation.getAllocator()};
+      newRelation.reserve(relation.size() - blocksize);
+      newRelation.insertAtEnd(relation.begin() + blocksize, relation.end());
+      relation.resize(blocksize);
+      addBlockForLargeRelation();
+      relation = std::move(newRelation);
+    }
+  };
   // All columns n the order in which they have to be added to
   // the relation.
   std::vector<ColumnIndex> permutedColIndices{c0, c1, c2};
@@ -1068,6 +1090,33 @@ auto CompressedRelationWriter::createPermutationPair(
     if (!col0IdCurrentRelation.has_value()) {
       col0IdCurrentRelation = firstCol[0];
     }
+
+    size_t idx = 0;
+    while (idx < block.numRows()) {
+      auto firstNotMatching = std::ranges::find_if_not(
+          firstCol.begin() + static_cast<int64_t>(idx), firstCol.end(),
+          [&col0IdCurrentRelation](const auto& id) {
+            return id == col0IdCurrentRelation;
+          });
+      auto endIdx = static_cast<size_t>(firstNotMatching - firstCol.begin());
+      addToRelation(permutedCols, idx, endIdx);
+
+      const auto& c1Col = permutedCols.getColumn(c1Idx);
+      for (size_t i = idx; i < endIdx; ++i) {
+        distinctCol1Counter(c1Col[i]);
+      }
+      if (endIdx < block.numRows()) {
+        finishRelation();
+        col0IdCurrentRelation = firstCol[endIdx];
+      }
+      numTriplesProcessed += endIdx - idx;
+      if (progressBar.update()) {
+        LOG(INFO) << progressBar.getProgressString() << std::flush;
+      }
+      idx = endIdx;
+    }
+
+    /*
     // TODO<C++23> Use `views::zip`
     for (size_t idx : ad_utility::integerRange(block.numRows())) {
       Id col0Id = firstCol[idx];
@@ -1086,6 +1135,7 @@ auto CompressedRelationWriter::createPermutationPair(
         LOG(INFO) << progressBar.getProgressString() << std::flush;
       }
     }
+     */
     // Call each of the `perBlockCallbacks` for the current block.
     blockCallbackTimer.cont();
     blockCallbackQueue.push(

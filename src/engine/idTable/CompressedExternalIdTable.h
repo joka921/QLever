@@ -881,10 +881,9 @@ class CompressedExternalIdTableSorter
             : result.begin();
     auto upper =
         std::ranges::upper_bound(result, metadata.last_.value(), comparator_);
-
+    /*
     auto numMerged = result.size();
     auto numKep = upper - lower;
-    /*
     std::cout << "kept " << numKep << " of " << numMerged << " entries "
               << std::endl;
               */

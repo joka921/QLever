@@ -129,12 +129,12 @@ std::vector<MergeRange<T>> getMergeParts(
         r.last_ = block.last_;
         firstNonInclusive = block.last_;
       }
+      /*
       auto numBlocks = r.blocks_ | std::views::transform([](const auto& block) {
                          return block.endBlockIdx_ - block.firstBlockIdx_;
                        });
       auto numBlocksTotal =
           std::accumulate(numBlocks.begin(), numBlocks.end(), 0ull);
-      /*
       std::cout << "numFinishedBlocks = " << numFinishedBlocks
                 << ", num BlocksTotal: " << numBlocksTotal << std::endl;
                 */
