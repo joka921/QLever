@@ -140,13 +140,9 @@ std::vector<MergeRange<T>> getMergeParts(
     }
   }();
 
+  /*
   std::cerr << "Logging the merge Res" << std::endl;
   for (const auto& i : result) {
-    /*
-    for (const auto& j : i.blocks_) {
-      std::cerr << j.firstBlockIdx_ << ' ' << j.endBlockIdx_ << "   ";
-    }
-     */
     if (i.firstNonInclusive_.has_value()) {
       std::cout << i.firstNonInclusive_.value();
     } else {
@@ -154,6 +150,7 @@ std::vector<MergeRange<T>> getMergeParts(
     }
     std::cout << "     " << i.last_.value() << std::endl;
   }
+  */
   return result;
 }
 

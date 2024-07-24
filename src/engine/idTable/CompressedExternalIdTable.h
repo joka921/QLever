@@ -748,7 +748,7 @@ class CompressedExternalIdTableSorter
     // TODO<joka921> Handle all the blocksize business.
 
     if (blocksize == std::nullopt) {
-      std::cout << "using the new merge routine" << std::endl;
+      // std::cout << "using the new merge routine" << std::endl;
       auto mergeRes = ad_utility::parallelMultiwayMergeBorders::getMergeParts(
           this->writer_.blockMetadata(),
           this->writer_.blockMetadata().size() * 5, comparator_);
@@ -769,7 +769,7 @@ class CompressedExternalIdTableSorter
       for (auto& block : queue) {
         co_yield (block);
       }
-      std::cout << "finished the new merge routine" << std::endl;
+      // std::cout << "finished the new merge routine" << std::endl;
       co_return;
     }
     auto rowGenerators =
@@ -884,8 +884,10 @@ class CompressedExternalIdTableSorter
 
     auto numMerged = result.size();
     auto numKep = upper - lower;
+    /*
     std::cout << "kept " << numKep << " of " << numMerged << " entries "
               << std::endl;
+              */
 
     size_t lowerIdx = lower - result.begin();
     result.erase(upper, result.end());
