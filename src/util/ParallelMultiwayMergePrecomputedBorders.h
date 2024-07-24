@@ -134,8 +134,10 @@ std::vector<MergeRange<T>> getMergeParts(
                        });
       auto numBlocksTotal =
           std::accumulate(numBlocks.begin(), numBlocks.end(), 0ull);
+      /*
       std::cout << "numFinishedBlocks = " << numFinishedBlocks
                 << ", num BlocksTotal: " << numBlocksTotal << std::endl;
+                */
       result.push_back(std::move(r));
     }
   }();
