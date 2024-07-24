@@ -75,10 +75,6 @@ std::vector<MergeRange<T>> getMergeParts(
                                   const T& highestElement,
                                   size_t& numFinishedBlocks) {
     for (const auto& [idx, blocks] : enumerate(input)) {
-      if (firstUnfinishedBlock[idx] == blocks.size()) {
-        continue;
-      }
-
       auto relevantBlocks =
           enumerate(blocks) | std::views::drop(firstUnfinishedBlock[idx]);
       auto itFinished = std::upper_bound(
@@ -114,6 +110,10 @@ std::vector<MergeRange<T>> getMergeParts(
       MergeRange<T> r;
       r.firstNonInclusive_ = firstNonInclusive;
       r.blocks_.resize(input.size());
+      for (const auto& [idx, firstUnfinished] :
+           enumerate(firstUnfinishedBlock)) {
+        r.blocks_.at(idx).firstBlockIdx_ = firstUnfinished;
+      }
       size_t numFinishedBlocks = 0;
       while (numFinishedBlocks < minNumberFinishedBlocks) {
         auto opt = findNextBlock();
