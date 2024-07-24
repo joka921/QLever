@@ -1062,6 +1062,7 @@ auto CompressedRelationWriter::createPermutationPair(
     // TODO<joka921> This is inefficient yet, we can do with less allocations.
     while (relation.size() > blocksize) {
       decltype(relation) newRelation{relation.getAllocator()};
+      newRelation.setNumColumns(relation.numColumns());
       newRelation.reserve(relation.size() - blocksize);
       newRelation.insertAtEnd(relation.begin() + blocksize, relation.end());
       relation.resize(blocksize);
