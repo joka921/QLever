@@ -670,6 +670,7 @@ CompressedRelationWriter::compressAndWriteColumn(std::span<const Id> column) {
 // _____________________________________________________________________________
 void CompressedRelationWriter::compressAndWriteBlock(
     Id firstCol0Id, Id lastCol0Id, std::shared_ptr<IdTable> block) {
+  writeTimer_.cont();
   blockWriteQueue_.push(
       [this, buf = std::move(block), firstCol0Id, lastCol0Id]() {
         std::vector<CompressedBlockMetadata::OffsetAndCompressedSize> offsets;
@@ -689,6 +690,7 @@ void CompressedRelationWriter::compressAndWriteBlock(
                                     {first[0], first[1], first[2]},
                                     {last[0], last[1], last[2]}});
       });
+  writeTimer_.stop();
 }
 
 // _____________________________________________________________________________
@@ -1104,7 +1106,13 @@ auto CompressedRelationWriter::createPermutationPair(
   }
 
   writer1.finish();
+  LOG(INFO) << "Time spent waiting for write queue of primary writer "
+            << ad_utility::Timer::toSeconds(writer1.writeTimer_.msecs()) << "s"
+            << std::endl;
   writer2.finish();
+  LOG(INFO) << "Time spent waiting for write queue of secondary writer "
+            << ad_utility::Timer::toSeconds(writer2.writeTimer_.msecs()) << "s"
+            << std::endl;
   blockCallbackTimer.cont();
   blockCallbackQueue.finish();
   blockCallbackTimer.stop();

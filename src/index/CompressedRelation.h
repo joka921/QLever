@@ -182,6 +182,7 @@ class CompressedRelationWriter {
   static constexpr float multiplicityDummy = 42.4242f;
 
  public:
+  ad_utility::Timer writeTimer_{ad_utility::Timer::Stopped};
   /// Create using a filename, to which the relation data will be written.
   explicit CompressedRelationWriter(
       size_t numColumns, ad_utility::File f,
@@ -262,7 +263,9 @@ class CompressedRelationWriter {
   void finish() {
     AD_CORRECTNESS_CHECK(currentRelationPreviousSize_ == 0);
     writeBufferedRelationsToSingleBlock();
+    writeTimer_.cont();
     blockWriteQueue_.finish();
+    writeTimer_.stop();
     outfile_.wlock()->close();
   }
 
