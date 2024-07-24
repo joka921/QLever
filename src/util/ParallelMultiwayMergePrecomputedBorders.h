@@ -3,6 +3,9 @@
 //  Author: Johannes Kalmbach <kalmbach@cs.uni-freiburg.de>
 
 #pragma once
+
+#include <numeric>
+
 #include "util/AsyncStream.h"
 #include "util/EnumerateView.h"
 #include "util/Generator.h"
@@ -126,6 +129,13 @@ std::vector<MergeRange<T>> getMergeParts(
         r.last_ = block.last_;
         firstNonInclusive = block.last_;
       }
+      auto numBlocks = r.blocks_ | std::views::transform([](const auto& block) {
+                         return block.endBlockIdx_ - block.firstBlockIdx_;
+                       });
+      auto numBlocksTotal =
+          std::accumulate(numBlocks.begin(), numBlocks.end(), 0ull);
+      std::cout << "numFinishedBlocks = " << numFinishedBlocks
+                << ", num BlocksTotal: " << numBlocksTotal << std::endl;
       result.push_back(std::move(r));
     }
   }();
@@ -138,12 +148,11 @@ std::vector<MergeRange<T>> getMergeParts(
     }
      */
     if (i.firstNonInclusive_.has_value()) {
-      std::cerr << i.firstNonInclusive_.value();
+      std::cout << i.firstNonInclusive_.value();
     } else {
-      std::cerr << "firstBlock";
+      std::cout << "firstBlock";
     }
-    std::cerr << "     " << i.last_.value() << std::endl;
-    std::cerr << " next merge res" << std::endl;
+    std::cout << "     " << i.last_.value() << std::endl;
   }
   return result;
 }
