@@ -1050,6 +1050,8 @@ auto CompressedRelationWriter::createPermutationPair(
 
   auto addToRelation = [&relation, &addBlockForLargeRelation, &blocksize](
                            const auto& input, size_t startIdx, size_t endIdx) {
+    // TODO Efficient `insertAtEnd`.
+    // relation.insertAtEnd(input.begin() + startIdx, input.begin() + endIdx);
     auto oldSize = relation.size();
     relation.resize(oldSize + (endIdx - startIdx));
     for (size_t i = 0; i < relation.numColumns(); ++i) {
@@ -1058,16 +1060,12 @@ auto CompressedRelationWriter::createPermutationPair(
       std::copy(inCol.begin() + startIdx, inCol.begin() + endIdx,
                 target.begin() + oldSize);
     }
-
-    // TODO<joka921> This is inefficient yet, we can do with less allocations.
-    while (relation.size() > blocksize) {
-      decltype(relation) newRelation{relation.getAllocator()};
-      newRelation.setNumColumns(relation.numColumns());
-      newRelation.reserve(relation.size() - blocksize);
-      newRelation.insertAtEnd(relation.begin() + blocksize, relation.end());
-      relation.resize(blocksize);
+    if (relation.size() > blocksize) {
+      // TODO<joka921> The distinct Col1 counting for the large relations is
+      // still missing.
+      // TODO<joka921> The blocks are currently too large, this has yet to be
+      // fixed.
       addBlockForLargeRelation();
-      relation = std::move(newRelation);
     }
   };
   // All columns n the order in which they have to be added to
@@ -1103,9 +1101,6 @@ auto CompressedRelationWriter::createPermutationPair(
       addToRelation(permutedCols, idx, endIdx);
 
       const auto& c1Col = permutedCols.getColumn(c1Idx);
-      for (size_t i = idx; i < endIdx; ++i) {
-        distinctCol1Counter(c1Col[i]);
-      }
       if (endIdx < block.numRows()) {
         finishRelation();
         col0IdCurrentRelation = firstCol[endIdx];
