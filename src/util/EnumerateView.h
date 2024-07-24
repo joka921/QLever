@@ -26,7 +26,7 @@ concept range_with_movable_reference =
 }  // namespace detail
 // Alias for a type that is conditionally const.
 template <bool _Const, typename _Tp>
-using maybe_const_t = __conditional_t<_Const, const _Tp, _Tp>;
+using maybe_const_t = std::conditional_t<_Const, const _Tp, _Tp>;
 namespace views::__adaptor {
 // True if the range adaptor _Adaptor can be applied with _Args.
 template <typename _Adaptor, typename... _Args>
