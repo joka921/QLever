@@ -972,6 +972,7 @@ auto CompressedRelationWriter::createPermutationPair(
   ad_utility::Timer inputWaitTimer{ad_utility::Timer::Stopped};
   ad_utility::Timer largeTwinRelationTimer{ad_utility::Timer::Stopped};
   ad_utility::Timer blockCallbackTimer{ad_utility::Timer::Stopped};
+  ad_utility::Timer handlingBlocksTimer{ad_utility::Timer::Stopped};
 
   // Iterate over the vector and identify relation boundaries, where a
   // relation is the sequence of sortedTriples with equal first component. For
@@ -1090,6 +1091,7 @@ auto CompressedRelationWriter::createPermutationPair(
       col0IdCurrentRelation = firstCol[0];
     }
 
+    handlingBlocksTimer.cont();
     size_t idx = 0;
     while (idx < block.numRows()) {
       auto firstNotMatching = std::ranges::find_if_not(
@@ -1111,6 +1113,7 @@ auto CompressedRelationWriter::createPermutationPair(
       }
       idx = endIdx;
     }
+    handlingBlocksTimer.stop();
 
     /*
     // TODO<C++23> Use `views::zip`
@@ -1170,6 +1173,10 @@ auto CompressedRelationWriter::createPermutationPair(
             << "s" << std::endl;
   LOG(INFO) << "Time spent waiting for triple callbacks (e.g. the next sorter) "
             << ad_utility::Timer::toSeconds(blockCallbackTimer.msecs()) << "s"
+            << std::endl;
+  LOG(INFO) << "Time spent waiting for the actual work (might include some "
+               "other timers) "
+            << ad_utility::Timer::toSeconds(handlingBlocksTimer.msecs()) << "s"
             << std::endl;
   return {numDistinctCol0, std::move(writer1).getFinishedBlocks(),
           std::move(writer2).getFinishedBlocks()};

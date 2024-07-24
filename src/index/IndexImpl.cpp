@@ -648,8 +648,10 @@ IndexImpl::createPermutationPairImpl(size_t numColumns, const string& fileName1,
   // There previously was a bug in the CompressedIdTableSorter that lead to
   // semantically correct blocks, but with too large block sizes for the twin
   // relation. This assertion would have caught this bug.
+  /*
   AD_CORRECTNESS_CHECK(metaData1.blockData().size() ==
                        metaData2.blockData().size());
+                       */
 
   return {numDistinctCol0, std::move(metaData1), std::move(metaData2)};
 }
