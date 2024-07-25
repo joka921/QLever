@@ -1064,6 +1064,7 @@ auto CompressedRelationWriter::createPermutationPair(
       // The relation is large;
       addBlockForLargeRelation();
       auto md1 = writer1.finishLargeRelation(distinctCol1Counter.getAndReset());
+      LOG(INFO) << std::endl << "Starting large twin relation " << std::endl;
       largeTwinRelationTimer.cont();
       auto md2 = writer2.addCompleteLargeRelation(
           col0IdCurrentRelation.value(),
@@ -1071,6 +1072,7 @@ auto CompressedRelationWriter::createPermutationPair(
           twinRelationMergeTimer);
       largeTwinRelationTimer.stop();
       twinRelationSorter.clear();
+      LOG(INFO) << std::endl << "Finished large twin relation " << std::endl;
       writeMetadata(md1, md2);
     } else {
       // Small relations are written in one go.

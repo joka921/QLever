@@ -236,6 +236,7 @@ class CompressedExternalIdTableWriter {
     file_.wlock()->open(filename_, "w+");
     std::ranges::for_each(blocksPerColumn_, [](auto& block) { block.clear(); });
     startOfSingleIdTables_.clear();
+    blockMetadata_.clear();
   }
 
  private:
@@ -766,7 +767,8 @@ class CompressedExternalIdTableSorter
       auto mergeRes = ad_utility::parallelMultiwayMergeBorders::getMergeParts(
           this->writer_.blockMetadata(),
           this->writer_.blockMetadata().size() * 5, comparator_);
-      std::cout << "Number of merge parts : " << mergeRes.size() << std::endl;
+      std::cout << std::endl
+                << "Number of merge parts : " << mergeRes.size() << std::endl;
       std::atomic<size_t> nextIndex = 0;
       auto producer =
           [&]() -> std::optional<std::pair<size_t, IdTableStatic<N>>> {
@@ -784,7 +786,7 @@ class CompressedExternalIdTableSorter
       for (auto& block : queue) {
         co_yield (block);
       }
-      std::cout << "finished the new merge routine" << std::endl;
+      std::cout << std::endl << "finished the new merge routine" << std::endl;
       co_return;
     }
     /*
