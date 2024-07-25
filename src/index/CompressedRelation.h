@@ -299,7 +299,9 @@ class CompressedRelationWriter {
   // `firstCol0Id` and `lastCol0Id` are needed to set up the block's metadata
   // which is appended to the internal buffer.
   void compressAndWriteBlock(Id firstCol0Id, Id lastCol0Id,
-                             std::shared_ptr<IdTable> block);
+                             std::shared_ptr<IdTable> block,
+                             std::optional<size_t> begin = std::nullopt,
+                             std::optional<size_t> end = std::nullopt);
 
   // Add a small relation that will be stored in a single block, possibly
   // together with other small relations.
@@ -331,6 +333,8 @@ class CompressedRelationWriter {
   CompressedRelationMetadata addCompleteLargeRelation(Id col0Id,
                                                       auto&& sortedBlocks,
                                                       ad_utility::Timer& timer);
+  CompressedRelationMetadata addAllBlocksForLargeRelation(Id col0Id,
+                                                          IdTable table);
 
   // This is the function in `CompressedRelationsTest.cpp` that tests the
   // internals of this class and therefore needs private access.

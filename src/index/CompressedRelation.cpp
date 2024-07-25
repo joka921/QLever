@@ -669,13 +669,21 @@ CompressedRelationWriter::compressAndWriteColumn(std::span<const Id> column) {
 
 // _____________________________________________________________________________
 void CompressedRelationWriter::compressAndWriteBlock(
-    Id firstCol0Id, Id lastCol0Id, std::shared_ptr<IdTable> block) {
+    Id firstCol0Id, Id lastCol0Id, std::shared_ptr<IdTable> block,
+    std::optional<size_t> begin, std::optional<size_t> end) {
   writeTimer_.cont();
+  if (!begin.has_value()) {
+    begin = 0;
+  }
+  if (!end.has_value()) {
+    end = block->size();
+  }
   blockWriteQueue_.push(
-      [this, buf = std::move(block), firstCol0Id, lastCol0Id]() {
+      [this, buf = std::move(block), firstCol0Id, lastCol0Id, begin, end]() {
         std::vector<CompressedBlockMetadata::OffsetAndCompressedSize> offsets;
         for (const auto& column : buf->getColumns()) {
-          offsets.push_back(compressAndWriteColumn(column));
+          offsets.push_back(compressAndWriteColumn(
+              {column.begin() + *begin, column.begin() + *end}));
         }
         AD_CORRECTNESS_CHECK(!offsets.empty());
         auto numRows = buf->numRows();
@@ -889,6 +897,18 @@ void CompressedRelationWriter::addBlockForLargeRelation(
   compressAndWriteBlock(currentCol0Id_, currentCol0Id_, std::move(relation));
 }
 
+CompressedRelationMetadata
+CompressedRelationWriter::addAllBlocksForLargeRelation(Id col0Id,
+                                                       IdTable table) {
+  writeBufferedRelationsToSingleBlock();
+  auto tablePtr = std::make_shared<IdTable>(std::move(table));
+  for (size_t i = 0; i < table.size(); i += blocksize()) {
+    size_t upper = std::min(table.size(), i + blocksize());
+    compressAndWriteBlock(col0Id, col0Id, tablePtr, i, upper);
+  }
+  return CompressedRelationMetadata{col0Id, table.size(), 1.0f, 1.09f};
+}
+
 namespace {
 // Collect elements of type `T` in batches of size 100'000 and apply the
 // `Function` to each batch. For the last batch (which might be smaller)  the
@@ -968,10 +988,13 @@ class DistinctIdCounter {
 
 // __________________________________________________________________________
 CompressedRelationMetadata CompressedRelationWriter::addCompleteLargeRelation(
-    Id col0Id, auto&& sortedBlocks, ad_utility::Timer& timer) {
+    Id col0Id, auto&& sorter, ad_utility::Timer& timer) {
   DistinctIdCounter distinctCol1Counter;
+  if (auto opt = sorter.moveIdTableIfSmall(); opt.has_value()) {
+    return addAllBlocksForLargeRelation(col0Id, std::move(opt.value()));
+  }
   timer.cont();
-  for (auto& block : sortedBlocks) {
+  for (auto& block : sorter.getSortedBlocks(blocksize())) {
     timer.stop();
     std::ranges::for_each(block.getColumn(1), std::ref(distinctCol1Counter));
     addBlockForLargeRelation(
@@ -1066,10 +1089,9 @@ auto CompressedRelationWriter::createPermutationPair(
       auto md1 = writer1.finishLargeRelation(distinctCol1Counter.getAndReset());
       LOG(INFO) << std::endl << "Starting large twin relation " << std::endl;
       largeTwinRelationTimer.cont();
-      auto md2 = writer2.addCompleteLargeRelation(
-          col0IdCurrentRelation.value(),
-          twinRelationSorter.getSortedBlocks(blocksize),
-          twinRelationMergeTimer);
+      auto md2 = writer2.addCompleteLargeRelation(col0IdCurrentRelation.value(),
+                                                  twinRelationSorter,
+                                                  twinRelationMergeTimer);
       largeTwinRelationTimer.stop();
       twinRelationSorter.clear();
       LOG(INFO) << std::endl << "Finished large twin relation " << std::endl;

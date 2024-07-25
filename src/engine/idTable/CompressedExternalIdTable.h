@@ -466,6 +466,18 @@ class CompressedExternalIdTableBase {
         });
   }
 
+ public:
+  std::optional<IdTable> moveIdTableIfSmall() {
+    if (numBlocksPushed_ > 0) {
+      return std::nullopt;
+    }
+    AD_CORRECTNESS_CHECK(this->numElementsPushed_ ==
+                         this->currentBlock_.size());
+    blockTransformation_(this->currentBlock_);
+    return std::move(this->currentBlock_);
+  }
+
+ protected:
   // If there is less than one complete block (meaning that the number of calls
   // to `push` was `< blocksize_`), apply the transformation to `currentBlock_`
   // and return `false`. Else, push the `currentBlock_` via `pushBlock_`, block
