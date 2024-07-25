@@ -169,6 +169,19 @@ class CompressedRelationWriter {
       ad_utility::makeUnlimitedAllocator<Id>();
   // A buffer for small relations that will be stored in the same block.
   SmallRelationsBuffer smallRelationsBuffer_{numColumns_, allocator_};
+
+  struct BufferWithPosition {
+    std::shared_ptr<IdTable> buffer;
+    size_t begin_;
+    size_t end_;
+  };
+
+  BufferWithPosition remainingFromCurrentRelation_;
+  size_t numPreviousBlocksCurrentRelation = 0;
+  size_t numDistinctC1CurrentRelation = 0;
+
+  void addLargeBlock(std::shared_ptr<IdTable> block);
+
   ad_utility::MemorySize uncompressedBlocksizePerColumn_;
 
   // When we store a large relation with multiple blocks then we keep track of

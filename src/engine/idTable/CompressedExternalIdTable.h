@@ -745,13 +745,14 @@ class CompressedExternalIdTableSorter
       co_return;
     }
 
-    // TODO<joka921> Handle all the blocksize business.
-
-    if (blocksize == std::nullopt) {
+    // TODO<joka921> Handle all the blocksize business. currently we have the
+    // wrong block sizes.
+    if (true) {
       // std::cout << "using the new merge routine" << std::endl;
       auto mergeRes = ad_utility::parallelMultiwayMergeBorders::getMergeParts(
           this->writer_.blockMetadata(),
           this->writer_.blockMetadata().size() * 5, comparator_);
+      std::cout << "Number of merge parts : " << mergeRes.size() << std::endl;
       std::atomic<size_t> nextIndex = 0;
       auto producer =
           [&]() -> std::optional<std::pair<size_t, IdTableStatic<N>>> {
@@ -765,7 +766,7 @@ class CompressedExternalIdTableSorter
 
       auto queue = ad_utility::data_structures::queueManager<
           ad_utility::data_structures::OrderedThreadSafeQueue<
-              IdTableStatic<N>>>(9, 3, producer);
+              IdTableStatic<N>>>(9, 9, producer);
       for (auto& block : queue) {
         co_yield (block);
       }

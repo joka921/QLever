@@ -1245,3 +1245,12 @@ CompressedRelationReader::getMetadataForSmallRelation(
       block.size(), distinctCol2.size());
   return metadata;
 }
+
+/*
+void CompressedRelationWriter::addLargeBlock(std::shared_ptr<IdTable> block) {
+  bool previousEmpty = remainingFromCurrentRelation_.begin_ ==
+remainingFromCurrentRelation_.end_; std::optional<Id> lastRelation =
+remainingFromCurrentRelation_
+
+}
+ */
