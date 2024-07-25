@@ -1087,7 +1087,6 @@ auto CompressedRelationWriter::createPermutationPair(
       // The relation is large;
       addBlockForLargeRelation();
       auto md1 = writer1.finishLargeRelation(distinctCol1Counter.getAndReset());
-      std::cout << '\n';
       largeTwinRelationTimer.cont();
       auto md2 = writer2.addCompleteLargeRelation(col0IdCurrentRelation.value(),
                                                   twinRelationSorter,
