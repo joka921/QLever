@@ -221,10 +221,10 @@ class CompressedExternalIdTableWriter {
   // can be reused.
   void clear() {
     if (numActiveGenerators_ > 0) {
-      AD_THROW(
-          "Trying to call `writeIdTable` on an "
-          "`CompressedExternalIdTableWriter` that is currently being iterated "
-          "over");
+      LOG(WARN) << "Trying to call `writeIdTable` on an "
+                   "`CompressedExternalIdTableWriter` that is currently being "
+                   "iterated "
+                   "over";
     }
     file_.wlock()->close();
     ad_utility::deleteFile(filename_);
@@ -271,6 +271,9 @@ class CompressedExternalIdTableWriter {
     }
 
     if (firstBlock == lastBlock) {
+      // TODO<joka921>
+      --numActiveGenerators_;
+      std::move(cleanup).Cancel();
       co_return;
     }
     std::future<Table> fut;
