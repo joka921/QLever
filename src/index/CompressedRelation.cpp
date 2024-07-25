@@ -1101,6 +1101,9 @@ auto CompressedRelationWriter::createPermutationPair(
           relation.asStaticView<0>());
       // We don't use the parallel twinRelationSorter to create the twin
       // relation as its overhead is far too high for small relations.
+      // TODO<joka921> Don't write small twin relations, let's check the
+      // overhead of that.
+      /*
       relation.swapColumns(c1Idx, c2Idx);
       std::ranges::sort(relation, compare);
       std::ranges::for_each(relation.getColumn(c1Idx),
@@ -1110,6 +1113,7 @@ auto CompressedRelationWriter::createPermutationPair(
           relation.asStaticView<0>());
       // Ignore the metadata of the small relations, it is wasteful to store.
       // writeMetadata(md1, md2);
+       */
     }
     relation.clear();
     numBlocksCurrentRel = 0;
