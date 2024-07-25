@@ -316,7 +316,8 @@ class CompressedRelationWriter {
   // The number of distinct col1 entries will be computed from the blocks
   // directly.
   CompressedRelationMetadata addCompleteLargeRelation(Id col0Id,
-                                                      auto&& sortedBlocks);
+                                                      auto&& sortedBlocks,
+                                                      ad_utility::Timer& timer);
 
   // This is the function in `CompressedRelationsTest.cpp` that tests the
   // internals of this class and therefore needs private access.
