@@ -1088,14 +1088,12 @@ auto CompressedRelationWriter::createPermutationPair(
       addBlockForLargeRelation();
       auto md1 = writer1.finishLargeRelation(distinctCol1Counter.getAndReset());
       std::cout << '\n';
-      LOG(INFO) << "Starting large twin relation " << std::endl;
       largeTwinRelationTimer.cont();
       auto md2 = writer2.addCompleteLargeRelation(col0IdCurrentRelation.value(),
                                                   twinRelationSorter,
                                                   twinRelationMergeTimer);
-      largeTwinRelationTimer.stop();
       twinRelationSorter.clear();
-      LOG(INFO) << std::endl << "Finished large twin relation " << std::endl;
+      largeTwinRelationTimer.stop();
       writeMetadata(md1, md2);
     } else {
       // Small relations are written in one go.
