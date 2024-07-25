@@ -207,6 +207,9 @@ class CompressedExternalIdTableWriter {
                              : std::nullopt;
       result.push_back(makeGeneratorForRows<N>(i, bound));
     }
+
+    std::cout << "value of numActiveGenerators after handing them out "
+              << numActiveGenerators_ << std::endl;
     return result;
   }
 
@@ -221,7 +224,7 @@ class CompressedExternalIdTableWriter {
   // can be reused.
   void clear() {
     if (numActiveGenerators_ > 0) {
-      LOG(WARN) << "Trying to call `writeIdTable` on an "
+      LOG(WARN) << "Trying to call `clear` on an "
                    "`CompressedExternalIdTableWriter` that is currently being "
                    "iterated "
                    "over";
@@ -272,7 +275,8 @@ class CompressedExternalIdTableWriter {
 
     if (firstBlock == lastBlock) {
       // TODO<joka921>
-      --numActiveGenerators_;
+      auto newValue = --numActiveGenerators_;
+      std::cout << "new value of active generators" << newValue << std::endl;
       std::move(cleanup).Cancel();
       co_return;
     }
@@ -296,7 +300,8 @@ class CompressedExternalIdTableWriter {
     AD_CORRECTNESS_CHECK(fut.valid());
     auto table = fut.get();
     co_yield table;
-    --numActiveGenerators_;
+    auto newValue = --numActiveGenerators_;
+    std::cout << "new value of active generators end" << newValue << std::endl;
     std::move(cleanup).Cancel();
   }
 
@@ -773,9 +778,10 @@ class CompressedExternalIdTableSorter
       for (auto& block : queue) {
         co_yield (block);
       }
-      // std::cout << "finished the new merge routine" << std::endl;
+      std::cout << "finished the new merge routine" << std::endl;
       co_return;
     }
+    /*
     auto rowGenerators =
         this->writer_.template getAllRowGenerators<NumStaticCols>();
 
@@ -826,6 +832,7 @@ class CompressedExternalIdTableSorter
       co_yield std::move(result).template toStatic<N>();
     }
     AD_CORRECTNESS_CHECK(numPopped == this->numElementsPushed_);
+*/
   }
   // Transition from the input phase, where `push()` may be called, to the
   // output phase and return a generator that yields the sorted elements. This
