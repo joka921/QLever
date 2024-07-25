@@ -73,7 +73,7 @@ class CompressedExternalIdTableWriter {
   // Keep track of the number of active output generators to detect whether we
   // are currently reading from the file and it is thus unsafe to add to the
   // contents.
-  size_t numActiveGenerators_ = 0;
+  std::atomic<size_t> numActiveGenerators_ = 0;
 
   using Row = typename IdTableStatic<0>::row_type;
   using BlockMetadata =
@@ -208,8 +208,10 @@ class CompressedExternalIdTableWriter {
       result.push_back(makeGeneratorForRows<N>(i, bound));
     }
 
+    /*
     std::cout << "value of numActiveGenerators after handing them out "
               << numActiveGenerators_ << std::endl;
+              */
     return result;
   }
 
@@ -276,7 +278,9 @@ class CompressedExternalIdTableWriter {
     if (firstBlock == lastBlock) {
       // TODO<joka921>
       auto newValue = --numActiveGenerators_;
+      /*
       std::cout << "new value of active generators" << newValue << std::endl;
+       */
       std::move(cleanup).Cancel();
       co_return;
     }
@@ -301,7 +305,9 @@ class CompressedExternalIdTableWriter {
     auto table = fut.get();
     co_yield table;
     auto newValue = --numActiveGenerators_;
+    /*
     std::cout << "new value of active generators end" << newValue << std::endl;
+     */
     std::move(cleanup).Cancel();
   }
 
@@ -323,7 +329,7 @@ class CompressedExternalIdTableWriter {
             std::vector<char> compressed;
             compressed.resize(metaData.compressedSize_);
             auto numBytesRead =
-                file_.wlock()->read(compressed.data(), metaData.compressedSize_,
+                file_.rlock()->read(compressed.data(), metaData.compressedSize_,
                                     metaData.offsetInFile_);
             AD_CORRECTNESS_CHECK(numBytesRead >= 0 &&
                                  static_cast<size_t>(numBytesRead) ==
