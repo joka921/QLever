@@ -427,13 +427,15 @@ class CompressedExternalIdTableBase {
   // currently active, else an exception is thrown by the underlying
   // `CompressedExternalIdTable`.
   void clear() {
-    resetCurrentBlock(false);
+    resetCurrentBlock(true);
     numElementsPushed_ = 0;
     if (compressAndWriteFuture_.valid()) {
       compressAndWriteFuture_.get();
     }
-    writer_.clear();
-    numBlocksPushed_ = 0;
+    if (numBlocksPushed_ > 0) {
+      writer_.clear();
+      numBlocksPushed_ = 0;
+    }
     isFirstIteration_ = true;
   }
 
