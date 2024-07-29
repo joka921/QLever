@@ -39,6 +39,14 @@ struct MergeRange {
   std::optional<T> last_;
 };
 
+template <typename T>
+struct MergeRanges {
+  std::vector<MergeRange<T>> mergeRanges;
+  using Blocks = MergeRange<T>::Blocks;
+  Blocks blocks_;
+  MergeRanges{std::vector<MergeRange<T>>};
+};
+
 template <typename T, typename Comparator = std::ranges::less>
 std::vector<MergeRange<T>> getMergeParts(
     std::vector<std::vector<BlockMetadata<T>>> input,
@@ -129,30 +137,10 @@ std::vector<MergeRange<T>> getMergeParts(
         r.last_ = block.last_;
         firstNonInclusive = block.last_;
       }
-      /*
-      auto numBlocks = r.blocks_ | std::views::transform([](const auto& block) {
-                         return block.endBlockIdx_ - block.firstBlockIdx_;
-                       });
-      auto numBlocksTotal =
-          std::accumulate(numBlocks.begin(), numBlocks.end(), 0ull);
-      std::cout << "numFinishedBlocks = " << numFinishedBlocks
-                << ", num BlocksTotal: " << numBlocksTotal << std::endl;
-                */
       result.push_back(std::move(r));
     }
   }();
 
-  /*
-  std::cerr << "Logging the merge Res" << std::endl;
-  for (const auto& i : result) {
-    if (i.firstNonInclusive_.has_value()) {
-      std::cout << i.firstNonInclusive_.value();
-    } else {
-      std::cout << "firstBlock";
-    }
-    std::cout << "     " << i.last_.value() << std::endl;
-  }
-  */
   return result;
 }
 
