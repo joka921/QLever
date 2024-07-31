@@ -41,10 +41,21 @@ struct MergeRange {
 
 template <typename T>
 struct MergeRanges {
-  std::vector<MergeRange<T>> mergeRanges;
+  std::vector<MergeRange<T>> mergeRanges_;
   using Blocks = MergeRange<T>::Blocks;
   Blocks blocks_;
-  MergeRanges{std::vector<MergeRange<T>>};
+  explicit MergeRanges(std::vector<MergeRange<T>> mergeRanges)
+      : mergeRanges_{std::move(mergeRanges)} {
+    if (mergeRanges_.empty()) {
+      return;
+    }
+    blocks_ = mergeRanges_.front().blocks_;
+    const auto& lastBlocks = mergeRanges_.back().blocks_;
+    AD_CORRECTNESS_CHECK(lastBlocks.size() == blocks_.size());
+    for (size_t i : ad_utility::integerRange(blocks_.size())) {
+      blocks_[i].endBlockIdx_ = lastBlocks[i].endBlockIdx_;
+    }
+  }
 };
 
 template <typename T, typename Comparator = std::ranges::less>
@@ -141,6 +152,25 @@ std::vector<MergeRange<T>> getMergeParts(
     }
   }();
 
+  return result;
+}
+
+template <typename T, typename Comparator = std::ranges::less>
+std::vector<MergeRanges<T>> getMergeRanges(
+    std::vector<std::vector<BlockMetadata<T>>> input,
+    size_t minNumberFinishedBlocksSmallBatch, size_t numBatchesPerLargeBatch,
+    Comparator comparator = {}) {
+  auto smallBatches =
+      getMergeParts(std::move(input), minNumberFinishedBlocksSmallBatch,
+                    std::move(comparator));
+  std::vector<MergeRanges<T>> result;
+  for (size_t i = 0; i < smallBatches.size(); i += numBatchesPerLargeBatch) {
+    size_t upper = std::min(i + numBatchesPerLargeBatch, smallBatches.size());
+    // TODO<joka921> std::move_iterator.
+    std::vector<MergeRange<T>> batch(smallBatches.begin() + i,
+                                     smallBatches.begin() + upper);
+    result.emplace_back(std::move(batch));
+  }
   return result;
 }
 
