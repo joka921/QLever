@@ -597,9 +597,12 @@ void CompressedRelationWriter::writeBufferedRelationsToSingleBlock() {
   }
 
   AD_CORRECTNESS_CHECK(smallRelationsBuffer_.numColumns() == numColumns());
+  // We write small relations to a single block, so we specify the last
+  // argument to `true` to invoke the `smallBlocksCallback_`.
   compressAndWriteBlock(
       currentBlockFirstCol0_, currentBlockLastCol0_,
-      std::make_shared<IdTable>(std::move(smallRelationsBuffer_).toDynamic()));
+      std::make_shared<IdTable>(std::move(smallRelationsBuffer_).toDynamic()),
+      true);
   smallRelationsBuffer_.clear();
   smallRelationsBuffer_.reserve(2 * blocksize());
 }
@@ -670,35 +673,31 @@ CompressedRelationWriter::compressAndWriteColumn(std::span<const Id> column) {
 // _____________________________________________________________________________
 void CompressedRelationWriter::compressAndWriteBlock(
     Id firstCol0Id, Id lastCol0Id, std::shared_ptr<IdTable> block,
-    std::optional<size_t> begin, std::optional<size_t> end) {
-  writeTimer_.cont();
-  if (!begin.has_value()) {
-    begin = 0;
-  }
-  if (!end.has_value()) {
-    end = block->size();
-  }
-  blockWriteQueue_.push(
-      [this, buf = std::move(block), firstCol0Id, lastCol0Id, begin, end]() {
-        std::vector<CompressedBlockMetadata::OffsetAndCompressedSize> offsets;
-        for (const auto& column : buf->getColumns()) {
-          offsets.push_back(compressAndWriteColumn(
-              {column.begin() + *begin, column.begin() + *end}));
-        }
-        AD_CORRECTNESS_CHECK(!offsets.empty());
-        auto numRows = buf->numRows();
-        const auto& first = (*buf)[0];
-        const auto& last = (*buf)[buf->numRows() - 1];
-        AD_CORRECTNESS_CHECK(firstCol0Id == first[0]);
-        AD_CORRECTNESS_CHECK(lastCol0Id == last[0]);
+    bool invokeCallback) {
+  auto timer = blockWriteQueueTimer_.startMeasurement();
+  blockWriteQueue_.push([this, buf = std::move(block), firstCol0Id, lastCol0Id,
+                         invokeCallback]() mutable {
+    std::vector<CompressedBlockMetadata::OffsetAndCompressedSize> offsets;
+    for (const auto& column : buf->getColumns()) {
+      offsets.push_back(compressAndWriteColumn(column));
+    }
+    AD_CORRECTNESS_CHECK(!offsets.empty());
+    auto numRows = buf->numRows();
+    const auto& first = (*buf)[0];
+    const auto& last = (*buf)[numRows - 1];
+    AD_CORRECTNESS_CHECK(firstCol0Id == first[0]);
+    AD_CORRECTNESS_CHECK(lastCol0Id == last[0]);
 
-        blockBuffer_.wlock()->push_back(
-            CompressedBlockMetadata{std::move(offsets),
-                                    numRows,
-                                    {first[0], first[1], first[2]},
-                                    {last[0], last[1], last[2]}});
-      });
-  writeTimer_.stop();
+    blockBuffer_.wlock()->push_back(
+        CompressedBlockMetadata{std::move(offsets),
+                                numRows,
+                                {first[0], first[1], first[2]},
+                                {last[0], last[1], last[2]}});
+    if (invokeCallback && smallBlocksCallback_) {
+      std::invoke(smallBlocksCallback_, std::move(buf));
+    }
+  });
+  timer.stop();
 }
 
 // _____________________________________________________________________________
@@ -830,44 +829,6 @@ CompressedRelationMetadata CompressedRelationWriter::addSmallRelation(
           multiplicityDummy, offsetInBlock};
 }
 
-/*
-// _____________________________________________________________________________
-void CompressedRelationWriter::addBlockOfSmallRelations(
-    IdTableView<0> relationPrevious, IdTableView<0> relationCurrent, size_t
-startIdxPrevious, size_t endIdxPrevious, Id firstCol0, Id lastCol0) {
-  compressAndWriteBlock(
-      firstCol0, lastCol0,
-      std::make_shared<IdTable>(std::move(smallRelationsBuffer_).toDynamic()));
-  writeBufferedRelationsToSingleBlock();
-  // Make sure that the blocks don't become too large: If the previously
-  // buffered small relations together with the new relations would exceed
-  // `1.5
-  // * blocksize` then we start a new block for the current relation. Note:
-  // there are some unit tests that rely on this factor being `1.5`.
-  if (static_cast<double>(numRows + smallRelationsBuffer_.numRows()) >
-      static_cast<double>(blocksize()) * 1.5) {
-  }
-  auto offsetInBlock = smallRelationsBuffer_.size();
-
-  // We have to keep track of the first and last `col0` of each block.
-  if (smallRelationsBuffer_.numRows() == 0) {
-    currentBlockFirstCol0_ = col0Id;
-  }
-  currentBlockLastCol0_ = col0Id;
-
-  smallRelationsBuffer_.resize(offsetInBlock + numRows);
-  for (size_t i = 0; i < relation.numColumns(); ++i) {
-    std::ranges::copy(
-        relation.getColumn(i),
-        smallRelationsBuffer_.getColumn(i).begin() + offsetInBlock);
-  }
-  // Note: the multiplicity of the `col2` (where we set the dummy here) will
-  // be set later in `createPermutationPair`.
-  return {col0Id, numRows, computeMultiplicity(numRows, numDistinctC1),
-          multiplicityDummy, offsetInBlock};
-}
- */
-
 // _____________________________________________________________________________
 CompressedRelationMetadata CompressedRelationWriter::finishLargeRelation(
     size_t numDistinctC1) {
@@ -894,19 +855,10 @@ void CompressedRelationWriter::addBlockForLargeRelation(
   currentCol0Id_ = col0Id;
   currentRelationPreviousSize_ += relation->numRows();
   writeBufferedRelationsToSingleBlock();
-  compressAndWriteBlock(currentCol0Id_, currentCol0Id_, std::move(relation));
-}
-
-CompressedRelationMetadata
-CompressedRelationWriter::addAllBlocksForLargeRelation(Id col0Id,
-                                                       IdTable table) {
-  writeBufferedRelationsToSingleBlock();
-  auto tablePtr = std::make_shared<IdTable>(std::move(table));
-  for (size_t i = 0; i < table.size(); i += blocksize()) {
-    size_t upper = std::min(table.size(), i + blocksize());
-    compressAndWriteBlock(col0Id, col0Id, tablePtr, i, upper);
-  }
-  return CompressedRelationMetadata{col0Id, table.size(), 1.0f, 1.09f};
+  // This is a block of a large relation, so we don't invoke the
+  // `smallBlocksCallback_`. Hence the last argument is `false`.
+  compressAndWriteBlock(currentCol0Id_, currentCol0Id_, std::move(relation),
+                        false);
 }
 
 namespace {
@@ -988,19 +940,13 @@ class DistinctIdCounter {
 
 // __________________________________________________________________________
 CompressedRelationMetadata CompressedRelationWriter::addCompleteLargeRelation(
-    Id col0Id, auto&& sorter, ad_utility::Timer& timer) {
+    Id col0Id, auto&& sortedBlocks) {
   DistinctIdCounter distinctCol1Counter;
-  if (auto opt = sorter.moveIdTableIfSmall(); opt.has_value()) {
-    return addAllBlocksForLargeRelation(col0Id, std::move(opt.value()));
-  }
-  timer.cont();
-  for (auto& block : sorter.getSortedBlocks(blocksize())) {
-    timer.stop();
+  for (auto& block : sortedBlocks) {
     std::ranges::for_each(block.getColumn(1), std::ref(distinctCol1Counter));
     addBlockForLargeRelation(
         col0Id, std::make_shared<IdTable>(std::move(block).toDynamic()));
   }
-  timer.stop();
   return finishLargeRelation(distinctCol1Counter.getAndReset());
 }
 
@@ -1036,8 +982,6 @@ auto CompressedRelationWriter::createPermutationPair(
   ad_utility::Timer inputWaitTimer{ad_utility::Timer::Stopped};
   ad_utility::Timer largeTwinRelationTimer{ad_utility::Timer::Stopped};
   ad_utility::Timer blockCallbackTimer{ad_utility::Timer::Stopped};
-  ad_utility::Timer handlingBlocksTimer{ad_utility::Timer::Stopped};
-  ad_utility::Timer twinRelationMergeTimer{ad_utility::Timer::Stopped};
 
   // Iterate over the vector and identify relation boundaries, where a
   // relation is the sequence of sortedTriples with equal first component. For
@@ -1075,12 +1019,40 @@ auto CompressedRelationWriter::createPermutationPair(
     ++numBlocksCurrentRel;
   };
 
+  // Set up the handling of small relations for the twin permutation.
+  // A complete block of them is handed from `writer1` to the following lambda
+  // (via the `smallBlocksCallback_` mechanism. The lambda the resorts the block
+  // and feeds it to `writer2`.)
+  auto addBlockOfSmallRelationsToSwitched =
+      [&writer2](std::shared_ptr<IdTable> relationPtr) {
+        auto& relation = *relationPtr;
+        // We don't use the parallel twinRelationSorter to create the twin
+        // relation as its overhead is far too high for small relations.
+        relation.swapColumns(c1Idx, c2Idx);
+
+        // We only need to sort by the columns of the triple, not the
+        // additional payload.
+        // TODO<joka921> As soon as we implement named graphs, those should
+        // probably also be part of the ordering.
+        // Note: We could also use `compareWithoutLocalVocab` to compare the IDs
+        // cheaper, but this sort is far from being a performance bottleneck.
+        auto compare = [](const auto& a, const auto& b) {
+          return std::tie(a[0], a[1], a[2]) < std::tie(b[0], b[1], b[2]);
+        };
+        std::ranges::sort(relation, compare);
+        AD_CORRECTNESS_CHECK(!relation.empty());
+        writer2.compressAndWriteBlock(relation.at(0, 0),
+                                      relation.at(relation.size() - 1, 0),
+                                      std::move(relationPtr), false);
+      };
+
+  writer1.smallBlocksCallback_ = addBlockOfSmallRelationsToSwitched;
+
   auto finishRelation = [&numDistinctCol0, &twinRelationSorter, &writer2,
                          &writer1, &numBlocksCurrentRel, &col0IdCurrentRelation,
                          &relation, &distinctCol1Counter,
-                         &addBlockForLargeRelation, &compare, &blocksize,
-                         &writeMetadata, &largeTwinRelationTimer,
-                         &twinRelationMergeTimer]() {
+                         &addBlockForLargeRelation, &blocksize, &writeMetadata,
+                         &largeTwinRelationTimer]() {
     ++numDistinctCol0;
     if (numBlocksCurrentRel > 0 || static_cast<double>(relation.numRows()) >
                                        0.8 * static_cast<double>(blocksize)) {
@@ -1088,56 +1060,23 @@ auto CompressedRelationWriter::createPermutationPair(
       addBlockForLargeRelation();
       auto md1 = writer1.finishLargeRelation(distinctCol1Counter.getAndReset());
       largeTwinRelationTimer.cont();
-      auto md2 = writer2.addCompleteLargeRelation(col0IdCurrentRelation.value(),
-                                                  twinRelationSorter,
-                                                  twinRelationMergeTimer);
-      twinRelationSorter.clear();
+      auto md2 = writer2.addCompleteLargeRelation(
+          col0IdCurrentRelation.value(),
+          twinRelationSorter.getSortedBlocks(blocksize));
       largeTwinRelationTimer.stop();
+      twinRelationSorter.clear();
       writeMetadata(md1, md2);
     } else {
       // Small relations are written in one go.
       [[maybe_unused]] auto md1 = writer1.addSmallRelation(
           col0IdCurrentRelation.value(), distinctCol1Counter.getAndReset(),
           relation.asStaticView<0>());
-      // We don't use the parallel twinRelationSorter to create the twin
-      // relation as its overhead is far too high for small relations.
-      // TODO<joka921> Don't write small twin relations, let's check the
-      // overhead of that.
-      /*
-      relation.swapColumns(c1Idx, c2Idx);
-      std::ranges::sort(relation, compare);
-      std::ranges::for_each(relation.getColumn(c1Idx),
-                            std::ref(distinctCol1Counter));
-      [[maybe_unused]] auto md2 = writer2.addSmallRelation(
-          col0IdCurrentRelation.value(), distinctCol1Counter.getAndReset(),
-          relation.asStaticView<0>());
-      // Ignore the metadata of the small relations, it is wasteful to store.
-      // writeMetadata(md1, md2);
-       */
+      // We don't need to do anything for the twin permutation and writer2,
+      // because we have set up `writer1.smallBlocksCallback_` to do that work
+      // for us (see above).
     }
     relation.clear();
     numBlocksCurrentRel = 0;
-  };
-
-  auto addToRelation = [&relation, &addBlockForLargeRelation, &blocksize](
-                           const auto& input, size_t startIdx, size_t endIdx) {
-    // TODO Efficient `insertAtEnd`.
-    // relation.insertAtEnd(input.begin() + startIdx, input.begin() + endIdx);
-    auto oldSize = relation.size();
-    relation.resize(oldSize + (endIdx - startIdx));
-    for (size_t i = 0; i < relation.numColumns(); ++i) {
-      const auto& inCol = input.getColumn(i);
-      decltype(auto) target = relation.getColumn(i);
-      std::copy(inCol.begin() + startIdx, inCol.begin() + endIdx,
-                target.begin() + oldSize);
-    }
-    if (relation.size() > blocksize) {
-      // TODO<joka921> The distinct Col1 counting for the large relations is
-      // still missing.
-      // TODO<joka921> The blocks are currently too large, this has yet to be
-      // fixed.
-      addBlockForLargeRelation();
-    }
   };
   // All columns n the order in which they have to be added to
   // the relation.
@@ -1160,31 +1099,24 @@ auto CompressedRelationWriter::createPermutationPair(
     if (!col0IdCurrentRelation.has_value()) {
       col0IdCurrentRelation = firstCol[0];
     }
-
-    handlingBlocksTimer.cont();
-    size_t idx = 0;
-    while (idx < block.numRows()) {
-      auto firstNotMatching = std::ranges::find_if_not(
-          firstCol.begin() + static_cast<int64_t>(idx), firstCol.end(),
-          [&col0IdCurrentRelation](const auto& id) {
-            return id == col0IdCurrentRelation;
-          });
-      auto endIdx = static_cast<size_t>(firstNotMatching - firstCol.begin());
-      addToRelation(permutedCols, idx, endIdx);
-
-      const auto& c1Col = permutedCols.getColumn(c1Idx);
-      if (endIdx < block.numRows()) {
+    // TODO<C++23> Use `views::zip`
+    for (size_t idx : ad_utility::integerRange(block.numRows())) {
+      Id col0Id = firstCol[idx];
+      decltype(auto) curRemainingCols = permutedCols[idx];
+      if (col0Id != col0IdCurrentRelation) {
         finishRelation();
-        col0IdCurrentRelation = firstCol[endIdx];
+        col0IdCurrentRelation = col0Id;
       }
-      numTriplesProcessed += endIdx - idx;
+      distinctCol1Counter(curRemainingCols[c1Idx]);
+      relation.push_back(curRemainingCols);
+      if (relation.size() >= blocksize) {
+        addBlockForLargeRelation();
+      }
+      ++numTriplesProcessed;
       if (progressBar.update()) {
         LOG(INFO) << progressBar.getProgressString() << std::flush;
       }
-      idx = endIdx;
     }
-    handlingBlocksTimer.stop();
-
     // Call each of the `perBlockCallbacks` for the current block.
     blockCallbackTimer.cont();
     blockCallbackQueue.push(
@@ -1205,32 +1137,28 @@ auto CompressedRelationWriter::createPermutationPair(
   }
 
   writer1.finish();
-  LOG(INFO) << "Time spent waiting for write queue of primary writer "
-            << ad_utility::Timer::toSeconds(writer1.writeTimer_.msecs()) << "s"
-            << std::endl;
   writer2.finish();
-  LOG(INFO) << "Time spent waiting for write queue of secondary writer "
-            << ad_utility::Timer::toSeconds(writer2.writeTimer_.msecs()) << "s"
-            << std::endl;
   blockCallbackTimer.cont();
   blockCallbackQueue.finish();
   blockCallbackTimer.stop();
-  LOG(INFO) << "Time spent waiting for the input "
-            << ad_utility::Timer::toSeconds(inputWaitTimer.msecs()) << "s"
-            << std::endl;
-  LOG(INFO) << "Time spent waiting for large twin relations "
-            << ad_utility::Timer::toSeconds(largeTwinRelationTimer.msecs())
-            << "s" << std::endl;
-  LOG(INFO) << "Time spent waiting for large twin relation merger"
-            << ad_utility::Timer::toSeconds(twinRelationMergeTimer.msecs())
-            << "s" << std::endl;
-  LOG(INFO) << "Time spent waiting for triple callbacks (e.g. the next sorter) "
-            << ad_utility::Timer::toSeconds(blockCallbackTimer.msecs()) << "s"
-            << std::endl;
-  LOG(INFO) << "Time spent waiting for the actual work (might include some "
-               "other timers) "
-            << ad_utility::Timer::toSeconds(handlingBlocksTimer.msecs()) << "s"
-            << std::endl;
+  LOG(TIMING) << "Time spent waiting for the input "
+              << ad_utility::Timer::toSeconds(inputWaitTimer.msecs()) << "s"
+              << std::endl;
+  LOG(TIMING) << "Time spent waiting for writer1's queue "
+              << ad_utility::Timer::toSeconds(
+                     writer1.blockWriteQueueTimer_.msecs())
+              << "s" << std::endl;
+  LOG(TIMING) << "Time spent waiting for writer2's queue "
+              << ad_utility::Timer::toSeconds(
+                     writer2.blockWriteQueueTimer_.msecs())
+              << "s" << std::endl;
+  LOG(TIMING) << "Time spent waiting for large twin relations "
+              << ad_utility::Timer::toSeconds(largeTwinRelationTimer.msecs())
+              << "s" << std::endl;
+  LOG(TIMING)
+      << "Time spent waiting for triple callbacks (e.g. the next sorter) "
+      << ad_utility::Timer::toSeconds(blockCallbackTimer.msecs()) << "s"
+      << std::endl;
   return {numDistinctCol0, std::move(writer1).getFinishedBlocks(),
           std::move(writer2).getFinishedBlocks()};
 }
@@ -1271,12 +1199,3 @@ CompressedRelationReader::getMetadataForSmallRelation(
       block.size(), distinctCol2.size());
   return metadata;
 }
-
-/*
-void CompressedRelationWriter::addLargeBlock(std::shared_ptr<IdTable> block) {
-  bool previousEmpty = remainingFromCurrentRelation_.begin_ ==
-remainingFromCurrentRelation_.end_; std::optional<Id> lastRelation =
-remainingFromCurrentRelation_
-
-}
- */
