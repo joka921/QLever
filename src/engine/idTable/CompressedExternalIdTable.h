@@ -215,6 +215,23 @@ class CompressedExternalIdTableWriter {
     return result;
   }
 
+  // Return a vector of generators where the `i-th` generator generates the
+  // `i-th` IdTable that was stored. The IdTables are yielded row by row.
+  template <size_t N = 0>
+  auto getAllBlocks(std::vector<BlockBound> bounds) {
+    AD_CORRECTNESS_CHECK(bounds.size() == startOfSingleIdTables_.size());
+    file_.wlock()->flush();
+    std::vector<std::vector<IdTableStatic<0>>> result;
+    result.resize(startOfSingleIdTables_.size());
+    for (auto i : std::views::iota(0u, startOfSingleIdTables_.size())) {
+      const BlockBound& bound = bounds.at(i);
+      for (auto r = bound.firstBlockIdx_; r < bound.endBlockIdx_; ++r) {
+        result.at(i).push_back(readBlock(startOfSingleIdTables_.at(i) + r));
+      }
+    }
+    return result;
+  }
+
   template <size_t N = 0>
   auto getGeneratorForAllRows() {
     // Note: As soon as we drop the support for GCC11 this can be
@@ -776,7 +793,7 @@ class CompressedExternalIdTableSorter
 
     // TODO<joka921> Handle all the blocksize business. currently we have the
     // wrong block sizes.
-    if (true) {
+    if (false) {
       // std::cout << "using the new merge routine" << std::endl;
       auto mergeRes = ad_utility::parallelMultiwayMergeBorders::getMergeParts(
           this->writer_.blockMetadata(),
@@ -803,7 +820,16 @@ class CompressedExternalIdTableSorter
       std::cout << std::endl << "finished the new merge routine" << std::endl;
       co_return;
     }
-    /*
+    if (!blocksize.has_value()) {
+      auto mergeRes = ad_utility::parallelMultiwayMergeBorders::getMergeRanges(
+          this->writer_.blockMetadata(),
+          std::max(1ul, this->writer_.blockMetadata().size() / 2), 10,
+          comparator_);
+      for (const auto& mergeRange : mergeRes) {
+        co_yield mergeSingleLargeBlock(mergeRange);
+      }
+      co_return;
+    }
     auto rowGenerators =
         this->writer_.template getAllRowGenerators<NumStaticCols>();
 
@@ -854,13 +880,123 @@ class CompressedExternalIdTableSorter
       co_yield std::move(result).template toStatic<N>();
     }
     AD_CORRECTNESS_CHECK(numPopped == this->numElementsPushed_);
-*/
   }
   // Transition from the input phase, where `push()` may be called, to the
   // output phase and return a generator that yields the sorted elements. This
   // function may be called exactly once.
   using MergeRes = ad_utility::parallelMultiwayMergeBorders::MergeRange<
       typename IdTableStatic<0>::row_type>;
+  using MergeRanges = ad_utility::parallelMultiwayMergeBorders::MergeRanges<
+      typename IdTableStatic<0>::row_type>;
+
+  template <size_t N = NumStaticCols>
+  requires(N == NumStaticCols || N == 0)
+  IdTableStatic<N> mergeSingleLargeBlock(MergeRanges metadata) {
+    auto blocksRaw =
+        this->writer_.template getAllBlocks<NumStaticCols>(metadata.blocks_);
+
+    auto preprocess = [&, this](size_t i) {
+      return preprocessBlock(metadata, metadata.mergeRanges_.at(i), blocksRaw);
+    };
+
+    using B = decltype(preprocess(0));
+    std::vector<B> preprocessedBlocks;
+    for (size_t i : ad_utility::integerRange(metadata.mergeRanges_.size())) {
+      preprocessedBlocks.push_back(preprocess(i));
+    }
+    auto blockSizes =
+        preprocessedBlocks | std::views::transform(std::ranges::distance);
+    size_t totalBlockSize =
+        std::accumulate(blockSizes.begin(), blockSizes.end());
+    IdTableStatic<N> result(this->writer_.numColumns(),
+                            this->writer_.allocator());
+    result.resize(totalBlockSize);
+
+    // TODO<joka921> make this parallel
+    size_t startIndex = 0;
+    for (const auto& block : preprocessedBlocks) {
+      mergeSingleBlockX(block, 0, std::ranges::size(block), result, startIndex);
+      startIndex += std::ranges::size(block);
+    }
+    return result;
+  }
+  template <size_t N = NumStaticCols>
+  requires(N == NumStaticCols || N == 0)
+  auto preprocessBlock(const MergeRanges& mergeRanges, const MergeRes& metadata,
+                       const auto& inputBlocks) {
+    auto getBlockView = [&](size_t i) {
+      auto joined = inputBlocks.at(i) | std::views::join;
+      size_t lower = 0;
+      if (metadata.firstNonInclusive_.has_value()) {
+        lower = std::ranges::upper_bound(
+                    joined, metadata.firstNonInclusive_.value(), comparator_) -
+                joined.begin();
+      }
+      size_t upper =
+          std::ranges::upper_bound(joined, metadata.last_, comparator_) -
+          joined.begin();
+
+      return std::move(joined) | std::views::drop(lower) |
+             std::views::take(upper - lower);
+    };
+    using B = decltype(getBlockView(0));
+    std::vector<B> actualBlocks;
+    for (auto i : ad_utility::integerRange(inputBlocks.size())) {
+      actualBlocks.push_back(getBlockView(i));
+    }
+    return actualBlocks;
+  }
+
+  template <size_t N = NumStaticCols>
+  requires(N == NumStaticCols || N == 0)
+  void mergeSingleBlockX(const auto& actualBlocks, size_t startElement,
+                         size_t numElements, IdTableStatic<N>& target,
+                         size_t startIndexInTarget) {
+    auto& rowGenerators = actualBlocks;
+
+    using P = std::pair<decltype(rowGenerators[0].begin()),
+                        decltype(rowGenerators[0].end())>;
+    auto projection = [](const auto& el) -> decltype(auto) {
+      return *el.first;
+    };
+    // NOTE: We have to switch the arguments, because the heap operations by
+    // default order descending...
+    auto comp = [&, this](const auto& a, const auto& b) {
+      return comparator_(projection(b), projection(a));
+    };
+    std::vector<P> pq;
+
+    for (auto& gen : rowGenerators) {
+      pq.emplace_back(gen.begin(), gen.end());
+      const auto& [begin, end] = pq.back();
+      if (begin == end) {
+        pq.pop_back();
+      }
+    }
+    std::ranges::make_heap(pq, comp);
+    IdTableStatic<NumStaticCols> result(this->writer_.numColumns(),
+                                        this->writer_.allocator());
+    // TODO Proper reserve.
+    // result.reserve(blockSizeOutput);
+
+    size_t numElementsTotal = 0;
+    while (numElementsTotal < startElement + numElements) {
+      std::ranges::pop_heap(pq, comp);
+      auto& min = pq.back();
+      if (numElementsTotal >= startElement) {
+        target[startIndexInTarget] = *min.first;
+        ++startIndexInTarget;
+      }
+      ++(min.first);
+      if (min.first == min.second) {
+        pq.pop_back();
+      } else {
+        std::ranges::push_heap(pq, comp);
+      }
+      ++numElementsTotal;
+    }
+  }
+
   template <size_t N = NumStaticCols>
   requires(N == NumStaticCols || N == 0)
   IdTableStatic<N> mergeSingleBlock(MergeRes metadata) {
