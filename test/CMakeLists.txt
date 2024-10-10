@@ -410,3 +410,5 @@ addLinkAndDiscoverTest(SparqlExpressionGeneratorsTest engine)
 addLinkAndDiscoverTest(UrlParserTest)
 
 addLinkAndDiscoverTest(ServerTest engine)
+
+addLinkAndDiscoverTest(CallbackToCoroTest)
