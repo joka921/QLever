@@ -1004,9 +1004,12 @@ std::string_view raw(const std::integral auto& value) {
 
 auto isTrivial(Id id) {
   auto datatype = id.getDatatype();
+  // TODO<joka921, RobinTF> this should be exahustively checked, s.t. it breaks
+  // the compilation when a new type is added.
   return datatype == Datatype::Undefined || datatype == Datatype::Bool ||
          datatype == Datatype::Int || datatype == Datatype::Double ||
-         datatype == Datatype::Date || datatype == Datatype::GeoPoint;
+         datatype == Datatype::Date || datatype == Datatype::GeoPoint ||
+         datatype == Datatype::EncodedVal;
 }
 }  // namespace
 
@@ -1096,6 +1099,11 @@ ad_utility::streams::stream_generator ExportQueryExecutionTrees::
     co_yield raw(variableName.size());
     co_yield variableName;
   }
+
+  auto encodedValuePrefixes = absl::StrJoin(
+      qet.getRootOperation()->getIndex().encodedIriManager().prefixes_, ", ");
+  co_yield raw(encodedValuePrefixes.size());
+  co_yield encodedValuePrefixes;
 
   // Use special undefined value that's not actually used as a real value.
   Id::T vocabMarker = Id::makeUndefined().getBits() + 0b10101010;
