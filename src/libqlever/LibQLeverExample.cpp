@@ -4,9 +4,10 @@
 //
 // UFR = University of Freiburg, Chair of Algorithms and Data Structures
 
+#include <absl/strings/str_replace.h>
+
 #include <iostream>
 
-#include "../../cmake-build-gcc-8-debug-stripped-features/_deps/abseil-src/absl/strings/str_replace.h"
 #include "libqlever/Qlever.h"
 #include "util/Exception.h"
 #include "util/Timer.h"
