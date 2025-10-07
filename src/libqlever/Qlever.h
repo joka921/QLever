@@ -233,6 +233,10 @@ class Qlever {
   // Clear the result with the given `name` from the cache.
   void eraseResultWithName(std::string name);
   void clearNamedResultCache();
+
+  // TODO<joka921> comment
+  std::shared_ptr<const Result> getResult(const QueryPlan& queryPlan,
+                                          bool requestLaziness) const;
 };
 }  // namespace qlever
 

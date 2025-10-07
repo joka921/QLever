@@ -8,17 +8,40 @@
 
 #include <iostream>
 
+#include "engine/ExplicitIdTableOperation.h"
+#include "engine/QueryExecutionTree.h"
 #include "libqlever/Qlever.h"
 #include "util/Exception.h"
 #include "util/Timer.h"
 
-static const std::string payloadQuery = R"(
-PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
-
-SELECT * WHERE {
- ?x a lbm:DrivePath .
- ?x ?p ?o
+void fillInterfaceForSimpleFeatures(const Result& result) {
+  const auto& table = result.idTable();
+  std::cout << "Filling interface for result with " << table.numColumns()
+            << " columns and " << table.numRows() << " rows" << std::endl;
 }
+
+static const std::string payloadQuerySingleColumn = R"(
+PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
+SELECT ?dp ?type ?c1 WHERE {
+  ?dp a lbm:DrivePath .
+  {
+    BIND (0 AS ?type)
+    ?dp lbm:hasSucc ?c1 .
+  }
+  UNION {
+    BIND (1 AS ?type)
+    ?dp lbm:hasPred ?c1 .
+  }
+  UNION {
+    BIND (2 AS ?type)
+    ?dp lbm:featIdInt ?c1 .
+  }
+  UNION {
+    BIND (3 AS ?type)
+    ?dp lbm:hasShapePoints ?c1 .
+  }
+}
+INTERNAL SORT BY ?dp ?type
 )";
 
 static const std::string geometryQuery = R"(
@@ -26,34 +49,65 @@ PREFIX geo: <http://www.opengis.net/ont/geosparql#>
 PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
 
 SELECT * WHERE {
- ?x geo:hasGeometry/geo:asWKT ?geom .
- ?x a lbm:DrivePath
+ ?dp geo:hasGeometry/geo:asWKT ?geom .
+ ?dp a lbm:DrivePath
 }
 )";
 
-static const std::string queryTemplateForPoint = R"ab(
- PREFIX qlss: <https://qlever.cs.uni-freiburg.de/spatialSearch/>
+static const std::string queryTemplateForDrivePaths = R"ab(
+PREFIX qlss: <https://qlever.cs.uni-freiburg.de/spatialSearch/>
 PREFIX geo: <http://www.opengis.net/ont/geosparql#>
-SELECT ?x ?p ?o ?geom WHERE {
+SELECT ?dp ?type ?c1 WHERE {
   {
-    SELECT ?x ?geom {
+    SELECT ?dp {
       BIND ("POINT(#coordinates# )"^^geo:wktLiteral AS ?carPos)
-SERVICE qlss: {
-  _:config qlss:algorithm <experimentalPointPolyline> ;
-  qlss:left ?carPos ;
-  qlss:right ?geom ;
-  <experimentalRightCacheName> "geos" ;
-  qlss:maxDistance 600 .
-}
+      SERVICE qlss: {
+        _:config qlss:algorithm <experimentalPointPolyline> ;
+                 qlss:left ?carPos ;
+                 qlss:right ?geom ;
+                 <experimentalRightCacheName> "geos" ;
+                 qlss:maxDistance 600 .
+      }
     }
   }
-{
-  SELECT ?x ?p ?o {
-    SERVICE ql:cached-result-with-name-payload {}
+  {
+    SELECT ?dp ?type ?c1 {
+      SERVICE ql:cached-result-with-name-payload {}
+    }
   }
 }
-}
+)ab";
 
+static const std::string queryTemplateForCurrentDrivePaths = R"ab(
+PREFIX qlss: <https://qlever.cs.uni-freiburg.de/spatialSearch/>
+PREFIX geo: <http://www.opengis.net/ont/geosparql#>
+    SELECT ?dp {
+      BIND ("POINT(#coordinates# )"^^geo:wktLiteral AS ?carPos)
+      SERVICE qlss: {
+        _:config qlss:algorithm <experimentalPointPolyline> ;
+                 qlss:left ?carPos ;
+                 qlss:right ?geom ;
+                 <experimentalRightCacheName> "geos" ;
+                 qlss:maxDistance 600 .
+      }
+    } INTERNAL SORT BY ?dp
+)ab";
+
+static const std::string queryTemplateForFeatures = R"ab(
+PREFIX qlss: <https://qlever.cs.uni-freiburg.de/spatialSearch/>
+PREFIX geo: <http://www.opengis.net/ont/geosparql#>
+SELECT ?dp ?type ?c1 WHERE {
+  {
+    SELECT ?dp {
+      SERVICE ql:cached-result-with-name-currentDrivepaths {}
+    }
+  }
+  {
+    SELECT ?dp ?type ?c1 {
+      SERVICE ql:cached-result-with-name-payload {}
+    }
+  }
+}
 )ab";
 
 static const auto filenames = []() {
@@ -71,7 +125,12 @@ static const auto filenames = []() {
 std::vector<std::string> queryPoints = {"11.729869 48.398452"};
 
 std::string getQueryForPoint(std::string_view point) {
-  return absl::StrReplaceAll(queryTemplateForPoint,
+  return absl::StrReplaceAll(queryTemplateForDrivePaths,
+                             {{std::string_view{"#coordinates#"}, point}});
+}
+
+std::string getCurrentDrivePathQuery(std::string_view point) {
+  return absl::StrReplaceAll(queryTemplateForCurrentDrivePaths,
                              {{std::string_view{"#coordinates#"}, point}});
 }
 
@@ -104,7 +163,8 @@ int main() {
   qlever.queryAndPinResultWithName({"geos", Variable{"?geom"}}, geometryQuery);
 
   std::cout << "pinning the payload" << std::endl;
-  qlever.queryAndPinResultWithName({"payload", std::nullopt}, payloadQuery);
+  qlever.queryAndPinResultWithName({"payload", std::nullopt},
+                                   payloadQuerySingleColumn);
 
   for (const auto& point : queryPoints) {
     // Execute query.
@@ -113,8 +173,11 @@ int main() {
     std::string queryResult;
     ad_utility::Timer timer{ad_utility::Timer::Started};
     try {
-      queryResult =
-          qlever.query(getQueryForPoint(point), ad_utility::MediaType::csv);
+      qlever.queryAndPinResultWithName({"currentDrivepaths", std::nullopt},
+                                       getCurrentDrivePathQuery(point));
+      auto plan = qlever.parseAndPlanQuery(queryTemplateForFeatures);
+      auto result = qlever.getResult(plan, false);
+      fillInterfaceForSimpleFeatures(*result);
     } catch (const std::exception& e) {
       std::cerr << "Executing the query failed: " << e.what() << std::endl;
       return 1;

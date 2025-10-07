@@ -126,6 +126,12 @@ std::string Qlever::query(const QueryPlan& queryPlan,
   return result;
 }
 
+std::shared_ptr<const Result> Qlever::getResult(const QueryPlan& queryPlan,
+                                                bool requestLaziness) const {
+  const auto& [qet, qec, parsedQuery] = queryPlan;
+  return qet->getResult(requestLaziness);
+}
+
 // _____________________________________________________________________________
 void Qlever::queryAndPinResultWithName(
     QueryExecutionContext::PinResultWithName options, std::string query) {
