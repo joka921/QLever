@@ -200,6 +200,19 @@ SELECT ?dp ?type ?c1 WHERE {
 INTERNAL SORT BY ?dp ?type
 )";
 
+static const std::string payloadQuerySpeedProfiles = R"(
+PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
+SELECT ?dp ?start ?end ?minSpeed ?maxSpeed ?type WHERE {
+  ?dp a lbm:DrivePath .
+  ?dp lbm:hasSpeed ?speed .
+  ?speed lbm:start ?start;
+    lbm:end ?end;
+    lbm:minSpeed ?minSpeed;
+    lbm:maxSpeed ?maxSpeed;
+}
+
+)";
+
 static const std::string geometryQuery = R"(
 PREFIX geo: <http://www.opengis.net/ont/geosparql#>
 PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
