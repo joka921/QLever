@@ -9,15 +9,149 @@
 #include <iostream>
 
 #include "engine/ExplicitIdTableOperation.h"
+#include "engine/ExportQueryExecutionTrees.h"
 #include "engine/QueryExecutionTree.h"
+#include "engine/VariableToColumnMap.h"
 #include "libqlever/Qlever.h"
 #include "util/Exception.h"
 #include "util/Timer.h"
 
-void fillInterfaceForSimpleFeatures(const Result& result) {
+struct DrivePath {
+  int64_t id_;
+  std::string shapePoints_;
+};
+
+// Convert an Id to an integer if it stores a numeric type
+std::optional<int64_t> getInt(Id id) {
+  using enum Datatype;
+  switch (id.getDatatype()) {
+    case Int:
+      return id.getInt();
+    case Double: {
+      double d = id.getDouble();
+      if (std::isfinite(d) && d >= std::numeric_limits<int64_t>::min() &&
+          d <= std::numeric_limits<int64_t>::max()) {
+        return static_cast<int64_t>(d);
+      }
+      return std::nullopt;
+    }
+    default:
+      return std::nullopt;
+  }
+}
+
+// Convert an Id to a double if it stores a numeric type
+std::optional<double> getDouble(Id id) {
+  using enum Datatype;
+  switch (id.getDatatype()) {
+    case Double:
+      return id.getDouble();
+    case Int:
+      return static_cast<double>(id.getInt());
+    default:
+      return std::nullopt;
+  }
+}
+
+// Convert an Id to a string representation
+std::optional<std::string> getString(Id id, const Index& index,
+                                     const LocalVocab& localVocab) {
+  auto optionalStringAndType =
+      ExportQueryExecutionTrees::idToStringAndType(index, id, localVocab);
+  if (!optionalStringAndType.has_value()) {
+    return std::nullopt;
+  }
+  return optionalStringAndType->first;
+}
+
+std::vector<DrivePath> fillInterfaceForSimpleFeatures(
+    const Result& result, const Index& index,
+    const VariableToColumnMap& variableColumns) {
+  AD_CONTRACT_CHECK(result.isFullyMaterialized(),
+                    "Result must be fully materialized");
+
   const auto& table = result.idTable();
-  std::cout << "Filling interface for result with " << table.numColumns()
-            << " columns and " << table.numRows() << " rows" << std::endl;
+  const auto& localVocab = result.localVocab();
+
+  // Get column indices for the required variables
+  auto getDpCol = variableColumns.find(Variable{"?dp"});
+  auto getTypeCol = variableColumns.find(Variable{"?type"});
+  auto getC1Col = variableColumns.find(Variable{"?c1"});
+
+  AD_CONTRACT_CHECK(getDpCol != variableColumns.end(),
+                    "Variable ?dp not found in result");
+  AD_CONTRACT_CHECK(getTypeCol != variableColumns.end(),
+                    "Variable ?type not found in result");
+  AD_CONTRACT_CHECK(getC1Col != variableColumns.end(),
+                    "Variable ?c1 not found in result");
+
+  ColumnIndex dpCol = getDpCol->second.columnIndex_;
+  ColumnIndex typeCol = getTypeCol->second.columnIndex_;
+  ColumnIndex c1Col = getC1Col->second.columnIndex_;
+
+  std::vector<DrivePath> drivePaths;
+
+  // Process the table in blocks of equal ?dp values
+  size_t i = 0;
+  while (i < table.numRows()) {
+    Id currentDp = table(i, dpCol);
+
+    // Find all rows with the same ?dp value
+    size_t blockStart = i;
+    size_t blockEnd = i;
+    while (blockEnd < table.numRows() && table(blockEnd, dpCol) == currentDp) {
+      ++blockEnd;
+    }
+
+    // Process this block to extract id and shapePoints
+    std::optional<int64_t> drivePathId;
+    std::optional<std::string> shapePoints;
+
+    for (size_t j = blockStart; j < blockEnd; ++j) {
+      Id typeId = table(j, typeCol);
+      auto typeValue = getInt(typeId);
+
+      AD_CONTRACT_CHECK(
+          typeValue.has_value(),
+          "Type value must be an integer at row " + std::to_string(j));
+
+      if (typeValue.value() == 2) {
+        // This row contains the drive path id
+        AD_CONTRACT_CHECK(!drivePathId.has_value(),
+                          "Multiple rows with type=2 for the same drive path");
+        Id c1Id = table(j, c1Col);
+        drivePathId = getInt(c1Id);
+        AD_CONTRACT_CHECK(drivePathId.has_value(),
+                          "Drive path id (type=2) must be an integer at row " +
+                              std::to_string(j));
+      } else if (typeValue.value() == 3) {
+        // This row contains the shape points
+        AD_CONTRACT_CHECK(!shapePoints.has_value(),
+                          "Multiple rows with type=3 for the same drive path");
+        Id c1Id = table(j, c1Col);
+        shapePoints = getString(c1Id, index, localVocab);
+        AD_CONTRACT_CHECK(shapePoints.has_value(),
+                          "Shape points (type=3) must be a string at row " +
+                              std::to_string(j));
+      }
+    }
+
+    // Verify we found both required values
+    AD_CONTRACT_CHECK(drivePathId.has_value(),
+                      "No row with type=2 found for drive path");
+    AD_CONTRACT_CHECK(shapePoints.has_value(),
+                      "No row with type=3 found for drive path");
+
+    // Create DrivePath object
+    drivePaths.push_back(
+        DrivePath{drivePathId.value(), std::move(shapePoints.value())});
+
+    // Move to the next block
+    i = blockEnd;
+  }
+
+  std::cout << "Extracted " << drivePaths.size() << " drive paths" << std::endl;
+  return drivePaths;
 }
 
 static const std::string payloadQuerySingleColumn = R"(
@@ -176,15 +310,23 @@ int main() {
       qlever.queryAndPinResultWithName({"currentDrivepaths", std::nullopt},
                                        getCurrentDrivePathQuery(point));
       auto plan = qlever.parseAndPlanQuery(queryTemplateForFeatures);
+      auto& [qet, qec, parsedQuery] = plan;
       auto result = qlever.getResult(plan, false);
-      fillInterfaceForSimpleFeatures(*result);
+      auto drivePaths = fillInterfaceForSimpleFeatures(
+          *result, qec->getIndex(), qet->getVariableColumns());
+      std::cout << "Query executed, and interface filled in "
+                << timer.msecs().count() << "ms" << std::endl;
+      std::cout << "Found " << drivePaths.size() << " drive paths" << std::endl;
+      for (const auto& dp : drivePaths) {
+        std::cout << "Drive path " << dp.id_ << ": "
+                  << std::string_view{dp.shapePoints_}.substr(0, 100)
+                  << std::endl;
+      }
     } catch (const std::exception& e) {
       std::cerr << "Executing the query failed: " << e.what() << std::endl;
       return 1;
     }
     std::cout.imbue(std::locale(""));
-    std::cout << "Query executed in " << timer.msecs().count() << "ms"
-              << std::endl;
     std::cout << std::endl;
 
     // Show result.
