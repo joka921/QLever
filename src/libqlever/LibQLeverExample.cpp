@@ -19,6 +19,8 @@
 struct DrivePath {
   int64_t id_;
   std::string shapePoints_;
+  std::vector<int64_t> successors_;
+  std::vector<int64_t> predecessors_;
 };
 
 // Convert an Id to an integer if it stores a numeric type
@@ -103,9 +105,12 @@ std::vector<DrivePath> fillInterfaceForSimpleFeatures(
       ++blockEnd;
     }
 
-    // Process this block to extract id and shapePoints
+    // Process this block to extract id, shapePoints, successors, and
+    // predecessors
     std::optional<int64_t> drivePathId;
     std::optional<std::string> shapePoints;
+    std::vector<int64_t> successors;
+    std::vector<int64_t> predecessors;
 
     for (size_t j = blockStart; j < blockEnd; ++j) {
       Id typeId = table(j, typeCol);
@@ -115,7 +120,23 @@ std::vector<DrivePath> fillInterfaceForSimpleFeatures(
           typeValue.has_value(),
           "Type value must be an integer at row " + std::to_string(j));
 
-      if (typeValue.value() == 2) {
+      if (typeValue.value() == 0) {
+        // This row contains a successor
+        Id c1Id = table(j, c1Col);
+        auto successor = getInt(c1Id);
+        AD_CONTRACT_CHECK(successor.has_value(),
+                          "Successor (type=0) must be an integer at row " +
+                              std::to_string(j));
+        successors.push_back(successor.value());
+      } else if (typeValue.value() == 1) {
+        // This row contains a predecessor
+        Id c1Id = table(j, c1Col);
+        auto predecessor = getInt(c1Id);
+        AD_CONTRACT_CHECK(predecessor.has_value(),
+                          "Predecessor (type=1) must be an integer at row " +
+                              std::to_string(j));
+        predecessors.push_back(predecessor.value());
+      } else if (typeValue.value() == 2) {
         // This row contains the drive path id
         AD_CONTRACT_CHECK(!drivePathId.has_value(),
                           "Multiple rows with type=2 for the same drive path");
@@ -144,7 +165,8 @@ std::vector<DrivePath> fillInterfaceForSimpleFeatures(
 
     // Create DrivePath object
     drivePaths.push_back(
-        DrivePath{drivePathId.value(), std::move(shapePoints.value())});
+        DrivePath{drivePathId.value(), std::move(shapePoints.value()),
+                  std::move(successors), std::move(predecessors)});
 
     // Move to the next block
     i = blockEnd;
@@ -160,11 +182,11 @@ SELECT ?dp ?type ?c1 WHERE {
   ?dp a lbm:DrivePath .
   {
     BIND (0 AS ?type)
-    ?dp lbm:hasSucc ?c1 .
+    ?dp lbm:hasSucc/lbm:featIdInt ?c1 .
   }
   UNION {
     BIND (1 AS ?type)
-    ?dp lbm:hasPred ?c1 .
+    ?dp lbm:hasPred/lbm:featIdInt ?c1 .
   }
   UNION {
     BIND (2 AS ?type)
@@ -318,9 +340,26 @@ int main() {
                 << timer.msecs().count() << "ms" << std::endl;
       std::cout << "Found " << drivePaths.size() << " drive paths" << std::endl;
       for (const auto& dp : drivePaths) {
-        std::cout << "Drive path " << dp.id_ << ": "
+        std::cout << "Drive path " << dp.id_ << ":" << std::endl;
+        std::cout << "  Shape points: "
                   << std::string_view{dp.shapePoints_}.substr(0, 100)
                   << std::endl;
+        std::cout << "  Successors (" << dp.successors_.size() << "): ";
+        for (size_t i = 0; i < std::min(dp.successors_.size(), size_t{5});
+             ++i) {
+          if (i > 0) std::cout << ", ";
+          std::cout << dp.successors_[i];
+        }
+        if (dp.successors_.size() > 5) std::cout << "...";
+        std::cout << std::endl;
+        std::cout << "  Predecessors (" << dp.predecessors_.size() << "): ";
+        for (size_t i = 0; i < std::min(dp.predecessors_.size(), size_t{5});
+             ++i) {
+          if (i > 0) std::cout << ", ";
+          std::cout << dp.predecessors_[i];
+        }
+        if (dp.predecessors_.size() > 5) std::cout << "...";
+        std::cout << std::endl;
       }
     } catch (const std::exception& e) {
       std::cerr << "Executing the query failed: " << e.what() << std::endl;
