@@ -12,6 +12,7 @@ struct Wgs84Coord {
   double longitude;
   double altitude;
 
+  Wgs84Coord() = default;
   Wgs84Coord(double lat, double lng, double alt = 0.0)
       : latitude{lat}, longitude{lng}, altitude{alt} {}
 
@@ -27,6 +28,8 @@ struct Wgs84Coord {
 struct QueryPointData {
   std::string coordinates;
   std::vector<uint64_t> mppIds;
+  Wgs84Coord
+      wgs84Coord;  // Store the actual coordinate for distance calculation
 };
 
 // Map Version 32
@@ -2307,6 +2310,7 @@ inline std::vector<QueryPointData> extractQueryPointsData(
     QueryPointData data;
     data.coordinates = coords.toCoordinateString();
     data.mppIds = mpp;
+    data.wgs84Coord = coords;
     result.push_back(std::move(data));
   }
   return result;

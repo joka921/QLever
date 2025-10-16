@@ -4,8 +4,10 @@
 //
 // UFR = University of Freiburg, Chair of Algorithms and Data Structures
 
+#include <iomanip>
 #include <iostream>
 
+#include "./IncrementalQueryExecutor.h"
 #include "./InterfaceFilling.h"
 #include "./QueryTemplates.h"
 #include "./SimulationData.h"
@@ -13,7 +15,6 @@
 #include "util/Exception.h"
 #include "util/Log.h"
 #include "util/NullStream.h"
-#include "util/Timer.h"
 
 static const auto filenames = []() {
   std::vector<qlever::InputFileSpecification> res;
@@ -54,7 +55,7 @@ int main() {
   ad_utility::setGlobalLoggingStream(&nullStream);
 
   // Extract query points data from simulation data
-  auto queryPointsData = extractQueryPointsData(10);
+  auto queryPointsData = extractQueryPointsData(0);
 
   std::cout << "pinning the geometries" << std::endl;
   qlever.queryAndPinResultWithName({"geos", Variable{"?geom"}},
@@ -63,40 +64,55 @@ int main() {
   std::cout << "pinning the payload" << std::endl;
   qlever.queryAndPinResultWithName({"payload", std::nullopt},
                                    qlever::payloadQuerySingleColumn);
-  for (const auto& pointData : queryPointsData) {
-    // Execute query.
-    std::cout << "\x1b[1mExecuting test query for point "
-              << pointData.coordinates << "\x1b[0m" << std::endl;
-    std::string queryResult;
-    ad_utility::Timer timer{ad_utility::Timer::Started};
+
+  // Create incremental query executor
+  qlever::IncrementalQueryExecutor executor(qlever);
+
+  // Flag to control detailed timing output
+  constexpr bool showDetailedTiming = false;
+
+  for (size_t i = 0; i < queryPointsData.size(); ++i) {
+    const auto& pointData = queryPointsData[i];
+
     try {
-      qlever.queryAndPinResultWithName(
-          {"currentDrivepaths", std::nullopt},
-          qlever::getCurrentDrivePathQuery(pointData.coordinates));
-      auto plan = qlever.parseAndPlanQuery(qlever::queryTemplateForFeatures);
-      qlever.clearCache();
-      auto& [qet, qec, parsedQuery] = plan;
-      auto result = qlever.getResult(plan, false);
-      auto drivePaths = qlever::fillInterfaceForSimpleFeatures(
-          *result, qec->getIndex(), qet->getVariableColumns());
+      auto stepResult = executor.processNextPoint(pointData);
 
-      // Execute MPP-based query
-      auto mppQuery = qlever::getMppFeaturesQuery(pointData.mppIds);
-      auto mppPlan = qlever.parseAndPlanQuery(mppQuery);
-      auto mppResult = qlever.getResult(mppPlan, false);
-      auto mppDrivePaths = qlever::fillInterfaceForSimpleFeatures(
-          *mppResult, qec->getIndex(),
-          std::get<0>(mppPlan)->getVariableColumns());
-      std::cout << "Found " << drivePaths.size() << " DPs around the car, and "
-                << mppDrivePaths.size() << " drive paths from MPP in "
-                << timer.value().count() << "us" << std::endl;
+      // Compact single-line output for step info
+      std::cout << "Step " << (i + 1) << " @ " << pointData.coordinates << " - "
+                << stepResult.timing.totalUs << " us";
+      if (stepResult.distanceFromPreviousMeters.has_value()) {
+        std::cout << " - Distance: "
+                  << stepResult.distanceFromPreviousMeters.value() << " m";
+      }
+      std::cout << std::endl;
 
-      qlever::printDrivePaths(drivePaths, 1);
+      // Compact single-line output for results
+      std::cout << "  Num DPs (Total/Added/Removed/MPP): "
+                << stepResult.totalDrivePaths << "/"
+                << stepResult.addedDrivePaths.size() << "/"
+                << stepResult.removedDrivePathIds.size() << "/"
+                << stepResult.mppDrivePaths.size() << std::endl;
+
+      // Detailed timing breakdown (controlled by flag)
+      if (showDetailedTiming) {
+        std::cout << "  Timing breakdown:" << std::endl;
+        std::cout << "    Spatial query:      " << std::setw(8)
+                  << stepResult.timing.spatialQueryUs << " us" << std::endl;
+        std::cout << "    ID extraction:      " << std::setw(8)
+                  << stepResult.timing.idExtractionUs << " us" << std::endl;
+        std::cout << "    Diff computation:   " << std::setw(8)
+                  << stepResult.timing.diffComputationUs << " us" << std::endl;
+        std::cout << "    Feature query:      " << std::setw(8)
+                  << stepResult.timing.featureQueryUs << " us" << std::endl;
+        std::cout << "    MPP query:          " << std::setw(8)
+                  << stepResult.timing.mppQueryUs << " us" << std::endl;
+        std::cout << "    Total:              " << std::setw(8)
+                  << stepResult.timing.totalUs << " us" << std::endl;
+      }
+
     } catch (const std::exception& e) {
       std::cerr << "Executing the query failed: " << e.what() << std::endl;
       return 1;
     }
-    std::cout.imbue(std::locale(""));
-    std::cout << std::endl;
   }
 }

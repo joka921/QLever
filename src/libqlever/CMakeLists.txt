@@ -3,5 +3,6 @@ add_library(qlever
   IdTableValueExtraction.cpp
   QueryTemplates.cpp
   InterfaceFilling.cpp
+  IncrementalQueryExecutor.cpp
 )
 qlever_target_link_libraries(qlever parser engine util index absl::strings)

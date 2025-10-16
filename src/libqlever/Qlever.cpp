@@ -149,6 +149,15 @@ void Qlever::queryAndPinResultWithName(std::string name, std::string query) {
 }
 
 // _____________________________________________________________________________
+std::shared_ptr<const Result> Qlever::queryAndPinResultWithNameReturningResult(
+    QueryExecutionContext::PinResultWithName options, std::string query) {
+  auto queryPlan = parseAndPlanQuery(std::move(query));
+  auto& [qet, qec, parsedQuery] = queryPlan;
+  qec->pinResultWithName() = std::move(options);
+  return qet->getResult(false);
+}
+
+// _____________________________________________________________________________
 void Qlever::clearNamedResultCache() { namedResultCache_.clear(); }
 
 void Qlever::clearCache() { cache_.clearAll(); }
