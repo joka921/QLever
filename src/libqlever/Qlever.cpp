@@ -151,6 +151,8 @@ void Qlever::queryAndPinResultWithName(std::string name, std::string query) {
 // _____________________________________________________________________________
 void Qlever::clearNamedResultCache() { namedResultCache_.clear(); }
 
+void Qlever::clearCache() { cache_.clearAll(); }
+
 // _____________________________________________________________________________
 void Qlever::eraseResultWithName(std::string name) {
   namedResultCache_.erase(name);

@@ -8,6 +8,7 @@
 
 #include <iostream>
 
+#include "./SimulationData.h"
 #include "engine/ExplicitIdTableOperation.h"
 #include "engine/ExportQueryExecutionTrees.h"
 #include "engine/QueryExecutionTree.h"
@@ -171,13 +172,12 @@ std::vector<DrivePath> fillInterfaceForSimpleFeatures(
     // Move to the next block
     i = blockEnd;
   }
-
-  std::cout << "Extracted " << drivePaths.size() << " drive paths" << std::endl;
   return drivePaths;
 }
 
 static const std::string payloadQuerySingleColumn = R"(
 PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
+PREFIX geo: <http://www.opengis.net/ont/geosparql#>
 SELECT ?dp ?type ?c1 WHERE {
   ?dp a lbm:DrivePath .
   {
@@ -194,7 +194,7 @@ SELECT ?dp ?type ?c1 WHERE {
   }
   UNION {
     BIND (3 AS ?type)
-    ?dp lbm:hasShapePoints ?c1 .
+    ?dp lbm:hasGeometry/geo:asWKT ?c1 .
   }
 }
 INTERNAL SORT BY ?dp ?type
@@ -218,7 +218,7 @@ PREFIX geo: <http://www.opengis.net/ont/geosparql#>
 PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
 
 SELECT * WHERE {
- ?dp geo:hasGeometry/geo:asWKT ?geom .
+ ?dp lbm:hasGeometry/geo:asWKT ?geom .
  ?dp a lbm:DrivePath
 }
 )";
@@ -281,17 +281,27 @@ SELECT ?dp ?type ?c1 WHERE {
 
 static const auto filenames = []() {
   std::vector<qlever::InputFileSpecification> res;
+  res.push_back(qlever::InputFileSpecification{
+      "ttl33588354_v32/full_33588354_v32.ttl", qlever::Filetype::Turtle});
+  /*
   for (size_t i = 201; i < 456; ++i) {
     // We currently have all the tiles, except for 444 in an adjacent order.
     if (i == 444) continue;
     res.push_back(qlever::InputFileSpecification{
         absl::StrCat("ttl/545555", i, ".ttl"), qlever::Filetype::Turtle});
   }
+  */
   return res;
 };
 
 // Add additional points here...
-std::vector<std::string> queryPoints = {"11.729869 48.398452"};
+std::vector<std::string> queryPoints = []() {
+  std::vector<std::string> res;
+  for (const auto& [mpp, coords] : SIM_DATA | ql::views::drop(10)) {
+    res.push_back(absl::StrCat(coords.longitude, " ", coords.latitude));
+  }
+  return res;
+}();
 
 std::string getQueryForPoint(std::string_view point) {
   return absl::StrReplaceAll(queryTemplateForDrivePaths,
@@ -313,6 +323,8 @@ int main() {
   qlever::IndexBuilderConfig config;
   config.inputFiles_ = filenames();
   config.baseName_ = indexBasename;
+  config.noPatterns_ = true;
+  config.onlyPsoAndPos_ = true;
   try {
     qlever::Qlever::buildIndex(config);
   } catch (const std::exception& e) {
@@ -337,22 +349,22 @@ int main() {
 
   for (const auto& point : queryPoints) {
     // Execute query.
-    std::cout << "\x1b[1mExecuting test query"
-              << "\x1b[0m" << std::endl;
+    std::cout << "\x1b[1mExecuting test query for point " << point << "\x1b[0m"
+              << std::endl;
     std::string queryResult;
     ad_utility::Timer timer{ad_utility::Timer::Started};
     try {
       qlever.queryAndPinResultWithName({"currentDrivepaths", std::nullopt},
                                        getCurrentDrivePathQuery(point));
       auto plan = qlever.parseAndPlanQuery(queryTemplateForFeatures);
+      qlever.clearCache();
       auto& [qet, qec, parsedQuery] = plan;
       auto result = qlever.getResult(plan, false);
       auto drivePaths = fillInterfaceForSimpleFeatures(
           *result, qec->getIndex(), qet->getVariableColumns());
-      std::cout << "Query executed, and interface filled in "
+      std::cout << "Found " << drivePaths.size() << " drive paths in "
                 << timer.msecs().count() << "ms" << std::endl;
-      std::cout << "Found " << drivePaths.size() << " drive paths" << std::endl;
-      for (const auto& dp : drivePaths) {
+      for (const auto& dp : drivePaths | ql::views::take(0)) {
         std::cout << "Drive path " << dp.id_ << ":" << std::endl;
         std::cout << "  Shape points: "
                   << std::string_view{dp.shapePoints_}.substr(0, 100)
@@ -379,11 +391,6 @@ int main() {
       return 1;
     }
     std::cout.imbue(std::locale(""));
-    std::cout << std::endl;
-
-    // Show result.
-    std::cout << "\x1b[1mPrefix of result string is:\x1b[0m" << std::endl;
-    std::cout << std::string_view{queryResult}.substr(0, 1000) << std::endl;
     std::cout << std::endl;
   }
 }
