@@ -6,6 +6,8 @@
 
 #include "libqlever/QueryTemplates.h"
 
+#include <absl/strings/str_cat.h>
+#include <absl/strings/str_join.h>
 #include <absl/strings/str_replace.h>
 
 namespace qlever {
@@ -114,6 +116,22 @@ SELECT ?dp ?type ?c1 WHERE {
 }
 )ab";
 
+const std::string queryTemplateForMppFeatures = R"ab(
+PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
+SELECT ?dp ?type ?c1 WHERE {
+  {
+    SELECT ?dp {
+      #values#
+    }
+  }
+  {
+    SELECT ?dp ?type ?c1 {
+      SERVICE ql:cached-result-with-name-payload {}
+    }
+  }
+}
+)ab";
+
 std::string getQueryForPoint(std::string_view point) {
   return absl::StrReplaceAll(queryTemplateForDrivePaths,
                              {{std::string_view{"#coordinates#"}, point}});
@@ -122,6 +140,23 @@ std::string getQueryForPoint(std::string_view point) {
 std::string getCurrentDrivePathQuery(std::string_view point) {
   return absl::StrReplaceAll(queryTemplateForCurrentDrivePaths,
                              {{std::string_view{"#coordinates#"}, point}});
+}
+
+std::string mppIdToIri(uint64_t id) { return absl::StrCat("lbm:dp_", id); }
+
+std::string generateValuesClause(const std::vector<uint64_t>& mppIds) {
+  std::vector<std::string> iris;
+  iris.reserve(mppIds.size());
+  for (uint64_t id : mppIds) {
+    iris.push_back(mppIdToIri(id));
+  }
+  return absl::StrCat("VALUES ?dp { ", absl::StrJoin(iris, " "), " }");
+}
+
+std::string getMppFeaturesQuery(const std::vector<uint64_t>& mppIds) {
+  std::string valuesClause = generateValuesClause(mppIds);
+  return absl::StrReplaceAll(queryTemplateForMppFeatures,
+                             {{std::string_view{"#values#"}, valuesClause}});
 }
 
 }  // namespace qlever
