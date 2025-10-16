@@ -7,6 +7,7 @@
 
 #include "backports/memory_resource.h"
 #include "util/HashMap.h"
+#include "util/Log.h"
 
 namespace ad_utility {
 
@@ -37,6 +38,8 @@ class CachingMemoryResource : public ql::pmr::memory_resource {
     std::lock_guard l{mutex_};
     auto it = cache_.find(std::pair{bytes, alignment});
     if (it == cache_.end() || it->second.empty()) {
+      AD_LOG_INFO << "Allocating a new block of " << bytes << " bytes"
+                  << std::endl;
       auto res = allocator_->allocate(bytes, alignment);
       return res;
     }
@@ -62,11 +65,14 @@ class CachingMemoryResource : public ql::pmr::memory_resource {
  public:
   // Destructor: actually deallocate the blocks in the cache.
   ~CachingMemoryResource() override {
+    size_t totalSize = 0;
     for (const auto& [key, pointers] : cache_) {
       for (auto ptr : pointers) {
+        totalSize += key.first;
         allocator_->deallocate(ptr, key.first, key.second);
       }
     }
+    AD_LOG_INFO << "Deallocated " << totalSize << " bytes" << std::endl;
   }
 };
 }  // namespace ad_utility

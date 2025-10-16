@@ -237,6 +237,9 @@ auto getIdMapLambdas(
   // that way the different ids won't interfere
   auto& itemArray = *itemArrayPtr;
   for (size_t j = 0; j < NumThreads; ++j) {
+    AD_LOG_INFO << " reserving space for "
+                << 5 * maxNumberOfTriples / NumThreads << "hashMap entries"
+                << std::endl;
     itemArray[j].emplace(j * 100 * maxNumberOfTriples, comp, alloc);
     // This `reserve` is for a guaranteed upper bound that stays the same during
     // the whole index building. That's why we use the `CachingMemoryResource`
