@@ -4,8 +4,6 @@
 //
 // UFR = University of Freiburg, Chair of Algorithms and Data Structures
 
-#include <absl/strings/str_cat.h>
-
 #include <iostream>
 
 #include "./InterfaceFilling.h"
@@ -14,21 +12,8 @@
 #include "libqlever/Qlever.h"
 #include "util/Exception.h"
 #include "util/Log.h"
+#include "util/NullStream.h"
 #include "util/Timer.h"
-#include "util/Views.h"
-
-// Null output stream that discards all input
-class NullStream : public std::ostream {
- private:
-  class NullBuffer : public std::streambuf {
-   public:
-    int overflow(int c) override { return c; }
-  };
-  NullBuffer buffer_;
-
- public:
-  NullStream() : std::ostream(&buffer_) {}
-};
 
 static const auto filenames = []() {
   std::vector<qlever::InputFileSpecification> res;
@@ -36,24 +21,6 @@ static const auto filenames = []() {
       "ttl33588354_v32/full_33588354_v32.ttl", qlever::Filetype::Turtle});
   return res;
 };
-
-// Data structure to hold both coordinates and MPP IDs for each point
-struct QueryPointData {
-  std::string coordinates;
-  std::vector<uint64_t> mppIds;
-};
-
-// Extract query points and MPP data from simulation data
-std::vector<QueryPointData> queryPointsData = []() {
-  std::vector<QueryPointData> res;
-  for (const auto& [mpp, coords] : SIM_DATA | ql::views::drop(10)) {
-    QueryPointData data;
-    data.coordinates = absl::StrCat(coords.longitude, " ", coords.latitude);
-    data.mppIds = mpp;
-    res.push_back(std::move(data));
-  }
-  return res;
-}();
 
 int main() {
   // Parse command line arguments.
@@ -83,8 +50,11 @@ int main() {
   std::cout << std::endl;
 
   // Suppress QLever internal logging
-  static NullStream nullStream;
+  static ad_utility::NullStream nullStream;
   ad_utility::setGlobalLoggingStream(&nullStream);
+
+  // Extract query points data from simulation data
+  auto queryPointsData = extractQueryPointsData(10);
 
   std::cout << "pinning the geometries" << std::endl;
   qlever.queryAndPinResultWithName({"geos", Variable{"?geom"}},
@@ -121,7 +91,7 @@ int main() {
                 << mppDrivePaths.size() << " drive paths from MPP in "
                 << timer.value().count() << "us" << std::endl;
 
-      qlever::printDrivePaths(drivePaths, 0);
+      qlever::printDrivePaths(drivePaths, 1);
     } catch (const std::exception& e) {
       std::cerr << "Executing the query failed: " << e.what() << std::endl;
       return 1;

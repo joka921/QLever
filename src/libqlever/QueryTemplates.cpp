@@ -94,7 +94,7 @@ PREFIX geo: <http://www.opengis.net/ont/geosparql#>
                  qlss:left ?carPos ;
                  qlss:right ?geom ;
                  <experimentalRightCacheName> "geos" ;
-                 qlss:maxDistance 600 .
+                 qlss:maxDistance 200 .
       }
     } INTERNAL SORT BY ?dp
 )ab";

@@ -2,6 +2,9 @@
 #define SRC_LIBQLEVER_BUILDERS_BEHAVIOR_DATA_SIMULATION_DATA_H
 
 #include <cstdint>
+#include <iomanip>
+#include <sstream>
+#include <string>
 #include <vector>
 
 struct Wgs84Coord {
@@ -11,6 +14,19 @@ struct Wgs84Coord {
 
   Wgs84Coord(double lat, double lng, double alt = 0.0)
       : latitude{lat}, longitude{lng}, altitude{alt} {}
+
+  // Convert coordinates to high-precision string format "longitude latitude"
+  std::string toCoordinateString() const {
+    std::ostringstream oss;
+    oss << std::setprecision(17) << longitude << " " << latitude;
+    return oss.str();
+  }
+};
+
+// Data structure to hold both coordinates and MPP IDs for each query point
+struct QueryPointData {
+  std::string coordinates;
+  std::vector<uint64_t> mppIds;
 };
 
 // Map Version 32
@@ -2281,5 +2297,19 @@ static const std::vector<std::pair<std::vector<std::uint64_t>, Wgs84Coord> >
           2343140947593789618, 2343140947593789798, 2343140947593789799,
           2343140947602178094, 2343140943307210791, 2343140943307210757},
          {48.18316393531859, 11.540528750047088}}};
+
+// Helper function to extract query point data from simulation data
+inline std::vector<QueryPointData> extractQueryPointsData(
+    size_t skipFirst = 0) {
+  std::vector<QueryPointData> result;
+  for (size_t i = skipFirst; i < SIM_DATA.size(); ++i) {
+    const auto& [mpp, coords] = SIM_DATA[i];
+    QueryPointData data;
+    data.coordinates = coords.toCoordinateString();
+    data.mppIds = mpp;
+    result.push_back(std::move(data));
+  }
+  return result;
+}
 
 #endif  // SRC_LIBQLEVER_BUILDERS_BEHAVIOR_DATA_SIMULATION_DATA_H
