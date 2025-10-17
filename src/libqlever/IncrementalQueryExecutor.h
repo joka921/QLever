@@ -72,19 +72,18 @@ class IncrementalQueryExecutor {
                                           const Index& index);
 
   // Query for speed profiles of specific drive path IDs
-  ad_utility::HashMap<int64_t, std::vector<SpeedProfile>>
+  ad_utility::HashMap<Id, std::vector<SpeedProfile>>
   queryDrivePathSpeedProfiles(const std::vector<Id>& drivePathIds,
                               const Index& index);
 
   // Query for speed profiles from MPP (all speed profiles for given MPP IDs)
-  ad_utility::HashMap<int64_t, std::vector<SpeedProfile>> queryMppSpeedProfiles(
+  ad_utility::HashMap<Id, std::vector<SpeedProfile>> queryMppSpeedProfiles(
       const std::vector<uint64_t>& mppIds, const Index& index);
 
   // Merge speed profiles into drive paths
   void mergeSpeedProfilesIntoDrivePaths(
       std::vector<DrivePath>& drivePaths,
-      const ad_utility::HashMap<int64_t, std::vector<SpeedProfile>>&
-          speedProfiles);
+      const ad_utility::HashMap<Id, std::vector<SpeedProfile>>& speedProfiles);
 };
 
 // Print detailed timing breakdown to stdout

@@ -55,13 +55,13 @@ int main() {
   // Flag to control detailed timing output
   constexpr bool showDetailedTiming = false;
   // Flag to control detailed drive path printing
-  constexpr bool showDetailedDrivePaths = true;
+  constexpr bool showDetailedDrivePaths = false;
 
   for (size_t i = 0; i < queryPointsData.size(); ++i) {
     const auto& pointData = queryPointsData[i];
 
     try {
-      // std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+      std::this_thread::sleep_for(std::chrono::milliseconds(1000));
       auto stepResult = executor.processNextPoint(pointData);
 
       // Compact single-line output for step info

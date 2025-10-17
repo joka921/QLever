@@ -123,7 +123,7 @@ std::vector<DrivePath> IncrementalQueryExecutor::queryMppFeatures(
       *result, index, std::get<0>(plan)->getVariableColumns());
 }
 
-ad_utility::HashMap<int64_t, std::vector<SpeedProfile>>
+ad_utility::HashMap<Id, std::vector<SpeedProfile>>
 IncrementalQueryExecutor::queryDrivePathSpeedProfiles(
     const std::vector<Id>& drivePathIds, const Index& index) {
   if (drivePathIds.empty()) {
@@ -178,7 +178,7 @@ SELECT ?dp ?start ?end ?minSpeed ?maxSpeed WHERE {
                            std::get<0>(plan)->getVariableColumns());
 }
 
-ad_utility::HashMap<int64_t, std::vector<SpeedProfile>>
+ad_utility::HashMap<Id, std::vector<SpeedProfile>>
 IncrementalQueryExecutor::queryMppSpeedProfiles(
     const std::vector<uint64_t>& mppIds, const Index& index) {
   if (mppIds.empty()) {
@@ -216,13 +216,12 @@ SELECT ?dp ?start ?end ?minSpeed ?maxSpeed WHERE {
 
 void IncrementalQueryExecutor::mergeSpeedProfilesIntoDrivePaths(
     std::vector<DrivePath>& drivePaths,
-    const ad_utility::HashMap<int64_t, std::vector<SpeedProfile>>&
-        speedProfiles) {
+    const ad_utility::HashMap<Id, std::vector<SpeedProfile>>& speedProfiles) {
   std::cout << "Merging speed profiles" << std::endl;
   for (auto& dp : drivePaths) {
-    auto it = speedProfiles.find(dp.id_);
+    // Use dpId_ instead of id_ for matching
+    auto it = speedProfiles.find(dp.dpId_);
     if (it != speedProfiles.end()) {
-      AD_FAIL();
       dp.speedProfiles_ = it->second;
     }
   }

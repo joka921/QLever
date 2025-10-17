@@ -30,7 +30,8 @@ struct SpeedProfile {
 };
 
 struct DrivePath {
-  int64_t id_;
+  int64_t id_;  // The numeric feature ID (extracted from type=2)
+  Id dpId_;     // The actual ?dp variable value (used for matching)
   std::string shapePoints_;
   std::vector<int64_t> successors_;
   std::vector<int64_t> predecessors_;
@@ -44,8 +45,8 @@ std::vector<DrivePath> fillInterfaceForSimpleFeatures(
     const VariableToColumnMap& variableColumns);
 
 // Fill speed profiles for drive paths from a query result
-// Returns a map from drive path ID to vector of speed profiles
-ad_utility::HashMap<int64_t, std::vector<SpeedProfile>> fillSpeedProfiles(
+// Returns a map from drive path Id (?dp value) to vector of speed profiles
+ad_utility::HashMap<Id, std::vector<SpeedProfile>> fillSpeedProfiles(
     const Result& result, const Index& index,
     const VariableToColumnMap& variableColumns);
 

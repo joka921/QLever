@@ -142,6 +142,7 @@ std::vector<DrivePath> fillInterfaceForSimpleFeatures(
 
     // Create DrivePath object
     drivePaths.push_back(DrivePath{drivePathId.value(),
+                                   currentDp,  // Store the ?dp Id value
                                    std::move(shapePoints.value()),
                                    std::move(successors),
                                    std::move(predecessors),
@@ -154,7 +155,7 @@ std::vector<DrivePath> fillInterfaceForSimpleFeatures(
   return drivePaths;
 }
 
-ad_utility::HashMap<int64_t, std::vector<SpeedProfile>> fillSpeedProfiles(
+ad_utility::HashMap<Id, std::vector<SpeedProfile>> fillSpeedProfiles(
     const Result& result, const Index& index,
     const VariableToColumnMap& variableColumns) {
   AD_CONTRACT_CHECK(result.isFullyMaterialized(),
@@ -186,25 +187,12 @@ ad_utility::HashMap<int64_t, std::vector<SpeedProfile>> fillSpeedProfiles(
   ColumnIndex maxSpeedCol = getMaxSpeedCol->second.columnIndex_;
   ColumnIndex minSpeedCol = getMinSpeedCol->second.columnIndex_;
 
-  ad_utility::HashMap<int64_t, std::vector<SpeedProfile>> speedProfilesMap;
+  ad_utility::HashMap<Id, std::vector<SpeedProfile>> speedProfilesMap;
 
   // Process each row
   for (size_t i = 0; i < table.numRows(); ++i) {
-    // Extract drive path ID from the IRI
+    // Extract drive path ID directly from the ?dp variable
     Id dpId = table(i, dpCol);
-    auto dpIri = getString(dpId, index, result.localVocab());
-    AD_CONTRACT_CHECK(
-        dpIri.has_value(),
-        "Drive path must be a string/IRI at row " + std::to_string(i));
-
-    // Extract the numeric ID from the IRI (assuming format like
-    // lbm:featId_12345)
-    auto dpIdInt = getInt(dpId);
-    if (!dpIdInt.has_value()) {
-      // Try to extract from IRI string if it's not directly encoded
-      // This is a fallback - we might need to parse the IRI
-      continue;
-    }
 
     // Extract speed profile values
     auto start = getInt(table(i, startCol));
@@ -223,12 +211,13 @@ ad_utility::HashMap<int64_t, std::vector<SpeedProfile>> fillSpeedProfiles(
         minSpeed.has_value(),
         "MinSpeed must be an integer at row " + std::to_string(i));
 
-    speedProfilesMap[dpIdInt.value()].push_back(SpeedProfile{
+    // Use the Id directly as the key
+    speedProfilesMap[dpId].push_back(SpeedProfile{
         start.value(), end.value(), maxSpeed.value(), minSpeed.value()});
   }
 
-  return speedProfilesMap;
   std::cout << "found " << speedProfilesMap.size() << " speed profiles\n";
+  return speedProfilesMap;
 }
 
 void printDrivePaths(const std::vector<DrivePath>& drivePaths,

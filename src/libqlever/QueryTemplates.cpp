@@ -16,6 +16,7 @@ const std::string payloadQuerySingleColumn = R"(
 PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
 PREFIX geo: <http://www.opengis.net/ont/geosparql#>
 SELECT ?dp ?type ?c1 ?c2 WHERE {
+SELECT ?dp ?type ?c1 ?c2 WHERE {
   ?dp a lbm:DrivePath .
   {
     BIND (0 AS ?type)
@@ -37,6 +38,7 @@ SELECT ?dp ?type ?c1 ?c2 WHERE {
     BIND (4 AS ?type)
     ?dp lbm:hasStopLoc [ lbm:range ?c1; lbm:virtual ?c2]
   }
+}
 }
 INTERNAL SORT BY ?dp ?type
 )";
