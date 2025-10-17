@@ -8,6 +8,7 @@
 #include <iostream>
 
 #include "./IncrementalQueryExecutor.h"
+#include "./IndexManager.h"
 #include "./InterfaceFilling.h"
 #include "./QueryTemplates.h"
 #include "./SimulationData.h"
@@ -27,54 +28,38 @@ int main() {
   // Parse command line arguments.
   std::string indexBasename = "demo-v1";
 
-  // Build index for the given input file and write index files to disk.
-  std::cout << "\x1b[1mBuilding index"
-            << " with basename \"" << indexBasename << "\x1b[0m" << std::endl;
+  // Build and run QLever index
   qlever::IndexBuilderConfig config;
   config.inputFiles_ = filenames();
   config.baseName_ = indexBasename;
   config.noPatterns_ = true;
   config.onlyPsoAndPos_ = true;
+
+  std::unique_ptr<qlever::Qlever> qleverPtr;
   try {
-    qlever::Qlever::buildIndex(config);
+    qleverPtr = qlever::buildAndRunQleverIndex(indexBasename, config);
   } catch (const std::exception& e) {
-    std::cerr << "Building the index failed: " << e.what() << std::endl;
+    std::cerr << "Building/loading the index failed: " << e.what() << std::endl;
     return 1;
   }
-  std::cout << std::endl;
-
-  // Load index.
-  std::cout << "\x1b[1mLoading index with basename \"" << indexBasename
-            << "\"\x1b[0m" << std::endl;
-  qlever::EngineConfig engineConfig{config};
-  qlever::Qlever qlever{engineConfig};
-  std::cout << std::endl;
-
-  // Suppress QLever internal logging
-  static ad_utility::NullStream nullStream;
-  ad_utility::setGlobalLoggingStream(&nullStream);
 
   // Extract query points data from simulation data
   auto queryPointsData = extractQueryPointsData(0);
 
-  std::cout << "pinning the geometries" << std::endl;
-  qlever.queryAndPinResultWithName({"geos", Variable{"?geom"}},
-                                   qlever::geometryQuery);
-
-  std::cout << "pinning the payload" << std::endl;
-  qlever.queryAndPinResultWithName({"payload", std::nullopt},
-                                   qlever::payloadQuerySingleColumn);
-
   // Create incremental query executor
-  qlever::IncrementalQueryExecutor executor(qlever);
+  qlever::IncrementalQueryExecutor executor(*qleverPtr);
+
+  // Pin the geometry and payload queries
+  executor.pinQueries();
 
   // Flag to control detailed timing output
-  constexpr bool showDetailedTiming = false;
+  constexpr bool showDetailedTiming = true;
 
   for (size_t i = 0; i < queryPointsData.size(); ++i) {
     const auto& pointData = queryPointsData[i];
 
     try {
+      // std::this_thread::sleep_for(std::chrono::milliseconds(1000));
       auto stepResult = executor.processNextPoint(pointData);
 
       // Compact single-line output for step info
@@ -95,19 +80,7 @@ int main() {
 
       // Detailed timing breakdown (controlled by flag)
       if (showDetailedTiming) {
-        std::cout << "  Timing breakdown:" << std::endl;
-        std::cout << "    Spatial query:      " << std::setw(8)
-                  << stepResult.timing.spatialQueryUs << " us" << std::endl;
-        std::cout << "    ID extraction:      " << std::setw(8)
-                  << stepResult.timing.idExtractionUs << " us" << std::endl;
-        std::cout << "    Diff computation:   " << std::setw(8)
-                  << stepResult.timing.diffComputationUs << " us" << std::endl;
-        std::cout << "    Feature query:      " << std::setw(8)
-                  << stepResult.timing.featureQueryUs << " us" << std::endl;
-        std::cout << "    MPP query:          " << std::setw(8)
-                  << stepResult.timing.mppQueryUs << " us" << std::endl;
-        std::cout << "    Total:              " << std::setw(8)
-                  << stepResult.timing.totalUs << " us" << std::endl;
+        qlever::printDetailedTimings(stepResult);
       }
 
     } catch (const std::exception& e) {

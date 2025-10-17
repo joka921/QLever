@@ -4,5 +4,6 @@ add_library(qlever
   QueryTemplates.cpp
   InterfaceFilling.cpp
   IncrementalQueryExecutor.cpp
+  IndexManager.cpp
 )
 qlever_target_link_libraries(qlever parser engine util index absl::strings)

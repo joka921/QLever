@@ -47,6 +47,9 @@ class IncrementalQueryExecutor {
   // Process the next query point and return changes from previous step
   QueryStepResult processNextPoint(const QueryPointData& pointData);
 
+  // Pin geometry and payload queries for efficient reuse
+  void pinQueries();
+
   // Reset state (useful for restarting)
   void reset() {
     previousDrivePathIds_.clear();
@@ -68,5 +71,8 @@ class IncrementalQueryExecutor {
   std::vector<DrivePath> queryMppFeatures(const std::vector<uint64_t>& mppIds,
                                           const Index& index);
 };
+
+// Print detailed timing breakdown to stdout
+void printDetailedTimings(const QueryStepResult& stepResult);
 
 }  // namespace qlever

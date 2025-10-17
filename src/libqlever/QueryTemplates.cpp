@@ -120,8 +120,9 @@ const std::string queryTemplateForMppFeatures = R"ab(
 PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
 SELECT ?dp ?type ?c1 WHERE {
   {
-    SELECT ?dp {
+    SELECT DISTINCT ?dp {
       #values#
+     ?roadPart lbm:hasDrivePaths ?dp
     }
   }
   {
@@ -142,7 +143,9 @@ std::string getCurrentDrivePathQuery(std::string_view point) {
                              {{std::string_view{"#coordinates#"}, point}});
 }
 
-std::string mppIdToIri(uint64_t id) { return absl::StrCat("lbm:dp_", id); }
+std::string mppIdToIri(uint64_t id) {
+  return absl::StrCat("lbm:roadPartId_", id);
+}
 
 std::string generateValuesClause(const std::vector<uint64_t>& mppIds) {
   std::vector<std::string> iris;
@@ -150,7 +153,7 @@ std::string generateValuesClause(const std::vector<uint64_t>& mppIds) {
   for (uint64_t id : mppIds) {
     iris.push_back(mppIdToIri(id));
   }
-  return absl::StrCat("VALUES ?dp { ", absl::StrJoin(iris, " "), " }");
+  return absl::StrCat("VALUES ?roadPart { ", absl::StrJoin(iris, " "), " }");
 }
 
 std::string getMppFeaturesQuery(const std::vector<uint64_t>& mppIds) {

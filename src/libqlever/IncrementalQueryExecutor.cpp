@@ -11,6 +11,7 @@
 #include <s2/s2point.h>
 
 #include <algorithm>
+#include <iomanip>
 #include <iostream>
 
 #include "./QueryTemplates.h"
@@ -217,6 +218,32 @@ QueryStepResult IncrementalQueryExecutor::processNextPoint(
 
   result.timing.totalUs = totalTimer.value().count();
   return result;
+}
+
+void IncrementalQueryExecutor::pinQueries() {
+  std::cout << "pinning the geometries" << std::endl;
+  qlever_.queryAndPinResultWithName({"geos", Variable{"?geom"}},
+                                    qlever::geometryQuery);
+
+  std::cout << "pinning the payload" << std::endl;
+  qlever_.queryAndPinResultWithName({"payload", std::nullopt},
+                                    qlever::payloadQuerySingleColumn);
+}
+
+void printDetailedTimings(const QueryStepResult& stepResult) {
+  std::cout << "  Timing breakdown:" << std::endl;
+  std::cout << "    Spatial query:      " << std::setw(8)
+            << stepResult.timing.spatialQueryUs << " us" << std::endl;
+  std::cout << "    ID extraction:      " << std::setw(8)
+            << stepResult.timing.idExtractionUs << " us" << std::endl;
+  std::cout << "    Diff computation:   " << std::setw(8)
+            << stepResult.timing.diffComputationUs << " us" << std::endl;
+  std::cout << "    Feature query:      " << std::setw(8)
+            << stepResult.timing.featureQueryUs << " us" << std::endl;
+  std::cout << "    MPP query:          " << std::setw(8)
+            << stepResult.timing.mppQueryUs << " us" << std::endl;
+  std::cout << "    Total:              " << std::setw(8)
+            << stepResult.timing.totalUs << " us" << std::endl;
 }
 
 }  // namespace qlever
