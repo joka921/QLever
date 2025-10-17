@@ -53,7 +53,9 @@ int main() {
   executor.pinQueries();
 
   // Flag to control detailed timing output
-  constexpr bool showDetailedTiming = true;
+  constexpr bool showDetailedTiming = false;
+  // Flag to control detailed drive path printing
+  constexpr bool showDetailedDrivePaths = true;
 
   for (size_t i = 0; i < queryPointsData.size(); ++i) {
     const auto& pointData = queryPointsData[i];
@@ -81,6 +83,22 @@ int main() {
       // Detailed timing breakdown (controlled by flag)
       if (showDetailedTiming) {
         qlever::printDetailedTimings(stepResult);
+      }
+
+      // Print detailed drive path information (controlled by flag)
+      if (showDetailedDrivePaths) {
+        // Print one added drive path from surroundings if available
+        if (!stepResult.addedDrivePaths.empty()) {
+          std::cout << "  Sample added drive path from surroundings:"
+                    << std::endl;
+          qlever::printDrivePathDetailed(stepResult.addedDrivePaths[0]);
+        }
+
+        // Print one MPP drive path if available
+        if (!stepResult.mppDrivePaths.empty()) {
+          std::cout << "  Sample MPP drive path:" << std::endl;
+          qlever::printDrivePathDetailed(stepResult.mppDrivePaths[0]);
+        }
       }
 
     } catch (const std::exception& e) {

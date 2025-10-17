@@ -15,7 +15,7 @@ namespace qlever {
 const std::string payloadQuerySingleColumn = R"(
 PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
 PREFIX geo: <http://www.opengis.net/ont/geosparql#>
-SELECT ?dp ?type ?c1 WHERE {
+SELECT ?dp ?type ?c1 ?c2 WHERE {
   ?dp a lbm:DrivePath .
   {
     BIND (0 AS ?type)
@@ -33,8 +33,23 @@ SELECT ?dp ?type ?c1 WHERE {
     BIND (3 AS ?type)
     ?dp lbm:hasGeometry/geo:asWKT ?c1 .
   }
+  UNION {
+    BIND (4 AS ?type)
+    ?dp lbm:hasStopLoc [ lbm:range ?c1; lbm:virtual ?c2]
+  }
 }
 INTERNAL SORT BY ?dp ?type
+)";
+
+const std::string payloadQuerySpeed = R"(
+PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
+PREFIX geo: <http://www.opengis.net/ont/geosparql#>
+SELECT ?dp ?speed ?start ?end ?maxSpeed ?minSpeed WHERE {
+  ?dp a lbm:DrivePath .
+  ?dp lbm:hasSpeed ?speed .
+  ?speed lbm:start ?start; lbm:end ?end; lbm:maxSpeed ?maxSpeed; lbm:minSpeed ?minSpeed]
+}
+INTERNAL SORT BY ?dp ?speed
 )";
 
 const std::string payloadQuerySpeedProfiles = R"(
@@ -63,7 +78,7 @@ SELECT * WHERE {
 const std::string queryTemplateForDrivePaths = R"ab(
 PREFIX qlss: <https://qlever.cs.uni-freiburg.de/spatialSearch/>
 PREFIX geo: <http://www.opengis.net/ont/geosparql#>
-SELECT ?dp ?type ?c1 WHERE {
+SELECT ?dp ?type ?c1 ?c2 WHERE {
   {
     SELECT ?dp {
       BIND ("POINT(#coordinates# )"^^geo:wktLiteral AS ?carPos)
@@ -77,7 +92,7 @@ SELECT ?dp ?type ?c1 WHERE {
     }
   }
   {
-    SELECT ?dp ?type ?c1 {
+    SELECT ?dp ?type ?c1 ?c2 {
       SERVICE ql:cached-result-with-name-payload {}
     }
   }
@@ -102,14 +117,14 @@ PREFIX geo: <http://www.opengis.net/ont/geosparql#>
 const std::string queryTemplateForFeatures = R"ab(
 PREFIX qlss: <https://qlever.cs.uni-freiburg.de/spatialSearch/>
 PREFIX geo: <http://www.opengis.net/ont/geosparql#>
-SELECT ?dp ?type ?c1 WHERE {
+SELECT ?dp ?type ?c1 ?c2 WHERE {
   {
     SELECT ?dp {
       SERVICE ql:cached-result-with-name-currentDrivepaths {}
     }
   }
   {
-    SELECT ?dp ?type ?c1 {
+    SELECT ?dp ?type ?c1 ?c2 {
       SERVICE ql:cached-result-with-name-payload {}
     }
   }
@@ -118,7 +133,7 @@ SELECT ?dp ?type ?c1 WHERE {
 
 const std::string queryTemplateForMppFeatures = R"ab(
 PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
-SELECT ?dp ?type ?c1 WHERE {
+SELECT ?dp ?type ?c1 ?c2 WHERE {
   {
     SELECT DISTINCT ?dp {
       #values#
@@ -126,7 +141,7 @@ SELECT ?dp ?type ?c1 WHERE {
     }
   }
   {
-    SELECT ?dp ?type ?c1 {
+    SELECT ?dp ?type ?c1 ?c2 {
       SERVICE ql:cached-result-with-name-payload {}
     }
   }

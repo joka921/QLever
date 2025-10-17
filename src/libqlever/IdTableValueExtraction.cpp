@@ -45,6 +45,15 @@ std::optional<double> getDouble(Id id) {
   }
 }
 
+// Convert an Id to a boolean if it stores a boolean type
+std::optional<bool> getBool(Id id) {
+  using enum Datatype;
+  if (id.getDatatype() == Bool) {
+    return id.getBool();
+  }
+  return std::nullopt;
+}
+
 // Convert an Id to a string representation
 std::optional<std::string> getString(Id id, const Index& index,
                                      const LocalVocab& localVocab) {

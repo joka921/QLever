@@ -85,7 +85,7 @@ std::vector<DrivePath> IncrementalQueryExecutor::queryDrivePathFeatures(
   // Build query with VALUES clause
   std::string query = R"(
 PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
-SELECT ?dp ?type ?c1 WHERE {
+SELECT ?dp ?type ?c1 ?c2 WHERE {
   {
     SELECT ?dp {
       )" + valuesClause +
@@ -93,7 +93,7 @@ SELECT ?dp ?type ?c1 WHERE {
     }
   }
   {
-    SELECT ?dp ?type ?c1 {
+    SELECT ?dp ?type ?c1 ?c2 {
       SERVICE ql:cached-result-with-name-payload {}
     }
   }
@@ -121,6 +121,111 @@ std::vector<DrivePath> IncrementalQueryExecutor::queryMppFeatures(
   // Fill interface with the results
   return fillInterfaceForSimpleFeatures(
       *result, index, std::get<0>(plan)->getVariableColumns());
+}
+
+ad_utility::HashMap<int64_t, std::vector<SpeedProfile>>
+IncrementalQueryExecutor::queryDrivePathSpeedProfiles(
+    const std::vector<Id>& drivePathIds, const Index& index) {
+  if (drivePathIds.empty()) {
+    return {};
+  }
+
+  // Build a VALUES clause with the actual Id IRIs
+  std::vector<std::string> iris;
+  iris.reserve(drivePathIds.size());
+
+  for (const Id& id : drivePathIds) {
+    auto optString =
+        ExportQueryExecutionTrees::idToStringAndType(index, id, LocalVocab{});
+    if (optString.has_value()) {
+      iris.push_back(optString->first);
+    }
+  }
+
+  if (iris.empty()) {
+    return {};
+  }
+
+  // Build VALUES clause with the actual IRIs
+  std::string valuesClause = "VALUES ?dp { ";
+  for (const auto& iri : iris) {
+    valuesClause += iri + " ";
+  }
+  valuesClause += "}";
+
+  // Build query with VALUES clause
+  std::string query = R"(
+PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
+SELECT ?dp ?start ?end ?minSpeed ?maxSpeed WHERE {
+  {
+    SELECT ?dp {
+      )" + valuesClause +
+                      R"(
+    }
+  }
+  {
+    SELECT ?dp ?start ?end ?minSpeed ?maxSpeed {
+      SERVICE ql:cached-result-with-name-speed {}
+    }
+  }
+})";
+
+  auto plan = qlever_.parseAndPlanQuery(query);
+  auto result = qlever_.getResult(plan, false);
+
+  // Fill speed profiles from the results
+  return fillSpeedProfiles(*result, index,
+                           std::get<0>(plan)->getVariableColumns());
+}
+
+ad_utility::HashMap<int64_t, std::vector<SpeedProfile>>
+IncrementalQueryExecutor::queryMppSpeedProfiles(
+    const std::vector<uint64_t>& mppIds, const Index& index) {
+  if (mppIds.empty()) {
+    return {};
+  }
+
+  // Build VALUES clause for MPP IDs
+  std::string valuesClause = generateValuesClause(mppIds);
+
+  // Build query with VALUES clause
+  std::string query = R"(
+PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
+SELECT ?dp ?start ?end ?minSpeed ?maxSpeed WHERE {
+  {
+    SELECT DISTINCT ?dp {
+      )" + valuesClause +
+                      R"(
+     ?roadPart lbm:hasDrivePaths ?dp
+    }
+  }
+  {
+    SELECT ?dp ?start ?end ?minSpeed ?maxSpeed {
+      SERVICE ql:cached-result-with-name-speed {}
+    }
+  }
+})";
+
+  auto plan = qlever_.parseAndPlanQuery(query);
+  auto result = qlever_.getResult(plan, false);
+
+  // Fill speed profiles from the results
+  return fillSpeedProfiles(*result, index,
+                           std::get<0>(plan)->getVariableColumns());
+}
+
+void IncrementalQueryExecutor::mergeSpeedProfilesIntoDrivePaths(
+    std::vector<DrivePath>& drivePaths,
+    const ad_utility::HashMap<int64_t, std::vector<SpeedProfile>>&
+        speedProfiles) {
+  std::cout << "Merging speed profiles" << std::endl;
+  for (auto& dp : drivePaths) {
+    auto it = speedProfiles.find(dp.id_);
+    if (it != speedProfiles.end()) {
+      AD_FAIL();
+      dp.speedProfiles_ = it->second;
+    }
+  }
 }
 
 QueryStepResult IncrementalQueryExecutor::processNextPoint(
@@ -162,12 +267,23 @@ QueryStepResult IncrementalQueryExecutor::processNextPoint(
       result.addedDrivePaths =
           queryDrivePathFeatures(allIds, spatialQec->getIndex());
       result.timing.featureQueryUs = featureTimer.value().count();
+
+      // Query speed profiles for added drive paths
+      auto speedProfiles =
+          queryDrivePathSpeedProfiles(allIds, spatialQec->getIndex());
+      mergeSpeedProfilesIntoDrivePaths(result.addedDrivePaths, speedProfiles);
     }
 
     // Time: Query all features from MPP (full query, no diff)
     ad_utility::Timer mppTimer{ad_utility::Timer::Started};
     result.mppDrivePaths =
         queryMppFeatures(pointData.mppIds, spatialQec->getIndex());
+
+    // Query speed profiles for MPP drive paths
+    auto mppSpeedProfiles =
+        queryMppSpeedProfiles(pointData.mppIds, spatialQec->getIndex());
+    mergeSpeedProfilesIntoDrivePaths(result.mppDrivePaths, mppSpeedProfiles);
+
     result.timing.mppQueryUs = mppTimer.value().count();
 
     // Store IDs and coordinate for next iteration
@@ -202,12 +318,23 @@ QueryStepResult IncrementalQueryExecutor::processNextPoint(
       result.addedDrivePaths =
           queryDrivePathFeatures(addedIds, spatialQec->getIndex());
       result.timing.featureQueryUs = featureTimer.value().count();
+
+      // Query speed profiles for added drive paths
+      auto speedProfiles =
+          queryDrivePathSpeedProfiles(addedIds, spatialQec->getIndex());
+      mergeSpeedProfilesIntoDrivePaths(result.addedDrivePaths, speedProfiles);
     }
 
     // Time: Query all features from MPP (full query, no diff)
     ad_utility::Timer mppTimer{ad_utility::Timer::Started};
     result.mppDrivePaths =
         queryMppFeatures(pointData.mppIds, spatialQec->getIndex());
+
+    // Query speed profiles for MPP drive paths
+    auto mppSpeedProfiles =
+        queryMppSpeedProfiles(pointData.mppIds, spatialQec->getIndex());
+    mergeSpeedProfilesIntoDrivePaths(result.mppDrivePaths, mppSpeedProfiles);
+
     result.timing.mppQueryUs = mppTimer.value().count();
 
     // Update state for next iteration
@@ -228,6 +355,10 @@ void IncrementalQueryExecutor::pinQueries() {
   std::cout << "pinning the payload" << std::endl;
   qlever_.queryAndPinResultWithName({"payload", std::nullopt},
                                     qlever::payloadQuerySingleColumn);
+
+  std::cout << "pinning the speed profiles" << std::endl;
+  qlever_.queryAndPinResultWithName({"speed", std::nullopt},
+                                    qlever::payloadQuerySpeedProfiles);
 }
 
 void printDetailedTimings(const QueryStepResult& stepResult) {
