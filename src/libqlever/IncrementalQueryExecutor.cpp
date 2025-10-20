@@ -217,7 +217,6 @@ SELECT ?dp ?start ?end ?minSpeed ?maxSpeed WHERE {
 void IncrementalQueryExecutor::mergeSpeedProfilesIntoDrivePaths(
     std::vector<DrivePath>& drivePaths,
     const ad_utility::HashMap<Id, std::vector<SpeedProfile>>& speedProfiles) {
-  std::cout << "Merging speed profiles" << std::endl;
   for (auto& dp : drivePaths) {
     // Use dpId_ instead of id_ for matching
     auto it = speedProfiles.find(dp.dpId_);

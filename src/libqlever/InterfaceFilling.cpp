@@ -216,7 +216,6 @@ ad_utility::HashMap<Id, std::vector<SpeedProfile>> fillSpeedProfiles(
         start.value(), end.value(), maxSpeed.value(), minSpeed.value()});
   }
 
-  std::cout << "found " << speedProfilesMap.size() << " speed profiles\n";
   return speedProfilesMap;
 }
 

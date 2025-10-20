@@ -53,20 +53,20 @@ int main() {
   executor.pinQueries();
 
   // Flag to control detailed timing output
-  constexpr bool showDetailedTiming = false;
+  constexpr bool showDetailedTiming = true;
   // Flag to control detailed drive path printing
-  constexpr bool showDetailedDrivePaths = false;
+  constexpr bool showDetailedDrivePaths = true;
 
   for (size_t i = 0; i < queryPointsData.size(); ++i) {
     const auto& pointData = queryPointsData[i];
 
     try {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+      // std::this_thread::sleep_for(std::chrono::milliseconds(1000));
       auto stepResult = executor.processNextPoint(pointData);
 
       // Compact single-line output for step info
-      std::cout << "Step " << (i + 1) << " @ " << pointData.coordinates << " - "
-                << stepResult.timing.totalUs << " us";
+      std::cout << "\nStep " << (i + 1) << " @ " << pointData.coordinates
+                << " - " << stepResult.timing.totalUs << " us";
       if (stepResult.distanceFromPreviousMeters.has_value()) {
         std::cout << " - Distance: "
                   << stepResult.distanceFromPreviousMeters.value() << " m";
