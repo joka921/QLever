@@ -34,7 +34,9 @@ struct QueryStepResult {
   std::vector<Id> removedDrivePathIds;
   std::vector<DrivePath> addedDrivePaths;
   std::vector<DrivePath> mppDrivePaths;
+  std::vector<Id> removedMppDrivePathIds;
   size_t totalDrivePaths;
+  size_t totalMppDrivePaths;
   std::optional<double> distanceFromPreviousMeters;
   QueryStepTiming timing;
 };

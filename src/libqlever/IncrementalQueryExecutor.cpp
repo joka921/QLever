@@ -424,6 +424,7 @@ QueryStepResult IncrementalQueryExecutor::processNextPoint(
     // Store state for next iteration
     previousDrivePathIds_ = std::move(currentDrivePathIds);
     result.totalDrivePaths = previousDrivePathIds_.size();
+    result.totalMppDrivePaths = currentMppDpCounts.size();
     previousCoordinate_ = pointData.wgs84Coord;
     previousMppIds_ = pointData.mppIds;
     previousMppDrivePathCounts_ = std::move(currentMppDpCounts);
@@ -486,10 +487,12 @@ QueryStepResult IncrementalQueryExecutor::processNextPoint(
       }
     }
 
+    /*
     std::cout << "total mpp ids in new input:" << pointData.mppIds.size()
               << std::endl;
     std::cout << "numAddedMppIds " << addedMppIds.size() << std::endl;
     std::cout << "removedMppIds " << removedMppIds.size() << std::endl;
+    */
 
     // Start with previous counts
     auto currentMppDpCounts = previousMppDrivePathCounts_;
@@ -498,7 +501,7 @@ QueryStepResult IncrementalQueryExecutor::processNextPoint(
     if (!addedMppIds.empty()) {
       auto addedCounts =
           queryRoadRefToDrivePaths(addedMppIds, true, spatialQec->getIndex());
-      std::cout << "addedDPCounts size " << addedCounts.size() << std::endl;
+      // std::cout << "addedDPCounts size " << addedCounts.size() << std::endl;
       for (const auto& [dpId, cnt] : addedCounts) {
         currentMppDpCounts[dpId] += cnt;
       }
@@ -508,7 +511,8 @@ QueryStepResult IncrementalQueryExecutor::processNextPoint(
     if (!removedMppIds.empty()) {
       auto removedCounts = queryRoadRefToDrivePaths(removedMppIds, false,
                                                     spatialQec->getIndex());
-      std::cout << "removedDPCounts size " << removedCounts.size() << std::endl;
+      // std::cout << "removedDPCounts size " << removedCounts.size() <<
+      // std::endl;
       for (const auto& [dpId, cnt] : removedCounts) {
         if (currentMppDpCounts[dpId] <= cnt) {
           currentMppDpCounts.erase(dpId);
@@ -518,12 +522,19 @@ QueryStepResult IncrementalQueryExecutor::processNextPoint(
       }
     }
 
-    // Determine which drive paths are newly added
+    // Determine which drive paths are newly added and which were removed
     std::vector<Id> newlyAddedMppDps;
     for (const auto& [dpId, cnt] : currentMppDpCounts) {
       if (previousMppDrivePathCounts_.find(dpId) ==
           previousMppDrivePathCounts_.end()) {
         newlyAddedMppDps.push_back(dpId);
+      }
+    }
+
+    // Determine which drive paths were removed (in previous but not in current)
+    for (const auto& [dpId, cnt] : previousMppDrivePathCounts_) {
+      if (currentMppDpCounts.find(dpId) == currentMppDpCounts.end()) {
+        result.removedMppDrivePathIds.push_back(dpId);
       }
     }
 
@@ -537,8 +548,10 @@ QueryStepResult IncrementalQueryExecutor::processNextPoint(
       auto mppSpeedProfiles = queryDrivePathSpeedProfilesFromIds(
           newlyAddedMppDps, spatialQec->getIndex());
       mergeSpeedProfilesIntoDrivePaths(result.mppDrivePaths, mppSpeedProfiles);
+      /*
       std::cout << "time for mpp drive path feature query "
                 << featureTimer.value().count() << "us" << std::endl;
+                */
     }
 
     result.timing.mppQueryUs = mppTimer.value().count();
@@ -547,6 +560,7 @@ QueryStepResult IncrementalQueryExecutor::processNextPoint(
     previousDrivePathIds_ = std::move(currentDrivePathIds);
     previousCoordinate_ = pointData.wgs84Coord;
     result.totalDrivePaths = previousDrivePathIds_.size();
+    result.totalMppDrivePaths = currentMppDpCounts.size();
     previousMppIds_ = pointData.mppIds;
     previousMppDrivePathCounts_ = std::move(currentMppDpCounts);
   }

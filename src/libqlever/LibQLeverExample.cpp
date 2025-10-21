@@ -76,12 +76,15 @@ int main() {
       }
       std::cout << std::endl;
 
-      // Compact single-line output for results
-      std::cout << "  Num DPs (Total/Added/Removed/MPP): "
+      // Compact output for results
+      std::cout << "  DPs in ROI (total/added/removed): "
                 << stepResult.totalDrivePaths << "/"
                 << stepResult.addedDrivePaths.size() << "/"
-                << stepResult.removedDrivePathIds.size() << "/"
-                << stepResult.mppDrivePaths.size() << std::endl;
+                << stepResult.removedDrivePathIds.size() << std::endl;
+      std::cout << "  DPs in MPP (total/added/removed): "
+                << stepResult.totalMppDrivePaths << "/"
+                << stepResult.mppDrivePaths.size() << "/"
+                << stepResult.removedMppDrivePathIds.size() << std::endl;
 
       // Detailed timing breakdown (controlled by flag)
       if (showDetailedTiming) {
