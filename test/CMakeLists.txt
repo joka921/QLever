@@ -24,7 +24,7 @@ endfunction()
 # if a test binary requires multiple sources
 function(linkAndDiscoverTest basename)
     linkTest(${basename} ${ARGN})
-    gtest_discover_tests(${basename} ${basename} DISCOVERY_TIMEOUT 600)
+    gtest_discover_tests(${basename} ${basename} DISCOVERY_TIMEOUT 600 PROPERTIES LABELS "${basename}")
 endfunction()
 
 # Usage: `linkAndDiscoverTestSerial(basename, [additionalLibraries...]`
@@ -34,7 +34,7 @@ endfunction()
 function(linkAndDiscoverTestSerial basename)
     linkTest(${basename} ${ARGN})
     gtest_discover_tests(${basename} ${basename} DISCOVERY_TIMEOUT 600 PROPERTIES RUN_SERIAL
-            TRUE)
+            TRUE LABELS "${basename}")
 endfunction()
 
 if (SINGLE_TEST_BINARY)
@@ -244,6 +244,8 @@ addLinkAndDiscoverTest(StreamableBodyTest http)
 
 addLinkAndDiscoverTest(StreamableGeneratorTest)
 
+addLinkAndDiscoverTestNoLibs(StringBatcherTest)
+
 addLinkAndDiscoverTest(AcceptHeaderTest mediaTypes httpParser)
 
 addLinkAndDiscoverTestNoLibs(CompactStringVectorTest)
@@ -260,6 +262,8 @@ addLinkAndDiscoverTest(VocabularyTest index)
 addLinkAndDiscoverTestNoLibs(IteratorTest)
 
 addLinkAndDiscoverTestNoLibs(ViewsTest)
+
+addLinkAndDiscoverTestNoLibs(TakeUntilInclusiveViewTest)
 
 addLinkAndDiscoverTest(ForwardTest)
 
@@ -472,3 +476,5 @@ addLinkAndDiscoverTestSerial(QueryRewriteUtilTest engine)
 addLinkAndDiscoverTestSerial(HttpErrorTest engine)
 
 addLinkAndDiscoverTest(TimeTracerTest)
+
+addLinkAndDiscoverTestNoLibs(SourceLocationTest)

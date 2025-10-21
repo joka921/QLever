@@ -283,19 +283,22 @@ CompressedRelationReader::asyncParallelBlockGenerator(
   return ad_utility::InputRangeTypeErased{std::move(generator)};
 }
 // _____________________________________________________________________________
+auto CompressedRelationReader::FilterDuplicatesAndGraphs::isGraphAllowedLambda()
+    const {
+  return [this](Id graph) { return graphFilter_.isGraphAllowed(graph); };
+}
+
+// _____________________________________________________________________________
 bool CompressedRelationReader::FilterDuplicatesAndGraphs::
     blockNeedsFilteringByGraph(const CompressedBlockMetadata& metadata) const {
-  if (!desiredGraphs_.has_value()) {
+  if (graphFilter_.areAllGraphsAllowed()) {
     return false;
   }
   if (!metadata.graphInfo_.has_value()) {
     return true;
   }
   const auto& graphInfo = metadata.graphInfo_.value();
-  return !ql::ranges::all_of(
-      graphInfo, [&wantedGraphs = desiredGraphs_.value()](Id containedGraph) {
-        return wantedGraphs.contains(containedGraph);
-      });
+  return !ql::ranges::all_of(graphInfo, isGraphAllowedLambda());
 }
 
 // _____________________________________________________________________________
@@ -306,14 +309,9 @@ bool CompressedRelationReader::FilterDuplicatesAndGraphs::
   auto graphIdFromRow = [graphColumn = graphColumn_](const auto& row) {
     return row[graphColumn];
   };
-  auto isDesiredGraphId = [this]() {
-    return [&wantedGraphs = desiredGraphs_.value()](Id id) {
-      return wantedGraphs.contains(id);
-    };
-  };
   if (needsFilteringByGraph) {
     auto removedRange = ql::ranges::remove_if(
-        block, std::not_fn(isDesiredGraphId()), graphIdFromRow);
+        block, std::not_fn(isGraphAllowedLambda()), graphIdFromRow);
 #ifdef QLEVER_CPP_17
     block.erase(removedRange, block.end());
 #else
@@ -321,8 +319,8 @@ bool CompressedRelationReader::FilterDuplicatesAndGraphs::
 #endif
   } else {
     AD_EXPENSIVE_CHECK(
-        !desiredGraphs_.has_value() ||
-        ql::ranges::all_of(block, isDesiredGraphId(), graphIdFromRow));
+        graphFilter_.areAllGraphsAllowed() ||
+        ql::ranges::all_of(block, isGraphAllowedLambda(), graphIdFromRow));
   }
   return needsFilteringByGraph;
 }
@@ -355,17 +353,13 @@ bool CompressedRelationReader::FilterDuplicatesAndGraphs::postprocessBlock(
 // ______________________________________________________________________________
 bool CompressedRelationReader::FilterDuplicatesAndGraphs::canBlockBeSkipped(
     const CompressedBlockMetadata& block) const {
-  if (!desiredGraphs_.has_value()) {
+  if (graphFilter_.areAllGraphsAllowed()) {
     return false;
   }
   if (!block.graphInfo_.has_value()) {
     return false;
   }
-  const auto& containedGraphs = block.graphInfo_.value();
-  return ql::ranges::none_of(
-      desiredGraphs_.value(), [&containedGraphs](const auto& desiredGraph) {
-        return ad_utility::contains(containedGraphs, desiredGraph);
-      });
+  return ql::ranges::none_of(block.graphInfo_.value(), isGraphAllowedLambda());
 }
 
 // _____________________________________________________________________________
@@ -794,7 +788,7 @@ DecompressedBlock CompressedRelationReader::readPossiblyIncompleteBlock(
                                       std::nullopt,
                                       std::nullopt,
                                       {},
-                                      scanConfig.graphFilter_.desiredGraphs_};
+                                      scanConfig.graphFilter_.graphFilter_};
   auto config = getScanConfig(specForAllColumns,
                               std::move(allAdditionalColumns), locatedTriples);
 
@@ -1329,8 +1323,8 @@ BlockMetadataRanges CompressedRelationReader::getRelevantBlocks(
 }
 
 // _____________________________________________________________________________
-auto CompressedRelationReader::getFirstAndLastTriple(
-    const CompressedRelationReader::ScanSpecAndBlocks& metadataAndBlocks,
+auto CompressedRelationReader::getFirstAndLastTripleIgnoringGraph(
+    const ScanSpecAndBlocks& metadataAndBlocks,
     const LocatedTriplesPerBlock& locatedTriplesPerBlock) const
     -> std::optional<ScanSpecAndBlocksAndBounds::FirstAndLastTriple> {
   if (metadataAndBlocks.sizeBlockMetadata_ == 0) {
@@ -1339,13 +1333,14 @@ auto CompressedRelationReader::getFirstAndLastTriple(
   const auto& blocks = metadataAndBlocks.getBlockMetadataView();
   const auto& scanSpec = metadataAndBlocks.scanSpec_;
 
-  ScanSpecification scanSpecForAllColumns{
-      std::nullopt, std::nullopt, std::nullopt, {}, std::nullopt};
+  ScanSpecification scanSpecForAllColumns{std::nullopt, std::nullopt,
+                                          std::nullopt};
   auto config =
       getScanConfig(scanSpecForAllColumns,
                     std::array{ColumnIndex{ADDITIONAL_COLUMN_GRAPH_ID}},
                     locatedTriplesPerBlock);
-  auto scanBlock = [&](const CompressedBlockMetadata& block) {
+  auto scanBlock = [this, &scanSpec, &config, &locatedTriplesPerBlock](
+                       const CompressedBlockMetadata& block) {
     // Note: the following call only returns the part of the block that
     // matches the `col0` and `col1`.
     return readPossiblyIncompleteBlock(scanSpec, config, block, std::nullopt,
@@ -1964,7 +1959,7 @@ auto CompressedRelationReader::getScanConfig(
     }
     return {ql::ranges::distance(columnIndices.begin(), it), false};
   }();
-  FilterDuplicatesAndGraphs graphFilter{scanSpec.graphsToFilter(),
+  FilterDuplicatesAndGraphs graphFilter{scanSpec.graphFilter(),
                                         graphColumnIndex, deleteGraphColumn};
   return {std::move(columnIndices), std::move(graphFilter), locatedTriples};
 }
@@ -1986,19 +1981,20 @@ auto createErrorMessage = [](const auto& b1, const auto& b2,
 // _____________________________________________________________________________
 // Check if the provided `Range` holds less than two `CompressedBlockMetadata`
 // values.
-template <typename Range>
-requires ql::ranges::input_range<Range>
-static bool checkBlockRangeSizeLessThanTwo(const Range& blockMetadataRange) {
+CPP_template(typename Range)(
+    requires ql::ranges::input_range<
+        Range>) static bool checkBlockRangeSizeLessThanTwo(const Range&
+                                                               blockMetadataRange) {
   auto begin = ql::ranges::begin(blockMetadataRange);
   auto end = ql::ranges::end(blockMetadataRange);
   return begin == end || ql::ranges::next(begin) == end;
 };
 
 // _____________________________________________________________________________
-template <typename Range>
-requires ql::ranges::input_range<Range>
-static void checkBlockMetadataInvariantOrderAndUniquenessImpl(
-    const Range& blockMetadataRange) {
+CPP_template(typename Range)(
+    requires ql::ranges::input_range<
+        Range>) static void checkBlockMetadataInvariantOrderAndUniquenessImpl(const Range&
+                                                                                  blockMetadataRange) {
   if (checkBlockRangeSizeLessThanTwo(blockMetadataRange)) {
     return;
   }
@@ -2024,9 +2020,7 @@ static void checkBlockMetadataInvariantOrderAndUniquenessImpl(
 }
 
 // ____________________________________________________________________________
-template <typename Range>
-requires ql::ranges::input_range<Range>
-static void checkBlockMetadataInvariantBlockConsistencyImpl(
+CPP_template(typename Range)(requires ql::ranges::input_range<Range>) static void checkBlockMetadataInvariantBlockConsistencyImpl(
     const Range& blockMetadataRange, size_t firstFreeColIndex) {
   if (checkBlockRangeSizeLessThanTwo(blockMetadataRange)) {
     return;
@@ -2077,15 +2071,15 @@ CompressedRelationReader::ScanSpecAndBlocks::getBlockMetadataSpan() const {
   // ScanSpecAndBlocks must contain exactly one BlockMetadataRange to be
   // accessible as a span.
   AD_CONTRACT_CHECK(blockMetadata_.size() == 1);
-  // `std::span` object requires contiguous range.
+  // `ql::span` object requires contiguous range.
   static_assert(ql::ranges::contiguous_range<BlockMetadataRange>);
   const auto& blockMetadataRange = blockMetadata_.front();
-  return std::span(blockMetadataRange.begin(), blockMetadataRange.end());
+  return ql::span(blockMetadataRange.begin(), blockMetadataRange.end());
 }
 
 // _____________________________________________________________________________
 void CompressedRelationReader::ScanSpecAndBlocks::checkBlockMetadataInvariant(
-    std::span<const CompressedBlockMetadata> blocks, size_t firstFreeColIndex) {
+    ql::span<const CompressedBlockMetadata> blocks, size_t firstFreeColIndex) {
   checkBlockMetadataInvariantOrderAndUniquenessImpl(blocks);
   checkBlockMetadataInvariantBlockConsistencyImpl(blocks, firstFreeColIndex);
 }

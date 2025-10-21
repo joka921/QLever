@@ -6,6 +6,7 @@
 
 #include "./GTestHelpers.h"
 #include "./TripleComponentTestHelpers.h"
+#include "backports/StartsWithAndEndsWith.h"
 #include "engine/NamedResultCache.h"
 #include "global/SpecialIds.h"
 #include "index/IndexImpl.h"
@@ -96,8 +97,6 @@ void checkConsistencyBetweenPatternPredicateAndAdditionalColumn(
   auto checkConsistencyForCol0IdAndPermutation =
       [&](Id col0Id, Permutation::Enum permutation, size_t subjectColIdx,
           size_t objectColIdx) {
-        auto cancellationDummy =
-            std::make_shared<ad_utility::CancellationHandle<>>();
         auto scanResult = index.scan(
             ScanSpecification{col0Id, std::nullopt, std::nullopt}, permutation,
             std::array{ColumnIndex{ADDITIONAL_COLUMN_INDEX_SUBJECT_PATTERN},
@@ -125,15 +124,13 @@ void checkConsistencyBetweenPatternPredicateAndAdditionalColumn(
     checkConsistencyForCol0IdAndPermutation(objectId, OSP, 0, col0IdTag);
   };
 
-  auto cancellationHandle =
-      std::make_shared<ad_utility::CancellationHandle<>>();
   auto predicates = index.getImpl().PSO().getDistinctCol0IdsAndCounts(
-      cancellationHandle, locatedTriplesSnapshot);
+      cancellationDummy, locatedTriplesSnapshot);
   for (const auto& predicate : predicates.getColumn(0)) {
     checkConsistencyForPredicate(predicate);
   }
   auto objects = index.getImpl().OSP().getDistinctCol0IdsAndCounts(
-      cancellationHandle, locatedTriplesSnapshot);
+      cancellationDummy, locatedTriplesSnapshot);
   for (const auto& object : objects.getColumn(0)) {
     checkConsistencyForObject(object);
   }
@@ -195,7 +192,8 @@ Index makeTestIndex(const std::string& indexBasename, TestIndexConfig c) {
       // Extract prefixes without angle brackets from the EncodedIriManager
       std::vector<std::string> prefixes;
       for (const auto& prefix : c.encodedIriManager.value().prefixes_) {
-        AD_CORRECTNESS_CHECK(prefix.starts_with('<') && !prefix.ends_with('>'));
+        AD_CORRECTNESS_CHECK(ql::starts_with(prefix, '<') &&
+                             !ql::ends_with(prefix, '>'));
         prefixes.push_back(prefix.substr(1));
       }
       index.getImpl().setPrefixesForEncodedValues(std::move(prefixes));
@@ -359,10 +357,10 @@ QueryExecutionContext* getQec(std::optional<std::string> turtleInput,
 std::function<Id(const std::string&)> makeGetId(const Index& index) {
   return [&index](const std::string& el) {
     auto literalOrIri = [&el]() -> TripleComponent {
-      if (el.starts_with('<') || el.starts_with('@')) {
+      if (ql::starts_with(el, '<') || ql::starts_with(el, '@')) {
         return TripleComponent::Iri::fromIriref(el);
       } else {
-        AD_CONTRACT_CHECK(el.starts_with('\"'));
+        AD_CONTRACT_CHECK(ql::starts_with(el, '\"'));
         return TripleComponent::Literal::fromStringRepresentation(el);
       }
     }();
