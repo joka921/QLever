@@ -35,6 +35,14 @@ int main() {
   config.noPatterns_ = true;
   config.onlyPsoAndPos_ = true;
 
+  config.prefixesForIdEncodedIrisWithBitPattern_.push_back(
+      {"http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#dp_",
+       16, 32});
+  config.prefixesForIdEncodedIrisWithBitPattern_.push_back(
+      {"http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/"
+       "behaviorMap#roadPartId_",
+       16, 32});
+
   std::unique_ptr<qlever::Qlever> qleverPtr;
   setRuntimeParameter<&RuntimeParameters::websocketUpdatesEnabled_>(false);
   try {
@@ -58,7 +66,6 @@ int main() {
   // Flag to control detailed drive path printing
   constexpr bool showDetailedDrivePaths = false;
 
-  // for (;;) {
   for (size_t i = 0; i < queryPointsData.size(); ++i) {
     // for (size_t i = 0; i < 5; ++i) {
     const auto& pointData = queryPointsData[i];
@@ -112,5 +119,4 @@ int main() {
       return 1;
     }
   }
-  //}
 }
