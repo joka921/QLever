@@ -63,6 +63,11 @@ class IncrementalQueryExecutor {
   std::optional<Wgs84Coord> previousCoordinate_;
   bool isFirstStep_ = true;
 
+  // MPP diff tracking
+  std::vector<uint64_t> previousMppIds_;
+  // Map from drive path Id to count of road refs leading to it
+  ad_utility::HashMap<Id, size_t> previousMppDrivePathCounts_;
+
   // Query for features of specific drive path IDs only
   std::vector<DrivePath> queryDrivePathFeatures(
       const std::vector<Id>& drivePathIds, const Index& index);
@@ -84,6 +89,19 @@ class IncrementalQueryExecutor {
   void mergeSpeedProfilesIntoDrivePaths(
       std::vector<DrivePath>& drivePaths,
       const ad_utility::HashMap<Id, std::vector<SpeedProfile>>& speedProfiles);
+
+  // Query road ref to drive path mapping
+  ad_utility::HashMap<Id, size_t> queryRoadRefToDrivePaths(
+      const std::vector<uint64_t>& mppIds, bool added, const Index& index);
+
+  // Query features for specific drive path Ids (from VALUES clause)
+  std::vector<DrivePath> queryDrivePathFeaturesFromIds(
+      const std::vector<Id>& dpIds, const Index& index);
+
+  // Query speed profiles for specific drive path Ids (from VALUES clause)
+  ad_utility::HashMap<Id, std::vector<SpeedProfile>>
+  queryDrivePathSpeedProfilesFromIds(const std::vector<Id>& dpIds,
+                                     const Index& index);
 };
 
 // Print detailed timing breakdown to stdout

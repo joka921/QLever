@@ -36,6 +36,7 @@ int main() {
   config.onlyPsoAndPos_ = true;
 
   std::unique_ptr<qlever::Qlever> qleverPtr;
+  setRuntimeParameter<&RuntimeParameters::websocketUpdatesEnabled_>(false);
   try {
     qleverPtr = qlever::buildAndRunQleverIndex(indexBasename, config);
   } catch (const std::exception& e) {
@@ -53,11 +54,13 @@ int main() {
   executor.pinQueries();
 
   // Flag to control detailed timing output
-  constexpr bool showDetailedTiming = true;
+  constexpr bool showDetailedTiming = false;
   // Flag to control detailed drive path printing
-  constexpr bool showDetailedDrivePaths = true;
+  constexpr bool showDetailedDrivePaths = false;
 
+  // for (;;) {
   for (size_t i = 0; i < queryPointsData.size(); ++i) {
+    // for (size_t i = 0; i < 5; ++i) {
     const auto& pointData = queryPointsData[i];
 
     try {
@@ -106,4 +109,5 @@ int main() {
       return 1;
     }
   }
+  //}
 }

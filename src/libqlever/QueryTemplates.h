@@ -22,6 +22,9 @@ extern const std::string queryTemplateForDrivePaths;
 extern const std::string queryTemplateForCurrentDrivePaths;
 extern const std::string queryTemplateForFeatures;
 extern const std::string queryTemplateForMppFeatures;
+extern const std::string queryTemplateForRoadRefToDp;
+extern const std::string queryTemplateForDpFeaturesFromIds;
+extern const std::string queryTemplateForDpSpeedFromIds;
 
 // Helper function to instantiate query template with coordinates
 std::string getQueryForPoint(std::string_view point);
@@ -37,5 +40,13 @@ std::string generateValuesClause(const std::vector<uint64_t>& mppIds);
 
 // Helper function to get MPP-based query for features
 std::string getMppFeaturesQuery(const std::vector<uint64_t>& mppIds);
+
+// Helper function to generate VALUES clause with ?roadPart and ?added variables
+std::string generateValuesClauseWithAdded(const std::vector<uint64_t>& mppIds,
+                                          bool added);
+
+// Helper function to get road ref to drive path mapping query
+std::string getRoadRefToDpQuery(const std::vector<uint64_t>& mppIds,
+                                bool added);
 
 }  // namespace qlever

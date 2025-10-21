@@ -133,6 +133,14 @@ SELECT ?dp ?type ?c1 ?c2 WHERE {
 }
 )ab";
 
+const std::string queryTemplateForRoadRefToDp = R"ab(
+PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
+    SELECT ?dp ?added (COUNT(?roadPart) as ?cnt) {
+      #values#
+     ?roadPart lbm:hasDrivePaths ?dp
+    } GROUP BY ?dp ?added
+)ab";
+
 const std::string queryTemplateForMppFeatures = R"ab(
 PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
 SELECT ?dp ?type ?c1 ?c2 WHERE {
@@ -145,6 +153,38 @@ SELECT ?dp ?type ?c1 ?c2 WHERE {
   {
     SELECT ?dp ?type ?c1 ?c2 {
       SERVICE ql:cached-result-with-name-payload {}
+    }
+  }
+}
+)ab";
+
+const std::string queryTemplateForDpFeaturesFromIds = R"ab(
+PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
+SELECT ?dp ?type ?c1 ?c2 WHERE {
+  {
+    SELECT ?dp {
+      #values#
+    }
+  }
+  {
+    SELECT ?dp ?type ?c1 ?c2 {
+      SERVICE ql:cached-result-with-name-payload {}
+    }
+  }
+}
+)ab";
+
+const std::string queryTemplateForDpSpeedFromIds = R"ab(
+PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
+SELECT ?dp ?start ?end ?minSpeed ?maxSpeed WHERE {
+  {
+    SELECT ?dp {
+      #values#
+    }
+  }
+  {
+    SELECT ?dp ?start ?end ?minSpeed ?maxSpeed {
+      SERVICE ql:cached-result-with-name-speed {}
     }
   }
 }
@@ -176,6 +216,25 @@ std::string generateValuesClause(const std::vector<uint64_t>& mppIds) {
 std::string getMppFeaturesQuery(const std::vector<uint64_t>& mppIds) {
   std::string valuesClause = generateValuesClause(mppIds);
   return absl::StrReplaceAll(queryTemplateForMppFeatures,
+                             {{std::string_view{"#values#"}, valuesClause}});
+}
+
+std::string generateValuesClauseWithAdded(const std::vector<uint64_t>& mppIds,
+                                          bool added) {
+  std::vector<std::string> entries;
+  entries.reserve(mppIds.size());
+  std::string addedStr = added ? "true" : "false";
+  for (uint64_t id : mppIds) {
+    entries.push_back(absl::StrCat("(", mppIdToIri(id), " ", addedStr, ")"));
+  }
+  return absl::StrCat("VALUES (?roadPart ?added) { ",
+                      absl::StrJoin(entries, " "), " }");
+}
+
+std::string getRoadRefToDpQuery(const std::vector<uint64_t>& mppIds,
+                                bool added) {
+  std::string valuesClause = generateValuesClauseWithAdded(mppIds, added);
+  return absl::StrReplaceAll(queryTemplateForRoadRefToDp,
                              {{std::string_view{"#values#"}, valuesClause}});
 }
 
