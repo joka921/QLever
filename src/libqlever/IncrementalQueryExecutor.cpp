@@ -22,6 +22,42 @@
 
 namespace qlever {
 
+// Helper function to extract column index for a variable, with assertion
+static ColumnIndex getColumnIndex(const VariableToColumnMap& variableColumns,
+                                  const Variable& var) {
+  auto it = variableColumns.find(var);
+  AD_CONTRACT_CHECK(it != variableColumns.end(),
+                    "Variable " + var.name() + " not found in result");
+  return it->second.columnIndex_;
+}
+
+// Helper to convert vector of Ids to VALUES clause
+static std::string buildValuesClauseFromIds(
+    const std::vector<Id>& dpIds, const Index& index,
+    std::string_view variableName = "?dp") {
+  std::vector<std::string> iris;
+  iris.reserve(dpIds.size());
+
+  for (const Id& id : dpIds) {
+    auto optString =
+        ExportQueryExecutionTrees::idToStringAndType(index, id, LocalVocab{});
+    if (optString.has_value()) {
+      iris.push_back(optString->first);
+    }
+  }
+
+  if (iris.empty()) {
+    return "";
+  }
+
+  std::string result = "VALUES " + std::string(variableName) + " { ";
+  for (const auto& iri : iris) {
+    result += iri + " ";
+  }
+  result += "}";
+  return result;
+}
+
 // Calculate distance in meters between two WGS84 coordinates
 static double calculateDistanceMeters(const Wgs84Coord& coord1,
                                       const Wgs84Coord& coord2) {
@@ -69,54 +105,6 @@ std::vector<DrivePath> IncrementalQueryExecutor::queryMppFeatures(
       *result, index, std::get<0>(plan)->getVariableColumns());
 }
 
-ad_utility::HashMap<Id, std::vector<SpeedProfile>>
-IncrementalQueryExecutor::queryMppSpeedProfiles(
-    const std::vector<uint64_t>& mppIds, const Index& index) {
-  if (mppIds.empty()) {
-    return {};
-  }
-
-  // Build VALUES clause for MPP IDs
-  std::string valuesClause = generateValuesClause(mppIds);
-
-  // Build query with VALUES clause
-  std::string query = R"(
-PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
-SELECT ?dp ?start ?end ?minSpeed ?maxSpeed WHERE {
-  {
-    SELECT DISTINCT ?dp {
-      )" + valuesClause +
-                      R"(
-     ?roadPart lbm:hasDrivePaths ?dp
-    }
-  }
-  {
-    SELECT ?dp ?start ?end ?minSpeed ?maxSpeed {
-      SERVICE ql:cached-result-with-name-speed {}
-    }
-  }
-})";
-
-  auto plan = qlever_.parseAndPlanQuery(query);
-  auto result = qlever_.getResult(plan, false);
-
-  // Fill speed profiles from the results
-  return fillSpeedProfiles(*result, index,
-                           std::get<0>(plan)->getVariableColumns());
-}
-
-void IncrementalQueryExecutor::mergeSpeedProfilesIntoDrivePaths(
-    std::vector<DrivePath>& drivePaths,
-    const ad_utility::HashMap<Id, std::vector<SpeedProfile>>& speedProfiles) {
-  for (auto& dp : drivePaths) {
-    // Use dpId_ instead of id_ for matching
-    auto it = speedProfiles.find(dp.dpId_);
-    if (it != speedProfiles.end()) {
-      dp.speedProfiles_ = it->second;
-    }
-  }
-}
-
 ad_utility::HashMap<Id, size_t>
 IncrementalQueryExecutor::queryRoadRefToDrivePaths(
     const std::vector<uint64_t>& mppIds, bool added, const Index& index) {
@@ -131,16 +119,8 @@ IncrementalQueryExecutor::queryRoadRefToDrivePaths(
   const auto& table = result->idTable();
   auto& variableColumns = std::get<0>(plan)->getVariableColumns();
 
-  auto getDpCol = variableColumns.find(Variable{"?dp"});
-  auto getCntCol = variableColumns.find(Variable{"?cnt"});
-
-  AD_CONTRACT_CHECK(getDpCol != variableColumns.end(),
-                    "Variable ?dp not found in road ref to dp result");
-  AD_CONTRACT_CHECK(getCntCol != variableColumns.end(),
-                    "Variable ?cnt not found in road ref to dp result");
-
-  ColumnIndex dpCol = getDpCol->second.columnIndex_;
-  ColumnIndex cntCol = getCntCol->second.columnIndex_;
+  ColumnIndex dpCol = getColumnIndex(variableColumns, Variable{"?dp"});
+  ColumnIndex cntCol = getColumnIndex(variableColumns, Variable{"?cnt"});
 
   ad_utility::HashMap<Id, size_t> drivePathCounts;
 
@@ -162,28 +142,10 @@ std::vector<DrivePath> IncrementalQueryExecutor::queryDrivePathFeaturesFromIds(
     return {};
   }
 
-  // Build a VALUES clause with the actual Id IRIs
-  std::vector<std::string> iris;
-  iris.reserve(dpIds.size());
-
-  for (const Id& id : dpIds) {
-    auto optString =
-        ExportQueryExecutionTrees::idToStringAndType(index, id, LocalVocab{});
-    if (optString.has_value()) {
-      iris.push_back(optString->first);
-    }
-  }
-
-  if (iris.empty()) {
+  auto valuesClause = buildValuesClauseFromIds(dpIds, index);
+  if (valuesClause.empty()) {
     return {};
   }
-
-  // Build VALUES clause
-  std::string valuesClause = "VALUES ?dp { ";
-  for (const auto& iri : iris) {
-    valuesClause += iri + " ";
-  }
-  valuesClause += "}";
 
   // Use the template and replace #values#
   std::string query =
@@ -204,28 +166,10 @@ IncrementalQueryExecutor::queryDrivePathSpeedProfilesFromIds(
     return {};
   }
 
-  // Build a VALUES clause with the actual Id IRIs
-  std::vector<std::string> iris;
-  iris.reserve(dpIds.size());
-
-  for (const Id& id : dpIds) {
-    auto optString =
-        ExportQueryExecutionTrees::idToStringAndType(index, id, LocalVocab{});
-    if (optString.has_value()) {
-      iris.push_back(optString->first);
-    }
-  }
-
-  if (iris.empty()) {
+  auto valuesClause = buildValuesClauseFromIds(dpIds, index);
+  if (valuesClause.empty()) {
     return {};
   }
-
-  // Build VALUES clause
-  std::string valuesClause = "VALUES ?dp { ";
-  for (const auto& iri : iris) {
-    valuesClause += iri + " ";
-  }
-  valuesClause += "}";
 
   // Use the template and replace #values#
   std::string query =
@@ -237,6 +181,91 @@ IncrementalQueryExecutor::queryDrivePathSpeedProfilesFromIds(
 
   return fillSpeedProfiles(*result, index,
                            std::get<0>(plan)->getVariableColumns());
+}
+
+std::vector<DrivePath> IncrementalQueryExecutor::queryDrivePathsWithFeatures(
+    const std::vector<Id>& dpIds, const Index& index) {
+  if (dpIds.empty()) {
+    return {};
+  }
+
+  // Query features
+  auto drivePaths = queryDrivePathFeaturesFromIds(dpIds, index);
+
+  // Query and merge speed profiles
+  if (!drivePaths.empty()) {
+    auto speedProfiles = queryDrivePathSpeedProfilesFromIds(dpIds, index);
+    for (auto& dp : drivePaths) {
+      auto it = speedProfiles.find(dp.dpId_);
+      if (it != speedProfiles.end()) {
+        dp.speedProfiles_ = it->second;
+      }
+    }
+  }
+
+  return drivePaths;
+}
+
+// Update MPP drive path counts based on changed MPP IDs, tracking which
+// drive paths were added or removed in the process
+IncrementalQueryExecutor::MppUpdateResult
+IncrementalQueryExecutor::updateMppDrivePathCounts(
+    const std::vector<uint64_t>& currentMppIds, const Index& index) {
+  MppUpdateResult result;
+
+  // Calculate diff in MPP IDs
+  ad_utility::HashSet<uint64_t> prevMppSet(previousMppIds_.begin(),
+                                           previousMppIds_.end());
+  ad_utility::HashSet<uint64_t> currMppSet(currentMppIds.begin(),
+                                           currentMppIds.end());
+
+  std::vector<uint64_t> addedMppIds;
+  std::vector<uint64_t> removedMppIds;
+
+  for (uint64_t mppId : currentMppIds) {
+    if (prevMppSet.find(mppId) == prevMppSet.end()) {
+      addedMppIds.push_back(mppId);
+    }
+  }
+
+  for (uint64_t mppId : previousMppIds_) {
+    if (currMppSet.find(mppId) == currMppSet.end()) {
+      removedMppIds.push_back(mppId);
+    }
+  }
+
+  // Update counts based on added MPP road refs
+  if (!addedMppIds.empty()) {
+    auto addedCounts = queryRoadRefToDrivePaths(addedMppIds, true, index);
+    for (const auto& [dpId, cnt] : addedCounts) {
+      auto& currentCount = previousMppDrivePathCounts_[dpId];
+      if (currentCount == 0) {
+        // This is a newly added drive path
+        result.addedDrivePathIds.push_back(dpId);
+      }
+      currentCount += cnt;
+    }
+  }
+
+  // Update counts based on removed MPP road refs
+  if (!removedMppIds.empty()) {
+    auto removedCounts = queryRoadRefToDrivePaths(removedMppIds, false, index);
+    for (const auto& [dpId, cnt] : removedCounts) {
+      auto it = previousMppDrivePathCounts_.find(dpId);
+      if (it != previousMppDrivePathCounts_.end()) {
+        if (it->second <= cnt) {
+          // This drive path is being completely removed
+          result.removedDrivePathIds.push_back(dpId);
+          previousMppDrivePathCounts_.erase(it);
+        } else {
+          it->second -= cnt;
+        }
+      }
+    }
+  }
+
+  result.totalCount = previousMppDrivePathCounts_.size();
+  return result;
 }
 
 QueryStepResult IncrementalQueryExecutor::processNextPoint(
@@ -252,16 +281,15 @@ QueryStepResult IncrementalQueryExecutor::processNextPoint(
 
   // Time: Execute spatial query to get current drive paths around the car
   ad_utility::Timer spatialTimer{ad_utility::Timer::Started};
-  auto spatialResult = qlever_.queryAndPinResultWithNameReturningResult(
-      {"currentDrivepaths", std::nullopt},
-      getCurrentDrivePathQuery(pointData.coordinates));
+  auto [spatialResult, spatialPlan] =
+      qlever_.queryAndPinResultWithNameReturningResult(
+          {"currentDrivepaths", std::nullopt},
+          getCurrentDrivePathQuery(pointData.coordinates));
+  auto& [spatialQet, spatialQec, spatialParsedQuery] = spatialPlan;
   result.timing.spatialQueryUs = spatialTimer.value().count();
 
   // Time: Extract IDs from spatial result
   ad_utility::Timer idExtractionTimer{ad_utility::Timer::Started};
-  auto spatialPlan =
-      qlever_.parseAndPlanQuery(queryTemplateForCurrentDrivePaths);
-  auto& [spatialQet, spatialQec, spatialParsedQuery] = spatialPlan;
   ad_utility::HashSet<Id> currentDrivePathIds = extractDrivePathIdsFromResult(
       *spatialResult, spatialQet->getVariableColumns());
   result.timing.idExtractionUs = idExtractionTimer.value().count();
@@ -276,47 +304,36 @@ QueryStepResult IncrementalQueryExecutor::processNextPoint(
     if (!allIds.empty()) {
       ad_utility::Timer featureTimer{ad_utility::Timer::Started};
       result.addedDrivePaths =
-          queryDrivePathFeaturesFromIds(allIds, spatialQec->getIndex());
+          queryDrivePathsWithFeatures(allIds, spatialQec->getIndex());
       result.timing.featureQueryUs = featureTimer.value().count();
-
-      // Query speed profiles for added drive paths
-      auto speedProfiles =
-          queryDrivePathSpeedProfilesFromIds(allIds, spatialQec->getIndex());
-      mergeSpeedProfilesIntoDrivePaths(result.addedDrivePaths, speedProfiles);
     }
 
     // Time: Query all features from MPP (full query, no diff for first step)
     ad_utility::Timer mppTimer{ad_utility::Timer::Started};
 
-    // Build the road ref to drive path mapping for current MPPs
-    auto currentMppDpCounts = queryRoadRefToDrivePaths(pointData.mppIds, true,
-                                                       spatialQec->getIndex());
+    // Build the initial road ref to drive path mapping for current MPPs
+    previousMppDrivePathCounts_ = queryRoadRefToDrivePaths(
+        pointData.mppIds, true, spatialQec->getIndex());
 
     // Get all drive path IDs from MPP
     std::vector<Id> mppDpIds;
-    mppDpIds.reserve(currentMppDpCounts.size());
-    for (const auto& [dpId, cnt] : currentMppDpCounts) {
+    mppDpIds.reserve(previousMppDrivePathCounts_.size());
+    for (const auto& [dpId, cnt] : previousMppDrivePathCounts_) {
       mppDpIds.push_back(dpId);
     }
 
-    // Query features for all MPP drive paths
+    // Query features and speed profiles for all MPP drive paths
     result.mppDrivePaths =
-        queryDrivePathFeaturesFromIds(mppDpIds, spatialQec->getIndex());
-
-    // Query speed profiles for MPP drive paths
-    auto mppSpeedProfiles =
-        queryDrivePathSpeedProfilesFromIds(mppDpIds, spatialQec->getIndex());
-    mergeSpeedProfilesIntoDrivePaths(result.mppDrivePaths, mppSpeedProfiles);
+        queryDrivePathsWithFeatures(mppDpIds, spatialQec->getIndex());
 
     result.timing.mppQueryUs = mppTimer.value().count();
 
     // Store state for next iteration
     previousDrivePathIds_ = std::move(currentDrivePathIds);
     result.totalDrivePaths = previousDrivePathIds_.size();
-    result.totalMppDrivePaths = currentMppDpCounts.size();
+    result.totalMppDrivePaths = previousMppDrivePathCounts_.size();
     previousCoordinate_ = pointData.wgs84Coord;
     previousMppIds_ = pointData.mppIds;
-    previousMppDrivePathCounts_ = std::move(currentMppDpCounts);
     isFirstStep_ = false;
   } else {
     // Time: Calculate diff (removed and added IDs)
@@ -343,93 +360,25 @@ QueryStepResult IncrementalQueryExecutor::processNextPoint(
     if (!addedIds.empty()) {
       ad_utility::Timer featureTimer{ad_utility::Timer::Started};
       result.addedDrivePaths =
-          queryDrivePathFeaturesFromIds(addedIds, spatialQec->getIndex());
+          queryDrivePathsWithFeatures(addedIds, spatialQec->getIndex());
       result.timing.featureQueryUs = featureTimer.value().count();
-
-      // Query speed profiles for added drive paths
-      auto speedProfiles =
-          queryDrivePathSpeedProfilesFromIds(addedIds, spatialQec->getIndex());
-      mergeSpeedProfilesIntoDrivePaths(result.addedDrivePaths, speedProfiles);
     }
 
     // Time: Query features from MPP with diff-based approach
     ad_utility::Timer mppTimer{ad_utility::Timer::Started};
 
-    // Calculate diff in MPP IDs
-    ad_utility::HashSet<uint64_t> prevMppSet(previousMppIds_.begin(),
-                                             previousMppIds_.end());
-    ad_utility::HashSet<uint64_t> currMppSet(pointData.mppIds.begin(),
-                                             pointData.mppIds.end());
+    // Update MPP drive path counts and get added/removed drive paths
+    auto mppUpdate =
+        updateMppDrivePathCounts(pointData.mppIds, spatialQec->getIndex());
 
-    std::vector<uint64_t> addedMppIds;
-    std::vector<uint64_t> removedMppIds;
-
-    for (uint64_t mppId : pointData.mppIds) {
-      if (prevMppSet.find(mppId) == prevMppSet.end()) {
-        addedMppIds.push_back(mppId);
-      }
-    }
-
-    for (uint64_t mppId : previousMppIds_) {
-      if (currMppSet.find(mppId) == currMppSet.end()) {
-        removedMppIds.push_back(mppId);
-      }
-    }
-
-    // Start with previous counts
-    auto currentMppDpCounts = previousMppDrivePathCounts_;
-
-    // Update counts based on added MPP road refs
-    if (!addedMppIds.empty()) {
-      auto addedCounts =
-          queryRoadRefToDrivePaths(addedMppIds, true, spatialQec->getIndex());
-      // std::cout << "addedDPCounts size " << addedCounts.size() << std::endl;
-      for (const auto& [dpId, cnt] : addedCounts) {
-        currentMppDpCounts[dpId] += cnt;
-      }
-    }
-
-    // Update counts based on removed MPP road refs
-    if (!removedMppIds.empty()) {
-      auto removedCounts = queryRoadRefToDrivePaths(removedMppIds, false,
-                                                    spatialQec->getIndex());
-      // std::cout << "removedDPCounts size " << removedCounts.size() <<
-      // std::endl;
-      for (const auto& [dpId, cnt] : removedCounts) {
-        if (currentMppDpCounts[dpId] <= cnt) {
-          currentMppDpCounts.erase(dpId);
-        } else {
-          currentMppDpCounts[dpId] -= cnt;
-        }
-      }
-    }
-
-    // Determine which drive paths are newly added and which were removed
-    std::vector<Id> newlyAddedMppDps;
-    for (const auto& [dpId, cnt] : currentMppDpCounts) {
-      if (previousMppDrivePathCounts_.find(dpId) ==
-          previousMppDrivePathCounts_.end()) {
-        newlyAddedMppDps.push_back(dpId);
-      }
-    }
-
-    // Determine which drive paths were removed (in previous but not in current)
-    for (const auto& [dpId, cnt] : previousMppDrivePathCounts_) {
-      if (currentMppDpCounts.find(dpId) == currentMppDpCounts.end()) {
-        result.removedMppDrivePathIds.push_back(dpId);
-      }
-    }
+    result.removedMppDrivePathIds = std::move(mppUpdate.removedDrivePathIds);
+    result.totalMppDrivePaths = mppUpdate.totalCount;
 
     // Query features only for newly added drive paths
-    if (!newlyAddedMppDps.empty()) {
+    if (!mppUpdate.addedDrivePathIds.empty()) {
       ad_utility::Timer featureTimer{ad_utility::Timer::Started};
-      result.mppDrivePaths = queryDrivePathFeaturesFromIds(
-          newlyAddedMppDps, spatialQec->getIndex());
-
-      // Query speed profiles for newly added MPP drive paths
-      auto mppSpeedProfiles = queryDrivePathSpeedProfilesFromIds(
-          newlyAddedMppDps, spatialQec->getIndex());
-      mergeSpeedProfilesIntoDrivePaths(result.mppDrivePaths, mppSpeedProfiles);
+      result.mppDrivePaths = queryDrivePathsWithFeatures(
+          mppUpdate.addedDrivePathIds, spatialQec->getIndex());
     }
 
     result.timing.mppQueryUs = mppTimer.value().count();
@@ -438,9 +387,7 @@ QueryStepResult IncrementalQueryExecutor::processNextPoint(
     previousDrivePathIds_ = std::move(currentDrivePathIds);
     previousCoordinate_ = pointData.wgs84Coord;
     result.totalDrivePaths = previousDrivePathIds_.size();
-    result.totalMppDrivePaths = currentMppDpCounts.size();
     previousMppIds_ = pointData.mppIds;
-    previousMppDrivePathCounts_ = std::move(currentMppDpCounts);
   }
 
   result.timing.totalUs = totalTimer.value().count();

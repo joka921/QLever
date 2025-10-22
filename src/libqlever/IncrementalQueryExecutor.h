@@ -85,15 +85,6 @@ class IncrementalQueryExecutor {
   std::vector<DrivePath> queryMppFeatures(const std::vector<uint64_t>& mppIds,
                                           const Index& index);
 
-  // Query for speed profiles from MPP (all speed profiles for given MPP IDs)
-  ad_utility::HashMap<Id, std::vector<SpeedProfile>> queryMppSpeedProfiles(
-      const std::vector<uint64_t>& mppIds, const Index& index);
-
-  // Merge speed profiles into drive paths, as they are obtained separately.
-  void mergeSpeedProfilesIntoDrivePaths(
-      std::vector<DrivePath>& drivePaths,
-      const ad_utility::HashMap<Id, std::vector<SpeedProfile>>& speedProfiles);
-
   // Query road ref to drive path mapping.
   // TODO<joka921> Explain and document the `added` argument.
   ad_utility::HashMap<Id, size_t> queryRoadRefToDrivePaths(
@@ -108,6 +99,21 @@ class IncrementalQueryExecutor {
   ad_utility::HashMap<Id, std::vector<SpeedProfile>>
   queryDrivePathSpeedProfilesFromIds(const std::vector<Id>& dpIds,
                                      const Index& index);
+
+  // Query both features and speed profiles for drive path IDs and merge them
+  std::vector<DrivePath> queryDrivePathsWithFeatures(
+      const std::vector<Id>& dpIds, const Index& index);
+
+  // Result of updating MPP drive path counts
+  struct MppUpdateResult {
+    std::vector<Id> addedDrivePathIds;
+    std::vector<Id> removedDrivePathIds;
+    size_t totalCount;
+  };
+
+  // Update MPP drive path counts and return added/removed drive paths
+  MppUpdateResult updateMppDrivePathCounts(
+      const std::vector<uint64_t>& currentMppIds, const Index& index);
 };
 
 // Print detailed timing breakdown to stdout

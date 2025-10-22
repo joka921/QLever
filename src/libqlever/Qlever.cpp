@@ -160,12 +160,14 @@ void Qlever::queryAndPinResultWithName(std::string name, std::string query) {
 }
 
 // _____________________________________________________________________________
-std::shared_ptr<const Result> Qlever::queryAndPinResultWithNameReturningResult(
+std::pair<std::shared_ptr<const Result>, Qlever::QueryPlan>
+Qlever::queryAndPinResultWithNameReturningResult(
     QueryExecutionContext::PinResultWithName options, std::string query) {
   auto queryPlan = parseAndPlanQuery(std::move(query));
   auto& [qet, qec, parsedQuery] = queryPlan;
   qec->pinResultWithName() = std::move(options);
-  return qet->getResult(false);
+  auto result = qet->getResult(false);
+  return {result, std::move(queryPlan)};
 }
 
 // _____________________________________________________________________________

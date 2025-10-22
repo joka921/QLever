@@ -245,8 +245,9 @@ class Qlever {
   void queryAndPinResultWithName(std::string name, std::string query);
 
   // Execute a query and pin the result with the given name, then return the
-  // result for immediate use.
-  std::shared_ptr<const Result> queryAndPinResultWithNameReturningResult(
+  // result and query plan for immediate use (including variable columns).
+  std::pair<std::shared_ptr<const Result>, QueryPlan>
+  queryAndPinResultWithNameReturningResult(
       QueryExecutionContext::PinResultWithName options, std::string query);
 
   // Clear the result with the given `name` from the cache.
