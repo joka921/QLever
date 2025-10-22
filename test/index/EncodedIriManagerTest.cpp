@@ -494,13 +494,68 @@ TEST(EncodedIriManager, BMWSpeedProfilePattern) {
 TEST(EncodedIriManager, BMWStopLocPattern) {
   EncodedIriManager em;
 
-  // Test valid stopLoc pattern (same constraints as laneRef)
-  std::string stopLocIri =
+  // Test 32-bit variant: stopLoc_<32-bit>_<18-bit>
+  std::string stopLocIri32 =
+      "<http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/"
+      "behaviorMap#stopLoc_545554944_0>";
+  auto id1 = em.encode(stopLocIri32);
+  ASSERT_TRUE(id1.has_value());
+  EXPECT_EQ(em.toString(id1.value()), stopLocIri32);
+
+  // Test 64-bit variant: stopLoc_<special-64-bit>_<4-bit>
+  // 2343140642651111426 has upper 3 bits "001" and bits [17,32) zero
+  std::string stopLocIri64 =
       "<http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/"
       "behaviorMap#stopLoc_2343140642651111426_7>";
-  auto id1 = em.encode(stopLocIri);
-  ASSERT_TRUE(id1.has_value());
-  EXPECT_EQ(em.toString(id1.value()), stopLocIri);
+  auto id2 = em.encode(stopLocIri64);
+  ASSERT_TRUE(id2.has_value());
+  EXPECT_EQ(em.toString(id2.value()), stopLocIri64);
+
+  // Test minimum valid 64-bit value
+  std::string stopLocIri64Min =
+      "<http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/"
+      "behaviorMap#stopLoc_2305843009213693952_0>";  // 2^61
+  auto id3 = em.encode(stopLocIri64Min);
+  ASSERT_TRUE(id3.has_value());
+  EXPECT_EQ(em.toString(id3.value()), stopLocIri64Min);
+
+  // Test 32-bit variant with maximum values
+  // First number max: (1<<32) - 1 = 4294967295
+  // Second number max: (1<<18) - 1 = 262143
+  std::string stopLocIri32Max =
+      "<http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/"
+      "behaviorMap#stopLoc_4294967295_262143>";
+  auto id4 = em.encode(stopLocIri32Max);
+  ASSERT_TRUE(id4.has_value());
+  EXPECT_EQ(em.toString(id4.value()), stopLocIri32Max);
+
+  // Test values that exceed constraints
+  // First number exceeds 64 bits (shouldn't be possible with parseDecimal, but
+  // test large invalid value)
+  std::string stopLocIriBad1 =
+      "<http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/"
+      "behaviorMap#stopLoc_4294967296_0>";  // > 32 bits, but < 64 bits, no
+                                            // special bits
+  auto id5 = em.encode(stopLocIriBad1);
+  // This should fail because it doesn't match 64-bit constraints (no bit 61
+  // set) and exceeds 32 bits for 32-bit variant
+  EXPECT_FALSE(id5.has_value());
+
+  // Second number exceeds both variants (> 18 bits)
+  std::string stopLocIriBad2 =
+      "<http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/"
+      "behaviorMap#stopLoc_545554944_262144>";
+  auto id6 = em.encode(stopLocIriBad2);
+  EXPECT_FALSE(id6.has_value());
+
+  // 64-bit variant with second number >= 16 should fall back to 32-bit, but
+  // here the first number is valid for 64-bit pattern but second exceeds 18
+  // bits
+  std::string stopLocIriBad3 =
+      "<http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/"
+      "behaviorMap#stopLoc_2343140642651111426_262144>";
+  auto id7 = em.encode(stopLocIriBad3);
+  EXPECT_FALSE(id7.has_value());
 }
 
 // _____________________________________________________________________________

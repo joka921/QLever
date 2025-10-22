@@ -30,7 +30,9 @@ enum class SpecialEncodingType {
   RoadRef,          // BMW roadRef pattern: roadRef_<special-64-bit>_<4-bit>
   SpeedProfile,     // BMW speedprofile pattern:
                     // speedprofile_<special-64-bit>_<4-bit>
-  StopLoc           // BMW stopLoc pattern: stopLoc_<special-64-bit>_<4-bit>
+  StopLoc,          // BMW stopLoc pattern: stopLoc_<special-64-bit>_<4-bit>
+  StopLoc32         // BMW stopLoc pattern (32-bit variant):
+                    // stopLoc_<32-bit>_<18-bit>
 };
 
 // Configuration for a prefix encoding. Either plain (just a prefix and digits)
@@ -489,11 +491,11 @@ class EncodedIriManagerImpl {
         "behaviorMap#speedprofile_",
         detail::SpecialEncodingType::SpeedProfile);
 
-    // StopLoc pattern: stopLoc_<special-64-bit>_<4-bit>
+    // StopLoc pattern (32-bit variant): stopLoc_<32-bit>_<18-bit>
     prefixes_.emplace_back(
         "<http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/"
         "behaviorMap#stopLoc_",
-        detail::SpecialEncodingType::StopLoc);
+        detail::SpecialEncodingType::StopLoc32);
   }
 
   // Parse a decimal number string to uint64_t. Returns nullopt on overflow.
@@ -521,8 +523,10 @@ class EncodedIriManagerImpl {
       case detail::SpecialEncodingType::LaneRef:
       case detail::SpecialEncodingType::RoadRef:
       case detail::SpecialEncodingType::SpeedProfile:
-      case detail::SpecialEncodingType::StopLoc:
         return encodeRefPattern(suffix, prefixIndex);
+      case detail::SpecialEncodingType::StopLoc:
+      case detail::SpecialEncodingType::StopLoc32:
+        return encodeStopLocPattern(suffix, prefixIndex);
       default:
         return std::nullopt;
     }
@@ -541,8 +545,11 @@ class EncodedIriManagerImpl {
       case detail::SpecialEncodingType::LaneRef:
       case detail::SpecialEncodingType::RoadRef:
       case detail::SpecialEncodingType::SpeedProfile:
-      case detail::SpecialEncodingType::StopLoc:
         decodeRefPattern(result, encoded);
+        break;
+      case detail::SpecialEncodingType::StopLoc:
+      case detail::SpecialEncodingType::StopLoc32:
+        decodeStopLocPattern(result, encoded);
         break;
       default:
         break;
@@ -713,7 +720,108 @@ class EncodedIriManagerImpl {
     result.push_back('M');
   }
 
-  // Encode laneRef/roadRef/speedprofile/stopLoc pattern:
+  // Encode stopLoc pattern - handles both 64-bit and 32-bit variants
+  // Variant 1 (64-bit): stopLoc_<special-64-bit>_<4-bit>
+  //   - First number: highest 3 bits "001", bits [17,32) all zero
+  //   - Second number: < 16
+  //   - Encoded with flag bit 51 = 0
+  // Variant 2 (32-bit): stopLoc_<32-bit>_<18-bit>
+  //   - First number: any 32-bit value
+  //   - Second number: < 2^18
+  //   - Encoded with flag bit 51 = 1
+  std::optional<Id> encodeStopLocPattern(std::string_view suffix,
+                                         size_t prefixIndex) const {
+    // Pattern: <num1>_<num2>
+    static constexpr auto regex = ctll::fixed_string{"([0-9]+)_([0-9]+)>"};
+    auto match = ctre::match<regex>(suffix);
+    if (!match) {
+      return std::nullopt;
+    }
+
+    auto num1Str = match.get<1>().to_view();
+    auto num2Str = match.get<2>().to_view();
+
+    auto num1 = parseDecimal(num1Str);
+    auto num2 = parseDecimal(num2Str);
+
+    if (!num1 || !num2) {
+      return std::nullopt;
+    }
+
+    // Try 64-bit variant first (more restrictive)
+    if (*num2 < 16) {
+      // Check 64-bit constraints
+      if ((*num1 >> 62) == 0 && ((*num1 >> 61) & 1) == 1) {
+        // Check bits [17, 32) are all zero
+        bool bitsZero = true;
+        for (size_t bit = 17; bit < 32; ++bit) {
+          if ((*num1 >> bit) & 1) {
+            bitsZero = false;
+            break;
+          }
+        }
+
+        if (bitsZero) {
+          // Encode as 64-bit variant
+          // Extract bits [0, 17) and [32, 61)
+          uint64_t lowerBits = *num1 & ad_utility::bitMaskForLowerBits(17);
+          uint64_t middleBits =
+              (*num1 >> 32) & ad_utility::bitMaskForLowerBits(29);
+          // Pack: [0:flag][middleBits:29][lowerBits:17][num2:4] = 51 bits
+          uint64_t encoded = (middleBits << 21) | (lowerBits << 4) | *num2;
+
+          if (encoded < (1ULL << NumBitsEncoding)) {
+            return Id::makeFromEncodedVal(encoded |
+                                          (prefixIndex << NumBitsEncoding));
+          }
+        }
+      }
+    }
+
+    // Try 32-bit variant
+    if (*num1 < (1ULL << 32) && *num2 < (1ULL << 18)) {
+      // Pack: [1:flag][num1:32][num2:18] = 51 bits
+      uint64_t encoded = (1ULL << 50) | (*num1 << 18) | *num2;
+
+      if (encoded < (1ULL << NumBitsEncoding)) {
+        return Id::makeFromEncodedVal(encoded |
+                                      (prefixIndex << NumBitsEncoding));
+      }
+    }
+
+    return std::nullopt;
+  }
+
+  // Decode stopLoc pattern - handles both variants
+  static void decodeStopLocPattern(std::string& result, uint64_t encoded) {
+    // Check flag bit (bit 50)
+    bool is32BitVariant = (encoded >> 50) & 1;
+
+    if (is32BitVariant) {
+      // 32-bit variant: [1:flag][num1:32][num2:18]
+      uint32_t num2 = encoded & ad_utility::bitMaskForLowerBits(18);
+      uint32_t num1 = (encoded >> 18) & ad_utility::bitMaskForLowerBits(32);
+
+      result.append(std::to_string(num1));
+      result.push_back('_');
+      result.append(std::to_string(num2));
+    } else {
+      // 64-bit variant: [0:flag][middleBits:29][lowerBits:17][num2:4]
+      uint8_t num2 = encoded & 0xF;
+      uint64_t lowerBits = (encoded >> 4) & ad_utility::bitMaskForLowerBits(17);
+      uint64_t middleBits =
+          (encoded >> 21) & ad_utility::bitMaskForLowerBits(29);
+
+      // Reconstruct num1: [0][0][1][middleBits:29][zeros:15][lowerBits:17]
+      uint64_t num1 = (1ULL << 61) | (middleBits << 32) | lowerBits;
+
+      result.append(std::to_string(num1));
+      result.push_back('_');
+      result.append(std::to_string(num2));
+    }
+  }
+
+  // Encode laneRef/roadRef/speedprofile pattern:
   // <type>_<special-64-bit>_<4-bit>
   // The 64-bit number must have:
   // - Highest 3 bits are "001" (so bit 63=0, bit 62=0, bit 61=1)
