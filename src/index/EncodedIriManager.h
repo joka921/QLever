@@ -20,9 +20,22 @@ namespace detail {
 // CTRE named capture group identifiers for C++17 compatibility
 constexpr ctll::fixed_string digitsCaptureGroup = "digits";
 
+// Enum to identify special hard-coded encoding schemes
+enum class SpecialEncodingType {
+  None,          // Not a special encoding
+  RangePattern,  // BMW range_ pattern: range_<special-32-bit>_<8-bit>_<8-bit>P
+  ValRangePattern,  // BMW valRange_ pattern:
+                    // valRange_<special-32-bit>_<11-bit>_<11-bit>M
+  LaneRef,          // BMW laneRef pattern: laneRef_<special-64-bit>_<4-bit>
+  RoadRef,          // BMW roadRef pattern: roadRef_<special-64-bit>_<4-bit>
+  SpeedProfile,     // BMW speedprofile pattern:
+                    // speedprofile_<special-64-bit>_<4-bit>
+  StopLoc           // BMW stopLoc pattern: stopLoc_<special-64-bit>_<4-bit>
+};
+
 // Configuration for a prefix encoding. Either plain (just a prefix and digits)
 // or with bit pattern constraints (prefix + numeric value where certain bits
-// must be zero).
+// must be zero), or with special hard-coded encoding schemes.
 struct PrefixConfig {
   // The IRI prefix (with leading angle bracket, e.g., "<http://example.org/")
   std::string prefix;
@@ -31,6 +44,9 @@ struct PrefixConfig {
   // value [bitStart, bitEnd) (half-open interval, bitEnd is exclusive).
   // If not set, plain digit encoding is used.
   std::optional<std::pair<size_t, size_t>> zeroBitRange;
+
+  // Special encoding type for hard-coded patterns
+  SpecialEncodingType specialEncoding = SpecialEncodingType::None;
 
   // Default constructor for plain prefix mode
   explicit PrefixConfig(std::string p) : prefix(std::move(p)) {}
@@ -43,8 +59,17 @@ struct PrefixConfig {
     AD_CONTRACT_CHECK(bitEnd <= 64);
   }
 
+  // Constructor for special hard-coded encodings
+  PrefixConfig(std::string p, SpecialEncodingType type)
+      : prefix(std::move(p)), specialEncoding(type) {}
+
   // Check if this is a bit pattern encoding
   bool isBitPatternMode() const { return zeroBitRange.has_value(); }
+
+  // Check if this is a special hard-coded encoding
+  bool isSpecialEncoding() const {
+    return specialEncoding != SpecialEncodingType::None;
+  }
 
   // Get the bit range (throws if not in bit pattern mode)
   std::pair<size_t, size_t> getBitRange() const {
@@ -54,7 +79,8 @@ struct PrefixConfig {
 
   // Equality for testing
   bool operator==(const PrefixConfig& other) const {
-    return prefix == other.prefix && zeroBitRange == other.zeroBitRange;
+    return prefix == other.prefix && zeroBitRange == other.zeroBitRange &&
+           specialEncoding == other.specialEncoding;
   }
 };
 }  // namespace detail
@@ -120,15 +146,23 @@ class EncodedIriManagerImpl {
   // The prefixes of the IRIs that will be encoded.
   std::vector<detail::PrefixConfig> prefixes_;
 
-  // By default, `prefixes_` is empty, so no IRI will be encoded.
-  EncodedIriManagerImpl() = default;
+  // By default, `prefixes_` contains only the hard-coded BMW patterns.
+  EncodedIriManagerImpl() { initializeHardCodedPrefixes(); }
 
   // Construct from the list of prefixes. The prefixes have to be specified
   // without any brackes, so e.g. "http://example.org/" if IRIs of the form
   // `<http://example.org/1234>` should be encoded.
   explicit EncodedIriManagerImpl(
       std::vector<std::string> prefixesWithoutAngleBrackets) {
+    // Reserve space for hard-coded prefixes (6 special patterns)
+    static constexpr size_t numHardCodedPrefixes = 6;
+    static constexpr auto maxNumPrefixes = 1ULL << NumBitsTags;
+    static constexpr auto maxNumConfigurablePrefixes =
+        maxNumPrefixes - numHardCodedPrefixes;
+
     if (prefixesWithoutAngleBrackets.empty()) {
+      // Initialize only hard-coded prefixes
+      initializeHardCodedPrefixes();
       return;
     }
     // Sort the prefixes lexicographically to make the ordering deterministic
@@ -142,13 +176,13 @@ class EncodedIriManagerImpl {
     prefixesWithoutAngleBrackets.erase(
         ::ranges::unique(prefixesWithoutAngleBrackets),
         prefixesWithoutAngleBrackets.end());
-    static constexpr auto maxNumPrefixes = 1ULL << NumBitsTags;
 
-    if (prefixesWithoutAngleBrackets.size() > maxNumPrefixes) {
+    if (prefixesWithoutAngleBrackets.size() > maxNumConfigurablePrefixes) {
       throw std::runtime_error(absl::StrCat(
           "Number of prefixes specified with `--encode-as-id` is ",
           prefixesWithoutAngleBrackets.size(), ", which is too many; ",
-          "the maximum is ", maxNumPrefixes));
+          "the maximum is ", maxNumConfigurablePrefixes, " (reduced from ",
+          maxNumPrefixes, " to reserve space for hard-coded BMW patterns)"));
     }
 
     // TODO<C++23> use `std::views::adjacent`.
@@ -162,7 +196,8 @@ class EncodedIriManagerImpl {
             a, "\" and \"", b, "\"."));
       }
     }
-    prefixes_.reserve(prefixesWithoutAngleBrackets.size());
+    prefixes_.reserve(prefixesWithoutAngleBrackets.size() +
+                      numHardCodedPrefixes);
     for (const auto& prefix : prefixesWithoutAngleBrackets) {
       if (ql::starts_with(prefix, '<')) {
         throw std::runtime_error(absl::StrCat(
@@ -172,6 +207,9 @@ class EncodedIriManagerImpl {
       }
       prefixes_.emplace_back(absl::StrCat("<", prefix));
     }
+
+    // Add hard-coded prefixes at the end (using the highest prefix IDs)
+    initializeHardCodedPrefixes();
   }
 
   // Try to encode the given string as an `Id`. If the encoding fails, return
@@ -191,6 +229,15 @@ class EncodedIriManagerImpl {
       return std::nullopt;
     }
 
+    // Get the index of the used prefix.
+    auto prefixIndex = static_cast<size_t>(it - prefixes_.begin());
+
+    // Handle special hard-coded encodings
+    if (it->isSpecialEncoding()) {
+      repr.remove_prefix(it->prefix.size());
+      return encodeSpecialPattern(repr, prefixIndex, it->specialEncoding);
+    }
+
     // Check that after the prefix, the string contains only digits and the
     // trailing '>'.
     repr.remove_prefix(it->prefix.size());
@@ -203,9 +250,6 @@ class EncodedIriManagerImpl {
     // Extract the substring with the digits.
     const auto& numString =
         match.template get<detail::digitsCaptureGroup>().to_view();
-
-    // Get the index of the used prefix.
-    auto prefixIndex = static_cast<size_t>(it - prefixes_.begin());
 
     // Handle bit pattern mode
     if (it->isBitPatternMode()) {
@@ -235,6 +279,13 @@ class EncodedIriManagerImpl {
     result.reserve(prefixConfig.prefix.size() + NumDigits + 1);
     result = prefixConfig.prefix;
 
+    // Handle special hard-coded encodings
+    if (prefixConfig.isSpecialEncoding()) {
+      decodeSpecialPattern(result, digitEncoding, prefixConfig.specialEncoding);
+      result.push_back('>');
+      return result;
+    }
+
     // Handle bit pattern mode
     if (prefixConfig.isBitPatternMode()) {
       decodeBitPattern(result, digitEncoding, prefixConfig.getBitRange());
@@ -253,7 +304,7 @@ class EncodedIriManagerImpl {
 
   friend void to_json(nlohmann::json& j,
                       const EncodedIriManagerImpl& encodedIriManager) {
-    // Use new format that supports both plain and bit pattern modes
+    // Use new format that supports plain, bit pattern, and special modes
     nlohmann::json configs = nlohmann::json::array();
     for (const auto& cfg : encodedIriManager.prefixes_) {
       nlohmann::json item;
@@ -262,6 +313,8 @@ class EncodedIriManagerImpl {
         auto [bitStart, bitEnd] = cfg.getBitRange();
         item["zeroBitStart"] = bitStart;
         item["zeroBitEnd"] = bitEnd;
+      } else if (cfg.isSpecialEncoding()) {
+        item["specialEncoding"] = static_cast<int>(cfg.specialEncoding);
       }
       configs.push_back(item);
     }
@@ -282,6 +335,11 @@ class EncodedIriManagerImpl {
           size_t bitEnd = static_cast<size_t>(item["zeroBitEnd"]);
           encodedIriManager.prefixes_.emplace_back(std::move(prefix), bitStart,
                                                    bitEnd);
+        } else if (item.contains("specialEncoding")) {
+          int encodingType = static_cast<int>(item["specialEncoding"]);
+          encodedIriManager.prefixes_.emplace_back(
+              std::move(prefix),
+              static_cast<detail::SpecialEncodingType>(encodingType));
         } else {
           encodedIriManager.prefixes_.emplace_back(std::move(prefix));
         }
@@ -395,6 +453,353 @@ class EncodedIriManagerImpl {
       result.push_back(static_cast<char>(((encoded >> shift) & 0xF) + '0' - 1));
       shift -= NibbleSize;
     }
+  }
+
+  // Initialize the hard-coded BMW-specific encoding patterns
+  void initializeHardCodedPrefixes() {
+    // Range pattern: range_<special-32-bit>_<8-bit>_<8-bit>P
+    // First number has upper 3 bits as "001"
+    prefixes_.emplace_back(
+        "<http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/"
+        "behaviorMap#range_",
+        detail::SpecialEncodingType::RangePattern);
+
+    // ValRange pattern: valRange_<special-32-bit>_<11-bit>_<11-bit>M
+    // First number has upper 3 bits as "001"
+    prefixes_.emplace_back(
+        "<http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/"
+        "behaviorMap#valRange_",
+        detail::SpecialEncodingType::ValRangePattern);
+
+    // LaneRef pattern: laneRef_<special-64-bit>_<4-bit>
+    prefixes_.emplace_back(
+        "<http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/"
+        "behaviorMap#laneRef_",
+        detail::SpecialEncodingType::LaneRef);
+
+    // RoadRef pattern: roadRef_<special-64-bit>_<4-bit>
+    prefixes_.emplace_back(
+        "<http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/"
+        "behaviorMap#roadRef_",
+        detail::SpecialEncodingType::RoadRef);
+
+    // SpeedProfile pattern: speedprofile_<special-64-bit>_<4-bit>
+    prefixes_.emplace_back(
+        "<http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/"
+        "behaviorMap#speedprofile_",
+        detail::SpecialEncodingType::SpeedProfile);
+
+    // StopLoc pattern: stopLoc_<special-64-bit>_<4-bit>
+    prefixes_.emplace_back(
+        "<http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/"
+        "behaviorMap#stopLoc_",
+        detail::SpecialEncodingType::StopLoc);
+  }
+
+  // Parse a decimal number string to uint64_t. Returns nullopt on overflow.
+  static std::optional<uint64_t> parseDecimal(std::string_view numString) {
+    uint64_t value = 0;
+    for (char c : numString) {
+      // Check for overflow
+      if (value > (std::numeric_limits<uint64_t>::max() - (c - '0')) / 10) {
+        return std::nullopt;
+      }
+      value = value * 10 + (c - '0');
+    }
+    return value;
+  }
+
+  // Encode special BMW patterns
+  std::optional<Id> encodeSpecialPattern(
+      std::string_view suffix, size_t prefixIndex,
+      detail::SpecialEncodingType encodingType) const {
+    switch (encodingType) {
+      case detail::SpecialEncodingType::RangePattern:
+        return encodeRangePattern(suffix, prefixIndex);
+      case detail::SpecialEncodingType::ValRangePattern:
+        return encodeValRangePattern(suffix, prefixIndex);
+      case detail::SpecialEncodingType::LaneRef:
+      case detail::SpecialEncodingType::RoadRef:
+      case detail::SpecialEncodingType::SpeedProfile:
+      case detail::SpecialEncodingType::StopLoc:
+        return encodeRefPattern(suffix, prefixIndex);
+      default:
+        return std::nullopt;
+    }
+  }
+
+  // Decode special BMW patterns
+  static void decodeSpecialPattern(std::string& result, uint64_t encoded,
+                                   detail::SpecialEncodingType encodingType) {
+    switch (encodingType) {
+      case detail::SpecialEncodingType::RangePattern:
+        decodeRangePattern(result, encoded);
+        break;
+      case detail::SpecialEncodingType::ValRangePattern:
+        decodeValRangePattern(result, encoded);
+        break;
+      case detail::SpecialEncodingType::LaneRef:
+      case detail::SpecialEncodingType::RoadRef:
+      case detail::SpecialEncodingType::SpeedProfile:
+      case detail::SpecialEncodingType::StopLoc:
+        decodeRefPattern(result, encoded);
+        break;
+      default:
+        break;
+    }
+  }
+
+  // Encode range_ pattern: range_<special-32-bit>_<8-bit>_<8-bit>P>
+  // First number has upper 3 bits as "001" (bit 31=0, bit 30=0, bit 29=1)
+  // After removing bit 29, we get 29 bits + 8 + 8 = 45 bits, but we store as
+  // 29 + 10 + 11 = 50 bits to align with encoding
+  std::optional<Id> encodeRangePattern(std::string_view suffix,
+                                       size_t prefixIndex) const {
+    // Pattern: <num1>_<num2>_<num3>P>
+    static constexpr auto regex =
+        ctll::fixed_string{"([0-9]+)_([0-9]+)_([0-9]+)P>"};
+    auto match = ctre::match<regex>(suffix);
+    if (!match) {
+      return std::nullopt;
+    }
+
+    auto num1Str = match.get<1>().to_view();
+    auto num2Str = match.get<2>().to_view();
+    auto num3Str = match.get<3>().to_view();
+
+    auto num1 = parseDecimal(num1Str);
+    auto num2 = parseDecimal(num2Str);
+    auto num3 = parseDecimal(num3Str);
+
+    if (!num1 || !num2 || !num3) {
+      return std::nullopt;
+    }
+
+    // Check constraints on num1:
+    // - Must fit in 32 bits
+    if (*num1 >= (1ULL << 32)) {
+      return std::nullopt;
+    }
+    // - Bits 31 and 30 must be 0 (upper 3 bits are "001")
+    if ((*num1 >> 30) != 0) {
+      return std::nullopt;
+    }
+    // - Bit 29 must be 1
+    if (((*num1 >> 29) & 1) != 1) {
+      return std::nullopt;
+    }
+
+    // Check constraints: num2 and num3 fit in 8 bits
+    if (*num2 >= (1ULL << 8) || *num3 >= (1ULL << 8)) {
+      return std::nullopt;
+    }
+
+    // Remove bit 29 from num1 (we know it's 1)
+    // Extract lower 29 bits
+    uint32_t num1Compressed = *num1 & ad_utility::bitMaskForLowerBits(29);
+
+    // Pack into 50 bits: [num1Compressed:29][num2:10][num3:11]
+    // We extend num2 and num3 to 10 and 11 bits respectively for alignment
+    uint64_t encoded = (static_cast<uint64_t>(num1Compressed) << 21) |
+                       (static_cast<uint64_t>(*num2) << 11) | *num3;
+
+    // Check that encoded value fits in NumBitsEncoding
+    if (encoded >= (1ULL << NumBitsEncoding)) {
+      return std::nullopt;
+    }
+
+    return Id::makeFromEncodedVal(encoded | (prefixIndex << NumBitsEncoding));
+  }
+
+  // Decode range_ pattern
+  static void decodeRangePattern(std::string& result, uint64_t encoded) {
+    // Extract num3 (lowest 11 bits)
+    uint16_t num3 = encoded & ad_utility::bitMaskForLowerBits(11);
+    // Extract num2 (next 10 bits)
+    uint16_t num2 = (encoded >> 11) & ad_utility::bitMaskForLowerBits(10);
+    // Extract num1Compressed (next 29 bits)
+    uint32_t num1Compressed =
+        (encoded >> 21) & ad_utility::bitMaskForLowerBits(29);
+
+    // Reconstruct num1 by setting bit 29
+    uint32_t num1 = (1U << 29) | num1Compressed;
+
+    result.append(std::to_string(num1));
+    result.push_back('_');
+    result.append(std::to_string(num2));
+    result.push_back('_');
+    result.append(std::to_string(num3));
+    result.push_back('P');
+  }
+
+  // Encode valRange_ pattern: valRange_<special-32-bit>_<11-bit>_<11-bit>M>
+  // First number has upper 3 bits as "001" (bit 31=0, bit 30=0, bit 29=1)
+  // After removing bit 29, we get 29 bits + 11 + 11 = 51 bits
+  std::optional<Id> encodeValRangePattern(std::string_view suffix,
+                                          size_t prefixIndex) const {
+    // Pattern: <num1>_<num2>_<num3>M>
+    static constexpr auto regex =
+        ctll::fixed_string{"([0-9]+)_([0-9]+)_([0-9]+)M>"};
+    auto match = ctre::match<regex>(suffix);
+    if (!match) {
+      return std::nullopt;
+    }
+
+    auto num1Str = match.get<1>().to_view();
+    auto num2Str = match.get<2>().to_view();
+    auto num3Str = match.get<3>().to_view();
+
+    auto num1 = parseDecimal(num1Str);
+    auto num2 = parseDecimal(num2Str);
+    auto num3 = parseDecimal(num3Str);
+
+    if (!num1 || !num2 || !num3) {
+      return std::nullopt;
+    }
+
+    // Check constraints on num1:
+    // - Must fit in 32 bits
+    if (*num1 >= (1ULL << 32)) {
+      return std::nullopt;
+    }
+    // - Bits 31 and 30 must be 0 (upper 3 bits are "001")
+    if ((*num1 >> 30) != 0) {
+      return std::nullopt;
+    }
+    // - Bit 29 must be 1
+    if (((*num1 >> 29) & 1) != 1) {
+      return std::nullopt;
+    }
+
+    // Check constraints: num2 and num3 fit in 11 bits
+    if (*num2 >= (1ULL << 11) || *num3 >= (1ULL << 11)) {
+      return std::nullopt;
+    }
+
+    // Remove bit 29 from num1 (we know it's 1)
+    // Extract lower 29 bits
+    uint32_t num1Compressed = *num1 & ad_utility::bitMaskForLowerBits(29);
+
+    // Pack into 51 bits: [num1Compressed:29][num2:11][num3:11]
+    uint64_t encoded = (static_cast<uint64_t>(num1Compressed) << 22) |
+                       (static_cast<uint64_t>(*num2) << 11) | *num3;
+
+    // Check that encoded value fits in NumBitsEncoding
+    if (encoded >= (1ULL << NumBitsEncoding)) {
+      return std::nullopt;
+    }
+
+    return Id::makeFromEncodedVal(encoded | (prefixIndex << NumBitsEncoding));
+  }
+
+  // Decode valRange_ pattern
+  static void decodeValRangePattern(std::string& result, uint64_t encoded) {
+    // Extract num3 (lowest 11 bits)
+    uint16_t num3 = encoded & ad_utility::bitMaskForLowerBits(11);
+    // Extract num2 (next 11 bits)
+    uint16_t num2 = (encoded >> 11) & ad_utility::bitMaskForLowerBits(11);
+    // Extract num1Compressed (next 29 bits)
+    uint32_t num1Compressed =
+        (encoded >> 22) & ad_utility::bitMaskForLowerBits(29);
+
+    // Reconstruct num1 by setting bit 29
+    uint32_t num1 = (1U << 29) | num1Compressed;
+
+    result.append(std::to_string(num1));
+    result.push_back('_');
+    result.append(std::to_string(num2));
+    result.push_back('_');
+    result.append(std::to_string(num3));
+    result.push_back('M');
+  }
+
+  // Encode laneRef/roadRef/speedprofile/stopLoc pattern:
+  // <type>_<special-64-bit>_<4-bit>
+  // The 64-bit number must have:
+  // - Highest 3 bits are "001" (so bit 63=0, bit 62=0, bit 61=1)
+  // - Bits [17, 32) are all 0
+  // - The second number (4-bit) is < 16
+  //
+  // After removing the constraints:
+  // - Remove bit 61 (we know it's 1)
+  // - Remove bits [17, 32) (15 bits, we know they're 0)
+  // Total removed: 16 bits
+  // Remaining: 64 - 16 = 48 bits from first number + 4 bits from second = 52
+  // bits
+  std::optional<Id> encodeRefPattern(std::string_view suffix,
+                                     size_t prefixIndex) const {
+    // Pattern: <num1>_<num2>
+    static constexpr auto regex = ctll::fixed_string{"([0-9]+)_([0-9]+)>"};
+    auto match = ctre::match<regex>(suffix);
+    if (!match) {
+      return std::nullopt;
+    }
+
+    auto num1Str = match.get<1>().to_view();
+    auto num2Str = match.get<2>().to_view();
+
+    auto num1 = parseDecimal(num1Str);
+    auto num2 = parseDecimal(num2Str);
+
+    if (!num1 || !num2) {
+      return std::nullopt;
+    }
+
+    // Check that num2 fits in 4 bits (< 16)
+    if (*num2 >= 16) {
+      return std::nullopt;
+    }
+
+    // Check constraints on num1:
+    // - Bits 63 and 62 must be 0 (highest 3 bits are "001")
+    if ((*num1 >> 62) != 0) {
+      return std::nullopt;
+    }
+    // - Bit 61 must be 1
+    if (((*num1 >> 61) & 1) != 1) {
+      return std::nullopt;
+    }
+    // - Bits [17, 32) must all be 0
+    for (size_t bit = 17; bit < 32; ++bit) {
+      if ((*num1 >> bit) & 1) {
+        return std::nullopt;
+      }
+    }
+
+    // Remove the constrained bits:
+    // Extract bits [0, 17) (lower 17 bits)
+    uint64_t lowerBits = *num1 & ad_utility::bitMaskForLowerBits(17);
+    // Extract bits [32, 61) (29 bits)
+    uint64_t middleBits = (*num1 >> 32) & ad_utility::bitMaskForLowerBits(29);
+    // Combine: [middleBits:29][lowerBits:17][num2:4] = 50 bits total
+    uint64_t compressed = (middleBits << 21) | (lowerBits << 4) | *num2;
+
+    // Check that compressed value fits in NumBitsEncoding
+    if (compressed >= (1ULL << NumBitsEncoding)) {
+      return std::nullopt;
+    }
+
+    return Id::makeFromEncodedVal(compressed |
+                                  (prefixIndex << NumBitsEncoding));
+  }
+
+  // Decode laneRef/roadRef/speedprofile/stopLoc pattern
+  static void decodeRefPattern(std::string& result, uint64_t encoded) {
+    // Extract num2 (lowest 4 bits)
+    uint8_t num2 = encoded & 0xF;
+    // Extract lowerBits (next 17 bits)
+    uint64_t lowerBits = (encoded >> 4) & ad_utility::bitMaskForLowerBits(17);
+    // Extract middleBits (next 29 bits)
+    uint64_t middleBits = (encoded >> 21) & ad_utility::bitMaskForLowerBits(29);
+
+    // Reconstruct num1:
+    // [0][0][1][middleBits:29][zeros:15][lowerBits:17]
+    uint64_t num1 = (1ULL << 61) |  // Set bit 61
+                    (middleBits << 32) | lowerBits;
+
+    result.append(std::to_string(num1));
+    result.push_back('_');
+    result.append(std::to_string(num2));
   }
 };
 

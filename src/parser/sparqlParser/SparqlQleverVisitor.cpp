@@ -284,6 +284,8 @@ ExpressionPtr Visitor::processIriFunctionCall(
   if (checkPrefix(QL_PREFIX)) {
     if (functionName == "isGeoPoint") {
       return createUnary(&makeIsGeoPointExpression);
+    } else if (functionName == "isEncodedIri") {
+      return createUnary(&makeIsEncodedIriExpression);
     }
   }
 

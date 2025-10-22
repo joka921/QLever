@@ -33,7 +33,8 @@ int main() {
   config.inputFiles_ = filenames();
   config.baseName_ = indexBasename;
   config.noPatterns_ = true;
-  config.onlyPsoAndPos_ = true;
+  // TODO<joka921> re-enable this before handing to BMW.
+  // config.onlyPsoAndPos_ = true;
 
   config.prefixesForIdEncodedIrisWithBitPattern_.push_back(
       {"http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#dp_",

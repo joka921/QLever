@@ -66,6 +66,9 @@ using isBlankExpression =
                       prefilterExpressions::IsDatatype::BLANK>;
 using isIriExpression =
     IsDtypeExpression<IsIriValueGetter, prefilterExpressions::IsDatatype::IRI>;
+using isEncodedIriExpression =
+    IsDtypeExpression<IsValueIdValueGetter<Datatype::EncodedVal>,
+                      prefilterExpressions::IsDatatype::IRI>;
 
 // We currently don't support pre-filtering for `isGeoPointExpression`.
 using isGeoPointExpression =
@@ -81,6 +84,9 @@ using boundExpression = NARY<1, FV<decltype(boolToId), IsValidValueGetter>>;
 
 SparqlExpression::Ptr makeIsIriExpression(SparqlExpression::Ptr arg) {
   return std::make_unique<detail::isIriExpression>(std::move(arg));
+}
+SparqlExpression::Ptr makeIsEncodedIriExpression(SparqlExpression::Ptr arg) {
+  return std::make_unique<detail::isEncodedIriExpression>(std::move(arg));
 }
 SparqlExpression::Ptr makeIsBlankExpression(SparqlExpression::Ptr arg) {
   return std::make_unique<detail::isBlankExpression>(std::move(arg));
