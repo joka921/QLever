@@ -81,18 +81,9 @@ class IncrementalQueryExecutor {
   // Map from drive path Id to count of road refs leading to it
   ad_utility::HashMap<Id, size_t> previousMppDrivePathCounts_;
 
-  // Query for features of specific drive path IDs only
-  std::vector<DrivePath> queryDrivePathFeatures(
-      const std::vector<Id>& drivePathIds, const Index& index);
-
   // Query for features from MPP (all features for given MPP IDs)
   std::vector<DrivePath> queryMppFeatures(const std::vector<uint64_t>& mppIds,
                                           const Index& index);
-
-  // Query for speed profiles of specific drive path IDs
-  ad_utility::HashMap<Id, std::vector<SpeedProfile>>
-  queryDrivePathSpeedProfiles(const std::vector<Id>& drivePathIds,
-                              const Index& index);
 
   // Query for speed profiles from MPP (all speed profiles for given MPP IDs)
   ad_utility::HashMap<Id, std::vector<SpeedProfile>> queryMppSpeedProfiles(
@@ -109,7 +100,6 @@ class IncrementalQueryExecutor {
       const std::vector<uint64_t>& mppIds, bool added, const Index& index);
 
   // Query features for specific drive path Ids (from VALUES clause)
-  // TODO<joka921> This seems to be a duplicate function...
   std::vector<DrivePath> queryDrivePathFeaturesFromIds(
       const std::vector<Id>& dpIds, const Index& index);
 
