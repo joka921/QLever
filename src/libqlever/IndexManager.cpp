@@ -21,6 +21,7 @@ std::unique_ptr<Qlever> buildAndRunQleverIndex(
   std::cout << "\x1b[1mBuilding index"
             << " with basename \"" << indexBasename << "\"\x1b[0m" << std::endl;
 
+  // Remove non-selected columns in results, reduces the RAM overhead.
   setRuntimeParameter<&RuntimeParameters::stripColumns_>(true);
   try {
     qlever::Qlever::buildIndex(config);
@@ -36,7 +37,7 @@ std::unique_ptr<Qlever> buildAndRunQleverIndex(
   auto qlever = std::make_unique<Qlever>(engineConfig);
   std::cout << std::endl;
 
-  // Suppress QLever internal logging
+  // Suppress QLever internal logging to make the tool output cleaner.
   static ad_utility::NullStream nullStream;
   ad_utility::setGlobalLoggingStream(&nullStream);
 

@@ -17,6 +17,8 @@
 #include "util/Log.h"
 #include "util/NullStream.h"
 
+// The filename[s] of the turtle inputs. Currently hardcoded, feel  free to make
+// this an argc/argv style command line argument.
 static const auto filenames = []() {
   std::vector<qlever::InputFileSpecification> res;
   res.push_back(qlever::InputFileSpecification{
@@ -25,17 +27,21 @@ static const auto filenames = []() {
 };
 
 int main() {
-  // Parse command line arguments.
+  // basename of the index (feel free to make this a command line argument).
   std::string indexBasename = "demo-v1";
 
   // Build and run QLever index
   qlever::IndexBuilderConfig config;
   config.inputFiles_ = filenames();
   config.baseName_ = indexBasename;
+  // We don't use QLever's "pattern" extension.
   config.noPatterns_ = true;
-  // TODO<joka921> re-enable this before handing to BMW.
-  // config.onlyPsoAndPos_ = true;
+  // All queries have fixed predicates.
+  config.onlyPsoAndPos_ = true;
 
+  // A lot of the drivepath and roadPart IRIs can be encoded directly in the ID,
+  // set up the configuration for this.
+  // NOTE: If the encoding fails, the IRIs still will behave as expected.
   config.prefixesForIdEncodedIrisWithBitPattern_.push_back(
       {"http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#dp_",
        16, 32});
@@ -45,6 +51,7 @@ int main() {
        16, 32});
 
   std::unique_ptr<qlever::Qlever> qleverPtr;
+  // We don't need these updates, and they cost a lot of time for cheap queries.
   setRuntimeParameter<&RuntimeParameters::websocketUpdatesEnabled_>(false);
   try {
     qleverPtr = qlever::buildAndRunQleverIndex(indexBasename, config);
@@ -59,9 +66,11 @@ int main() {
   // Create incremental query executor
   qlever::IncrementalQueryExecutor executor(*qleverPtr);
 
-  // Pin the geometry and payload queries
+  // Pin the geometry and payload queries to RAM. Those are the same for the
+  // whole 30 km range, and do not depend on the current position.
   executor.pinQueries();
 
+  // Set the following flags to true for some example output.
   // Flag to control detailed timing output
   constexpr bool showDetailedTiming = false;
   // Flag to control detailed drive path printing
@@ -72,7 +81,6 @@ int main() {
     const auto& pointData = queryPointsData[i];
 
     try {
-      // std::this_thread::sleep_for(std::chrono::milliseconds(1000));
       auto stepResult = executor.processNextPoint(pointData);
 
       // Compact single-line output for step info

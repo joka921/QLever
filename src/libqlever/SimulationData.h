@@ -7,6 +7,8 @@
 #include <string>
 #include <vector>
 
+// Hard coded simulation data (coordinates and MPP road refs) as provided by
+// Giuseppe)
 struct Wgs84Coord {
   double latitude;
   double longitude;

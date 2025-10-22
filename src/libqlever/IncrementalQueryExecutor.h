@@ -30,6 +30,12 @@ struct QueryStepTiming {
 };
 
 // Result of processing a query point, showing changes from previous step
+// For both the ROI and MPP drive paths we store
+// 1. The IDs of the drive paths from the previous step that are no longer
+// relevant
+// 2. The ID + all features of the drive paths that are new.
+// 3. The total number of drive paths (numFromPreviousStep + added - removed)
+// for logging.
 struct QueryStepResult {
   std::vector<Id> removedDrivePathIds;
   std::vector<DrivePath> addedDrivePaths;
@@ -37,6 +43,7 @@ struct QueryStepResult {
   std::vector<Id> removedMppDrivePathIds;
   size_t totalDrivePaths;
   size_t totalMppDrivePaths;
+  // If not the first step, report the distance to the previous point.
   std::optional<double> distanceFromPreviousMeters;
   QueryStepTiming timing;
 };
@@ -49,7 +56,9 @@ class IncrementalQueryExecutor {
   // Process the next query point and return changes from previous step
   QueryStepResult processNextPoint(const QueryPointData& pointData);
 
-  // Pin geometry and payload queries for efficient reuse
+  // Pin geometry and payload queries for efficient reuse. Has to be called
+  // before `processNextPoint` is called for the first time, else the
+  // queries won't work.
   void pinQueries();
 
   // Reset state (useful for restarting)
@@ -61,11 +70,13 @@ class IncrementalQueryExecutor {
 
  private:
   Qlever& qlever_;
+  // The drive paths of the previous step (from the ROI)
   ad_utility::HashSet<Id> previousDrivePathIds_;
   std::optional<Wgs84Coord> previousCoordinate_;
   bool isFirstStep_ = true;
 
   // MPP diff tracking
+  // Road segment ids from the previous MPP.
   std::vector<uint64_t> previousMppIds_;
   // Map from drive path Id to count of road refs leading to it
   ad_utility::HashMap<Id, size_t> previousMppDrivePathCounts_;
@@ -87,20 +98,23 @@ class IncrementalQueryExecutor {
   ad_utility::HashMap<Id, std::vector<SpeedProfile>> queryMppSpeedProfiles(
       const std::vector<uint64_t>& mppIds, const Index& index);
 
-  // Merge speed profiles into drive paths
+  // Merge speed profiles into drive paths, as they are obtained separately.
   void mergeSpeedProfilesIntoDrivePaths(
       std::vector<DrivePath>& drivePaths,
       const ad_utility::HashMap<Id, std::vector<SpeedProfile>>& speedProfiles);
 
-  // Query road ref to drive path mapping
+  // Query road ref to drive path mapping.
+  // TODO<joka921> Explain and document the `added` argument.
   ad_utility::HashMap<Id, size_t> queryRoadRefToDrivePaths(
       const std::vector<uint64_t>& mppIds, bool added, const Index& index);
 
   // Query features for specific drive path Ids (from VALUES clause)
+  // TODO<joka921> This seems to be a duplicate function...
   std::vector<DrivePath> queryDrivePathFeaturesFromIds(
       const std::vector<Id>& dpIds, const Index& index);
 
   // Query speed profiles for specific drive path Ids (from VALUES clause)
+  // TODO<joka921> This also seems to be a duplicate function.
   ad_utility::HashMap<Id, std::vector<SpeedProfile>>
   queryDrivePathSpeedProfilesFromIds(const std::vector<Id>& dpIds,
                                      const Index& index);
