@@ -104,6 +104,16 @@ class IncrementalQueryExecutor {
   std::vector<DrivePath> queryDrivePathsWithFeatures(
       const std::vector<Id>& dpIds, const Index& index);
 
+  // Result of spatial query execution
+  struct SpatialQueryResult {
+    ad_utility::HashSet<Id> drivePathIds;
+    std::shared_ptr<QueryExecutionContext> qec;
+  };
+
+  // Execute spatial query and extract drive path IDs, updating timing info
+  SpatialQueryResult executeSpatialQuery(const QueryPointData& pointData,
+                                         QueryStepResult& result);
+
   // Result of updating MPP drive path counts
   struct MppUpdateResult {
     std::vector<Id> addedDrivePathIds;

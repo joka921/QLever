@@ -58,6 +58,33 @@ static std::string buildValuesClauseFromIds(
   return result;
 }
 
+// Compute two-sided set difference: returns (A without B, B without A)
+// Works with any container that has find() and can be iterated
+template <typename Container>
+static std::pair<std::vector<typename Container::value_type>,
+                 std::vector<typename Container::value_type>>
+computeSetDifferences(const Container& current, const Container& previous) {
+  using ValueType = typename Container::value_type;
+  std::vector<ValueType> added;
+  std::vector<ValueType> removed;
+
+  // Find elements in current but not in previous (added)
+  for (const auto& elem : current) {
+    if (previous.find(elem) == previous.end()) {
+      added.push_back(elem);
+    }
+  }
+
+  // Find elements in previous but not in current (removed)
+  for (const auto& elem : previous) {
+    if (current.find(elem) == current.end()) {
+      removed.push_back(elem);
+    }
+  }
+
+  return {std::move(added), std::move(removed)};
+}
+
 // Calculate distance in meters between two WGS84 coordinates
 static double calculateDistanceMeters(const Wgs84Coord& coord1,
                                       const Wgs84Coord& coord2) {
@@ -190,6 +217,28 @@ std::vector<DrivePath> IncrementalQueryExecutor::queryDrivePathsWithFeatures(
   return drivePaths;
 }
 
+// Execute spatial query and extract drive path IDs, updating timing info
+IncrementalQueryExecutor::SpatialQueryResult
+IncrementalQueryExecutor::executeSpatialQuery(const QueryPointData& pointData,
+                                              QueryStepResult& result) {
+  // Time: Execute spatial query to get current drive paths around the car
+  ad_utility::Timer spatialTimer{ad_utility::Timer::Started};
+  auto [spatialResult, spatialPlan] =
+      qlever_.queryAndPinResultWithNameReturningResult(
+          {"currentDrivepaths", std::nullopt},
+          getCurrentDrivePathQuery(pointData.coordinates));
+  auto& [spatialQet, spatialQec, spatialParsedQuery] = spatialPlan;
+  result.timing.spatialQueryUs = spatialTimer.value().count();
+
+  // Time: Extract IDs from spatial result
+  ad_utility::Timer idExtractionTimer{ad_utility::Timer::Started};
+  ad_utility::HashSet<Id> currentDrivePathIds = extractDrivePathIdsFromResult(
+      *spatialResult, spatialQet->getVariableColumns());
+  result.timing.idExtractionUs = idExtractionTimer.value().count();
+
+  return {std::move(currentDrivePathIds), spatialQec};
+}
+
 // Update MPP drive path counts based on changed MPP IDs, tracking which
 // drive paths were added or removed in the process
 IncrementalQueryExecutor::MppUpdateResult
@@ -197,26 +246,13 @@ IncrementalQueryExecutor::updateMppDrivePathCounts(
     const std::vector<uint64_t>& currentMppIds, const Index& index) {
   MppUpdateResult result;
 
-  // Calculate diff in MPP IDs
-  ad_utility::HashSet<uint64_t> prevMppSet(previousMppIds_.begin(),
-                                           previousMppIds_.end());
+  // Calculate diff in MPP IDs using set difference helper
   ad_utility::HashSet<uint64_t> currMppSet(currentMppIds.begin(),
                                            currentMppIds.end());
-
-  std::vector<uint64_t> addedMppIds;
-  std::vector<uint64_t> removedMppIds;
-
-  for (uint64_t mppId : currentMppIds) {
-    if (prevMppSet.find(mppId) == prevMppSet.end()) {
-      addedMppIds.push_back(mppId);
-    }
-  }
-
-  for (uint64_t mppId : previousMppIds_) {
-    if (currMppSet.find(mppId) == currMppSet.end()) {
-      removedMppIds.push_back(mppId);
-    }
-  }
+  ad_utility::HashSet<uint64_t> prevMppSet(previousMppIds_.begin(),
+                                           previousMppIds_.end());
+  auto [addedMppIds, removedMppIds] =
+      computeSetDifferences(currMppSet, prevMppSet);
 
   // Update counts based on added MPP road refs
   if (!addedMppIds.empty()) {
@@ -264,22 +300,12 @@ QueryStepResult IncrementalQueryExecutor::processNextPoint(
         previousCoordinate_.value(), pointData.wgs84Coord);
   }
 
-  // Time: Execute spatial query to get current drive paths around the car
-  ad_utility::Timer spatialTimer{ad_utility::Timer::Started};
-  auto [spatialResult, spatialPlan] =
-      qlever_.queryAndPinResultWithNameReturningResult(
-          {"currentDrivepaths", std::nullopt},
-          getCurrentDrivePathQuery(pointData.coordinates));
-  auto& [spatialQet, spatialQec, spatialParsedQuery] = spatialPlan;
-  result.timing.spatialQueryUs = spatialTimer.value().count();
+  // Execute spatial query and extract drive path IDs
+  auto spatialQueryResult = executeSpatialQuery(pointData, result);
+  auto& currentDrivePathIds = spatialQueryResult.drivePathIds;
+  auto& spatialQec = spatialQueryResult.qec;
 
-  // Time: Extract IDs from spatial result
-  ad_utility::Timer idExtractionTimer{ad_utility::Timer::Started};
-  ad_utility::HashSet<Id> currentDrivePathIds = extractDrivePathIdsFromResult(
-      *spatialResult, spatialQet->getVariableColumns());
-  result.timing.idExtractionUs = idExtractionTimer.value().count();
-
-  if (isFirstStep_) {
+  if (std::exchange(isFirstStep_, false)) {
     // First step: get all features for all drive paths from spatial query
     ad_utility::Timer diffTimer{ad_utility::Timer::Started};
     std::vector<Id> allIds(currentDrivePathIds.begin(),
@@ -301,12 +327,8 @@ QueryStepResult IncrementalQueryExecutor::processNextPoint(
         pointData.mppIds, true, spatialQec->getIndex());
 
     // Get all drive path IDs from MPP
-    std::vector<Id> mppDpIds;
-    mppDpIds.reserve(previousMppDrivePathCounts_.size());
-    for (const auto& [dpId, cnt] : previousMppDrivePathCounts_) {
-      mppDpIds.push_back(dpId);
-    }
-
+    std::vector<Id> mppDpIds = ::ranges::to<std::vector>(
+        previousMppDrivePathCounts_ | ::ranges::views::keys);
     // Query features and speed profiles for all MPP drive paths
     result.mppDrivePaths =
         queryDrivePathsWithFeatures(mppDpIds, spatialQec->getIndex());
@@ -315,30 +337,13 @@ QueryStepResult IncrementalQueryExecutor::processNextPoint(
 
     // Store state for next iteration
     previousDrivePathIds_ = std::move(currentDrivePathIds);
-    result.totalDrivePaths = previousDrivePathIds_.size();
-    result.totalMppDrivePaths = previousMppDrivePathCounts_.size();
-    previousCoordinate_ = pointData.wgs84Coord;
     previousMppIds_ = pointData.mppIds;
-    isFirstStep_ = false;
   } else {
     // Time: Calculate diff (removed and added IDs)
     ad_utility::Timer diffTimer{ad_utility::Timer::Started};
-
-    // Calculate removed IDs: in previous but not in current
-    for (const Id& prevId : previousDrivePathIds_) {
-      if (currentDrivePathIds.find(prevId) == currentDrivePathIds.end()) {
-        result.removedDrivePathIds.push_back(prevId);
-      }
-    }
-
-    // Calculate added IDs: in current but not in previous
-    std::vector<Id> addedIds;
-    for (const Id& currentId : currentDrivePathIds) {
-      if (previousDrivePathIds_.find(currentId) ==
-          previousDrivePathIds_.end()) {
-        addedIds.push_back(currentId);
-      }
-    }
+    auto [addedIds, removedIds] =
+        computeSetDifferences(currentDrivePathIds, previousDrivePathIds_);
+    result.removedDrivePathIds = std::move(removedIds);
     result.timing.diffComputationUs = diffTimer.value().count();
 
     // Time: Query features from payload only for newly added drive paths
@@ -357,7 +362,6 @@ QueryStepResult IncrementalQueryExecutor::processNextPoint(
         updateMppDrivePathCounts(pointData.mppIds, spatialQec->getIndex());
 
     result.removedMppDrivePathIds = std::move(mppUpdate.removedDrivePathIds);
-    result.totalMppDrivePaths = mppUpdate.totalCount;
 
     // Query features only for newly added drive paths
     if (!mppUpdate.addedDrivePathIds.empty()) {
@@ -369,12 +373,13 @@ QueryStepResult IncrementalQueryExecutor::processNextPoint(
 
     // Update state for next iteration
     previousDrivePathIds_ = std::move(currentDrivePathIds);
-    previousCoordinate_ = pointData.wgs84Coord;
-    result.totalDrivePaths = previousDrivePathIds_.size();
     previousMppIds_ = pointData.mppIds;
   }
 
+  previousCoordinate_ = pointData.wgs84Coord;
   result.timing.totalUs = totalTimer.value().count();
+  result.totalDrivePaths = previousDrivePathIds_.size();
+  result.totalMppDrivePaths = previousMppDrivePathCounts_.size();
   return result;
 }
 
