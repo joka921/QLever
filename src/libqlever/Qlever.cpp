@@ -149,7 +149,7 @@ void Qlever::queryAndPinResultWithName(
   auto queryPlan = parseAndPlanQuery(std::move(query));
   auto& [qet, qec, parsedQuery] = queryPlan;
   qec->pinResultWithName() = std::move(options);
-  [[maybe_unused]] auto result = this->query(queryPlan);
+  [[maybe_unused]] auto result = getResult(queryPlan, false);
 }
 
 // _____________________________________________________________________________

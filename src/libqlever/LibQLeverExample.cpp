@@ -77,7 +77,6 @@ int main() {
   constexpr bool showDetailedDrivePaths = false;
 
   for (size_t i = 0; i < queryPointsData.size(); ++i) {
-    // for (size_t i = 0; i < 5; ++i) {
     const auto& pointData = queryPointsData[i];
 
     try {
