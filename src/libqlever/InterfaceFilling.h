@@ -50,10 +50,6 @@ ad_utility::HashMap<Id, std::vector<SpeedProfile>> fillSpeedProfiles(
     const Result& result, const Index& index,
     const VariableToColumnMap& variableColumns);
 
-// Print drive paths to stdout (used for demonstration)
-void printDrivePaths(const std::vector<DrivePath>& drivePaths,
-                     size_t maxToPrint = 0);
-
 // Print a single drive path with full details
 void printDrivePathDetailed(const DrivePath& dp);
 

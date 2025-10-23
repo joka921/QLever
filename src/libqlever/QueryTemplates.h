@@ -19,7 +19,6 @@ extern const std::string payloadQuerySingleColumn;
 extern const std::string payloadQuerySpeedProfiles;
 extern const std::string geometryQuery;
 extern const std::string queryTemplateForCurrentDrivePaths;
-extern const std::string queryTemplateForFeatures;
 extern const std::string queryTemplateForRoadRefToDp;
 extern const std::string queryTemplateForDpFeaturesFromIds;
 extern const std::string queryTemplateForDpSpeedFromIds;

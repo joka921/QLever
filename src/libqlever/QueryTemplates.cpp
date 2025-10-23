@@ -12,10 +12,16 @@
 
 namespace qlever {
 
+// This query associates all the drive paths (?dp) with features that can be
+// expressed as one or two values (the variables ?c1 and ?c2). The `?type`
+// variable denotes the type of feature. For example, if `?type` is `2`, then
+// `?c1` is the feature ID of a predecessor of the drive path etc.
 const std::string payloadQuerySingleColumn = R"(
 PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
 PREFIX geo: <http://www.opengis.net/ont/geosparql#>
 SELECT ?dp ?type ?c1 ?c2 WHERE {
+# The nested subquery is so that qlever removes unneeded columns (will not be
+# necessary in a future version).
 SELECT ?dp ?type ?c1 ?c2 WHERE {
   ?dp a lbm:DrivePath .
   {
@@ -43,9 +49,11 @@ SELECT ?dp ?type ?c1 ?c2 WHERE {
 INTERNAL SORT BY ?dp ?type
 )";
 
+// For all drive paths, emit all speed profiles. Speed profiles symmetrically
+// have four integer values `start, end, minSpeed, maxSpeed`.
 const std::string payloadQuerySpeedProfiles = R"(
 PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
-SELECT ?dp ?start ?end ?minSpeed ?maxSpeed ?type WHERE {
+SELECT ?dp ?start ?end ?minSpeed ?maxSpeed WHERE {
   ?dp a lbm:DrivePath .
   ?dp lbm:hasSpeed ?speed .
   ?speed lbm:start ?start;
@@ -56,6 +64,9 @@ SELECT ?dp ?start ?end ?minSpeed ?maxSpeed ?type WHERE {
 INTERNAL SORT BY ?dp ?speed
 )";
 
+// Associate all drive paths with their geometries. This query is used to build
+// a spatial cached index, s.t. we can efficiently run geospatial queries on the
+// `?geom` column.
 const std::string geometryQuery = R"(
 PREFIX geo: <http://www.opengis.net/ont/geosparql#>
 PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
@@ -66,6 +77,10 @@ SELECT * WHERE {
 }
 )";
 
+// This query assumes, that the `geometryQuery` above has been cached with a
+// spatial index on the `?geom` variable under the cache name `geos`. It outputs
+// all drive paths around the car position in a radius of 200 metres. The
+// Placeholder #coordinates#  has to be replaced by the current car position.
 const std::string queryTemplateForCurrentDrivePaths = R"ab(
 PREFIX qlss: <https://qlever.cs.uni-freiburg.de/spatialSearch/>
 PREFIX geo: <http://www.opengis.net/ont/geosparql#>
@@ -81,23 +96,12 @@ PREFIX geo: <http://www.opengis.net/ont/geosparql#>
     } INTERNAL SORT BY ?dp
 )ab";
 
-const std::string queryTemplateForFeatures = R"ab(
-PREFIX qlss: <https://qlever.cs.uni-freiburg.de/spatialSearch/>
-PREFIX geo: <http://www.opengis.net/ont/geosparql#>
-SELECT ?dp ?type ?c1 ?c2 WHERE {
-  {
-    SELECT ?dp {
-      SERVICE ql:cached-result-with-name-currentDrivepaths {}
-    }
-  }
-  {
-    SELECT ?dp ?type ?c1 ?c2 {
-      SERVICE ql:cached-result-with-name-payload {}
-    }
-  }
-}
-)ab";
-
+// This query gets a set of road refs that are each either added or deleted
+// to/from the MPP since the last step, via a `VALUES (?roadPart ?added)`, and
+// returns all the drive paths that are on the road parts. For each drive path
+// we get the information, how many road parts that have been added/deleted
+// contain that drive path, s.t. we can maintain a diff of the drive paths from
+// the diff of road segments.
 const std::string queryTemplateForRoadRefToDp = R"ab(
 PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
     SELECT ?dp ?added (COUNT(?roadPart) as ?cnt) {
@@ -106,6 +110,9 @@ PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
     } GROUP BY ?dp ?added
 )ab";
 
+// Given a set of drive paths (inside a VALUES ?dp clause), obtain all the
+// features, by joining with the payload query (which is assumed as cached under
+// the name `payload`.
 const std::string queryTemplateForDpFeaturesFromIds = R"ab(
 PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
 SELECT ?dp ?type ?c1 ?c2 WHERE {
@@ -122,6 +129,7 @@ SELECT ?dp ?type ?c1 ?c2 WHERE {
 }
 )ab";
 
+// Same as above but for the speedprofiles.
 const std::string queryTemplateForDpSpeedFromIds = R"ab(
 PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
 SELECT ?dp ?start ?end ?minSpeed ?maxSpeed WHERE {

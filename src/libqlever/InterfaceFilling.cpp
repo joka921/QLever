@@ -156,7 +156,7 @@ std::vector<DrivePath> fillInterfaceForSimpleFeatures(
 }
 
 ad_utility::HashMap<Id, std::vector<SpeedProfile>> fillSpeedProfiles(
-    const Result& result, const Index& index,
+    const Result& result, [[maybe_unused]] const Index& index,
     const VariableToColumnMap& variableColumns) {
   AD_CONTRACT_CHECK(result.isFullyMaterialized(),
                     "Result must be fully materialized");
@@ -217,29 +217,6 @@ ad_utility::HashMap<Id, std::vector<SpeedProfile>> fillSpeedProfiles(
   }
 
   return speedProfilesMap;
-}
-
-void printDrivePaths(const std::vector<DrivePath>& drivePaths,
-                     size_t maxToPrint) {
-  for (const auto& dp : drivePaths | ql::views::take(maxToPrint)) {
-    std::cout << "Drive path " << dp.id_ << ":" << std::endl;
-    std::cout << "  Shape points: "
-              << std::string_view{dp.shapePoints_}.substr(0, 100) << std::endl;
-    std::cout << "  Successors (" << dp.successors_.size() << "): ";
-    for (size_t i = 0; i < std::min(dp.successors_.size(), size_t{5}); ++i) {
-      if (i > 0) std::cout << ", ";
-      std::cout << dp.successors_[i];
-    }
-    if (dp.successors_.size() > 5) std::cout << "...";
-    std::cout << std::endl;
-    std::cout << "  Predecessors (" << dp.predecessors_.size() << "): ";
-    for (size_t i = 0; i < std::min(dp.predecessors_.size(), size_t{5}); ++i) {
-      if (i > 0) std::cout << ", ";
-      std::cout << dp.predecessors_[i];
-    }
-    if (dp.predecessors_.size() > 5) std::cout << "...";
-    std::cout << std::endl;
-  }
 }
 
 void printDrivePathDetailed(const DrivePath& dp) {

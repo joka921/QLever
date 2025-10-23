@@ -118,7 +118,8 @@ static ad_utility::HashSet<Id> extractDrivePathIdsFromResult(
 
 ad_utility::HashMap<Id, size_t>
 IncrementalQueryExecutor::queryRoadRefToDrivePaths(
-    const std::vector<uint64_t>& mppIds, bool added, const Index& index) {
+    const std::vector<uint64_t>& mppIds, bool added,
+    [[maybe_unused]] const Index& index) {
   if (mppIds.empty()) {
     return {};
   }
@@ -223,10 +224,9 @@ IncrementalQueryExecutor::executeSpatialQuery(const QueryPointData& pointData,
                                               QueryStepResult& result) {
   // Time: Execute spatial query to get current drive paths around the car
   ad_utility::Timer spatialTimer{ad_utility::Timer::Started};
-  auto [spatialResult, spatialPlan] =
-      qlever_.queryAndPinResultWithNameReturningResult(
-          {"currentDrivepaths", std::nullopt},
-          getCurrentDrivePathQuery(pointData.coordinates));
+  auto spatialPlan = qlever_.parseAndPlanQuery(
+      getCurrentDrivePathQuery(pointData.coordinates));
+  auto spatialResult = qlever_.getResult(spatialPlan, false);
   auto& [spatialQet, spatialQec, spatialParsedQuery] = spatialPlan;
   result.timing.spatialQueryUs = spatialTimer.value().count();
 
