@@ -5,6 +5,7 @@
 #include "engine/SpatialJoinCachedIndex.h"
 
 #include <s2/mutable_s2shape_index.h>
+#include <s2/s2earth.h>
 #include <s2/s2polyline.h>
 
 #include "engine/SpatialJoinAlgorithms.h"
@@ -24,6 +25,24 @@ class SpatialJoinCachedIndexImpl {
   ad_utility::HashMap<size_t, size_t> populate(ColumnIndex col,
                                                const IdTable& restable,
                                                const Index& index) {
+    // Correct usage: SubsampleVertices returns indices
+    auto SubsamplePolyline = [](const S2Polyline& original, S1Angle tolerance) {
+      std::vector<int> indices;
+      original.SubsampleVertices(tolerance, &indices);
+
+      // Build new polyline from the selected vertices
+      std::vector<S2Point> subsampled_vertices;
+      subsampled_vertices.reserve(indices.size());
+
+      for (int idx : indices) {
+        subsampled_vertices.push_back(original.vertex(idx));
+      }
+
+      return S2Polyline(subsampled_vertices);
+    };
+
+    auto tolerance = S2Earth::MetersToAngle(10);
+    size_t numEdges = 0;
     AD_CORRECTNESS_CHECK(lines_.empty());
     AD_CORRECTNESS_CHECK(s2index_.num_shape_ids() == 0);
     // Populate the index from the given `IdTable`
@@ -31,9 +50,11 @@ class SpatialJoinCachedIndexImpl {
     for (size_t row = 0; row < restable.size(); row++) {
       auto p = SpatialJoinAlgorithms::getPolyline(restable, row, col, index);
       if (p.has_value()) {
+        p.value() = SubsamplePolyline(p.value(), tolerance);
         // We need to store the geometries ourselves because the index takes a
         // pointer to them.
         lines_.emplace_back(std::move(p.value()), row);
+        numEdges += lines_.back().first.num_vertices();
       }
     }
     lines_.shrink_to_fit();
@@ -52,6 +73,8 @@ class SpatialJoinCachedIndexImpl {
     // without making changes, we force the updating of its internal data
     // structure here to ensure good performance also for the first query.
     s2index_.ForceBuild();
+    std::cout << "built a spatial index for " << lines_.size()
+              << "polylines with " << numEdges << "vertices in total\n";
     return shapeIndexToRow;
   }
 };
