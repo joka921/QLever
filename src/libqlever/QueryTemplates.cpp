@@ -66,30 +66,6 @@ SELECT * WHERE {
 }
 )";
 
-const std::string queryTemplateForDrivePaths = R"ab(
-PREFIX qlss: <https://qlever.cs.uni-freiburg.de/spatialSearch/>
-PREFIX geo: <http://www.opengis.net/ont/geosparql#>
-SELECT ?dp ?type ?c1 ?c2 WHERE {
-  {
-    SELECT ?dp {
-      BIND ("POINT(#coordinates# )"^^geo:wktLiteral AS ?carPos)
-      SERVICE qlss: {
-        _:config qlss:algorithm <experimentalPointPolyline> ;
-                 qlss:left ?carPos ;
-                 qlss:right ?geom ;
-                 <experimentalRightCacheName> "geos" ;
-                 qlss:maxDistance 600 .
-      }
-    }
-  }
-  {
-    SELECT ?dp ?type ?c1 ?c2 {
-      SERVICE ql:cached-result-with-name-payload {}
-    }
-  }
-}
-)ab";
-
 const std::string queryTemplateForCurrentDrivePaths = R"ab(
 PREFIX qlss: <https://qlever.cs.uni-freiburg.de/spatialSearch/>
 PREFIX geo: <http://www.opengis.net/ont/geosparql#>
@@ -130,23 +106,6 @@ PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
     } GROUP BY ?dp ?added
 )ab";
 
-const std::string queryTemplateForMppFeatures = R"ab(
-PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
-SELECT ?dp ?type ?c1 ?c2 WHERE {
-  {
-    SELECT DISTINCT ?dp {
-      #values#
-     ?roadPart lbm:hasDrivePaths ?dp
-    }
-  }
-  {
-    SELECT ?dp ?type ?c1 ?c2 {
-      SERVICE ql:cached-result-with-name-payload {}
-    }
-  }
-}
-)ab";
-
 const std::string queryTemplateForDpFeaturesFromIds = R"ab(
 PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
 SELECT ?dp ?type ?c1 ?c2 WHERE {
@@ -179,11 +138,6 @@ SELECT ?dp ?start ?end ?minSpeed ?maxSpeed WHERE {
 }
 )ab";
 
-std::string getQueryForPoint(std::string_view point) {
-  return absl::StrReplaceAll(queryTemplateForDrivePaths,
-                             {{std::string_view{"#coordinates#"}, point}});
-}
-
 std::string getCurrentDrivePathQuery(std::string_view point) {
   return absl::StrReplaceAll(queryTemplateForCurrentDrivePaths,
                              {{std::string_view{"#coordinates#"}, point}});
@@ -191,21 +145,6 @@ std::string getCurrentDrivePathQuery(std::string_view point) {
 
 std::string mppIdToIri(uint64_t id) {
   return absl::StrCat("lbm:roadPartId_", id);
-}
-
-std::string generateValuesClause(const std::vector<uint64_t>& mppIds) {
-  std::vector<std::string> iris;
-  iris.reserve(mppIds.size());
-  for (uint64_t id : mppIds) {
-    iris.push_back(mppIdToIri(id));
-  }
-  return absl::StrCat("VALUES ?roadPart { ", absl::StrJoin(iris, " "), " }");
-}
-
-std::string getMppFeaturesQuery(const std::vector<uint64_t>& mppIds) {
-  std::string valuesClause = generateValuesClause(mppIds);
-  return absl::StrReplaceAll(queryTemplateForMppFeatures,
-                             {{std::string_view{"#values#"}, valuesClause}});
 }
 
 std::string generateValuesClauseWithAdded(const std::vector<uint64_t>& mppIds,

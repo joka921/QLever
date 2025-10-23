@@ -89,22 +89,6 @@ static ad_utility::HashSet<Id> extractDrivePathIdsFromResult(
   return ids;
 }
 
-std::vector<DrivePath> IncrementalQueryExecutor::queryMppFeatures(
-    const std::vector<uint64_t>& mppIds, const Index& index) {
-  if (mppIds.empty()) {
-    return {};
-  }
-
-  // Use the existing getMppFeaturesQuery function
-  auto query = getMppFeaturesQuery(mppIds);
-  auto plan = qlever_.parseAndPlanQuery(query);
-  auto result = qlever_.getResult(plan, false);
-
-  // Fill interface with the results
-  return fillInterfaceForSimpleFeatures(
-      *result, index, std::get<0>(plan)->getVariableColumns());
-}
-
 ad_utility::HashMap<Id, size_t>
 IncrementalQueryExecutor::queryRoadRefToDrivePaths(
     const std::vector<uint64_t>& mppIds, bool added, const Index& index) {
@@ -268,6 +252,7 @@ IncrementalQueryExecutor::updateMppDrivePathCounts(
   return result;
 }
 
+// _____________________________________________________________________________
 QueryStepResult IncrementalQueryExecutor::processNextPoint(
     const QueryPointData& pointData) {
   ad_utility::Timer totalTimer{ad_utility::Timer::Started};
@@ -376,7 +361,6 @@ QueryStepResult IncrementalQueryExecutor::processNextPoint(
 
     // Query features only for newly added drive paths
     if (!mppUpdate.addedDrivePathIds.empty()) {
-      ad_utility::Timer featureTimer{ad_utility::Timer::Started};
       result.mppDrivePaths = queryDrivePathsWithFeatures(
           mppUpdate.addedDrivePathIds, spatialQec->getIndex());
     }
