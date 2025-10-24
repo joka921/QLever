@@ -570,9 +570,9 @@ class EncodedIriManagerImpl {
       return std::nullopt;
     }
 
-    auto num1Str = match.get<1>().to_view();
-    auto num2Str = match.get<2>().to_view();
-    auto num3Str = match.get<3>().to_view();
+    auto num1Str = match.template get<1>().to_view();
+    auto num2Str = match.template get<2>().to_view();
+    auto num3Str = match.template get<3>().to_view();
 
     auto num1 = parseDecimal(num1Str);
     auto num2 = parseDecimal(num2Str);
@@ -652,9 +652,9 @@ class EncodedIriManagerImpl {
       return std::nullopt;
     }
 
-    auto num1Str = match.get<1>().to_view();
-    auto num2Str = match.get<2>().to_view();
-    auto num3Str = match.get<3>().to_view();
+    auto num1Str = match.template get<1>().to_view();
+    auto num2Str = match.template get<2>().to_view();
+    auto num3Str = match.template get<3>().to_view();
 
     auto num1 = parseDecimal(num1Str);
     auto num2 = parseDecimal(num2Str);
@@ -738,8 +738,8 @@ class EncodedIriManagerImpl {
       return std::nullopt;
     }
 
-    auto num1Str = match.get<1>().to_view();
-    auto num2Str = match.get<2>().to_view();
+    auto num1Str = match.template get<1>().to_view();
+    auto num2Str = match.template get<2>().to_view();
 
     auto num1 = parseDecimal(num1Str);
     auto num2 = parseDecimal(num2Str);
@@ -843,8 +843,8 @@ class EncodedIriManagerImpl {
       return std::nullopt;
     }
 
-    auto num1Str = match.get<1>().to_view();
-    auto num2Str = match.get<2>().to_view();
+    auto num1Str = match.template get<1>().to_view();
+    auto num2Str = match.template get<2>().to_view();
 
     auto num1 = parseDecimal(num1Str);
     auto num2 = parseDecimal(num2Str);
