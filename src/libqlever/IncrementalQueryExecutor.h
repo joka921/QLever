@@ -124,6 +124,10 @@ class IncrementalQueryExecutor {
   // Update MPP drive path counts and return added/removed drive paths
   MppUpdateResult updateMppDrivePathCounts(
       const std::vector<uint64_t>& currentMppIds, const Index& index);
+
+  qlever::Qlever::QueryPlan planForSpatialQuery_;
+  Qlever::QueryPlan getQueryPlanForSpatialQuery(
+      const QueryPointData& pointData);
 };
 
 // Print detailed timing breakdown to stdout

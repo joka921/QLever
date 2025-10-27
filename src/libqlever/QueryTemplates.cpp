@@ -96,17 +96,45 @@ PREFIX geo: <http://www.opengis.net/ont/geosparql#>
     } INTERNAL SORT BY ?dp
 )ab";
 
+const std::string queryCurrentDrivePathsWithExternalValues = R"ab(
+PREFIX qlss: <https://qlever.cs.uni-freiburg.de/spatialSearch/>
+PREFIX qlet: <https://qlever.cs.uni-freiburg.de/external-values->
+PREFIX geo: <http://www.opengis.net/ont/geosparql#>
+    SELECT ?dp {
+      SERVICE qlet:current-position {
+        [] <variables> ?carPos
+      }
+      SERVICE qlss: {
+        _:config qlss:algorithm <experimentalPointPolyline> ;
+                 qlss:left ?carPos ;
+                 qlss:right ?geom ;
+                 <experimentalRightCacheName> "geos" ;
+                 qlss:maxDistance 200 .
+      }
+    } INTERNAL SORT BY ?dp
+)ab";
+
 // This query gets a set of road refs that are each either added or deleted
 // to/from the MPP since the last step, via a `VALUES (?roadPart ?added)`, and
 // returns all the drive paths that are on the road parts. For each drive path
 // we get the information, how many road parts that have been added/deleted
 // contain that drive path, s.t. we can maintain a diff of the drive paths from
 // the diff of road segments.
+
+const std::string queryDpToRoadRef = R"ab(
+PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
+    SELECT ?roadPart ?dp {
+     ?roadPart lbm:hasDrivePaths ?dp
+    } INTERNAL SORT BY ?roadPart
+)ab";
+
 const std::string queryTemplateForRoadRefToDp = R"ab(
 PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
     SELECT ?dp ?added (COUNT(?roadPart) as ?cnt) {
       #values#
-     ?roadPart lbm:hasDrivePaths ?dp
+    {SELECT ?roadPart ?dp {
+      SERVICE ql:cached-result-with-name-road-ref-to-dp {}
+    }}
     } GROUP BY ?dp ?added
 )ab";
 

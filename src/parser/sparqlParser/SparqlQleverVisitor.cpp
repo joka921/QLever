@@ -1324,11 +1324,14 @@ GraphPatternOperation Visitor::visit(Parser::ServiceGraphPatternContext* ctx) {
     return visitTextSearchQuery(ctx);
   } else if (ql::starts_with(serviceIri.toStringRepresentation(),
                              EXTERNAL_VALUES_IRI_PREFIX)) {
+    std::cout << "visiting an external values query  \n";
     return visitExternalValuesQuery(ctx, serviceIri);
   } else if (ql::starts_with(asStringViewUnsafe(serviceIri.getContent()),
                              CACHED_RESULT_WITH_NAME_PREFIX)) {
     return visitNamedCachedResult(serviceIri, ctx);
   }
+  std::cout << "visiting an ordinary service query with iri "
+            << serviceIri.toStringRepresentation() << '\n';
   // Parse the body of the SERVICE query. Add the visible variables from the
   // SERVICE clause to the visible variables so far, but also remember them
   // separately (with duplicates removed) because we need them in `Service.cpp`

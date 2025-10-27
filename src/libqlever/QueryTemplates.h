@@ -22,6 +22,9 @@ extern const std::string queryTemplateForCurrentDrivePaths;
 extern const std::string queryTemplateForRoadRefToDp;
 extern const std::string queryTemplateForDpFeaturesFromIds;
 extern const std::string queryTemplateForDpSpeedFromIds;
+extern const std::string queryDpToRoadRef;
+
+extern const std::string queryCurrentDrivePathsWithExternalValues;
 
 // Helper function to get current drive path query with coordinates
 std::string getCurrentDrivePathQuery(std::string_view point);

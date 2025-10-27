@@ -76,55 +76,58 @@ int main() {
   // Flag to control detailed drive path printing
   constexpr bool showDetailedDrivePaths = false;
 
-  for (size_t i = 0; i < queryPointsData.size(); ++i) {
-    const auto& pointData = queryPointsData[i];
+  for (;;) {
+    for (size_t i = 0; i < queryPointsData.size(); ++i) {
+      const auto& pointData = queryPointsData[i];
 
-    try {
-      auto stepResult = executor.processNextPoint(pointData);
+      try {
+        auto stepResult = executor.processNextPoint(pointData);
 
-      // Compact single-line output for step info
-      std::cout << "\nStep " << (i + 1) << " @ " << pointData.coordinates
-                << " - " << stepResult.timing.totalUs << " us";
-      if (stepResult.distanceFromPreviousMeters.has_value()) {
-        std::cout << " - Distance: "
-                  << stepResult.distanceFromPreviousMeters.value() << " m";
-      }
-      std::cout << std::endl;
+        // Compact single-line output for step info
+        std::cout << "\nStep " << (i + 1) << " @ " << pointData.coordinates
+                  << " - " << stepResult.timing.totalUs << " us";
+        if (stepResult.distanceFromPreviousMeters.has_value()) {
+          std::cout << " - Distance: "
+                    << stepResult.distanceFromPreviousMeters.value() << " m";
+        }
+        std::cout << std::endl;
 
-      // Compact output for results
-      std::cout << "  DPs in ROI (total/added/removed): "
-                << stepResult.totalDrivePaths << "/"
-                << stepResult.addedDrivePaths.size() << "/"
-                << stepResult.removedDrivePathIds.size() << std::endl;
-      std::cout << "  DPs in MPP (total/added/removed): "
-                << stepResult.totalMppDrivePaths << "/"
-                << stepResult.mppDrivePaths.size() << "/"
-                << stepResult.removedMppDrivePathIds.size() << std::endl;
+        // Compact output for results
+        std::cout << "  DPs in ROI (total/added/removed): "
+                  << stepResult.totalDrivePaths << "/"
+                  << stepResult.addedDrivePaths.size() << "/"
+                  << stepResult.removedDrivePathIds.size() << std::endl;
+        std::cout << "  DPs in MPP (total/added/removed): "
+                  << stepResult.totalMppDrivePaths << "/"
+                  << stepResult.mppDrivePaths.size() << "/"
+                  << stepResult.removedMppDrivePathIds.size() << std::endl;
 
-      // Detailed timing breakdown (controlled by flag)
-      if (showDetailedTiming) {
-        qlever::printDetailedTimings(stepResult);
-      }
-
-      // Print detailed drive path information (controlled by flag)
-      if (showDetailedDrivePaths) {
-        // Print one added drive path from surroundings if available
-        if (!stepResult.addedDrivePaths.empty()) {
-          std::cout << "  Sample added drive path from surroundings:"
-                    << std::endl;
-          qlever::printDrivePathDetailed(stepResult.addedDrivePaths[0]);
+        // Detailed timing breakdown (controlled by flag)
+        if (showDetailedTiming) {
+          qlever::printDetailedTimings(stepResult);
         }
 
-        // Print one MPP drive path if available
-        if (!stepResult.mppDrivePaths.empty()) {
-          std::cout << "  Sample MPP drive path:" << std::endl;
-          qlever::printDrivePathDetailed(stepResult.mppDrivePaths[0]);
-        }
-      }
+        // Print detailed drive path information (controlled by flag)
+        if (showDetailedDrivePaths) {
+          // Print one added drive path from surroundings if available
+          if (!stepResult.addedDrivePaths.empty()) {
+            std::cout << "  Sample added drive path from surroundings:"
+                      << std::endl;
+            qlever::printDrivePathDetailed(stepResult.addedDrivePaths[0]);
+          }
 
-    } catch (const std::exception& e) {
-      std::cerr << "Executing the query failed: " << e.what() << std::endl;
-      return 1;
+          // Print one MPP drive path if available
+          if (!stepResult.mppDrivePaths.empty()) {
+            std::cout << "  Sample MPP drive path:" << std::endl;
+            qlever::printDrivePathDetailed(stepResult.mppDrivePaths[0]);
+          }
+        }
+
+      } catch (const std::exception& e) {
+        std::cerr << "Executing the query failed: " << e.what() << std::endl;
+        return 1;
+      }
     }
+    break;
   }
 }

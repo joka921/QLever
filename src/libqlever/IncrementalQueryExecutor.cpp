@@ -18,6 +18,7 @@
 #include "./IdTableValueExtraction.h"
 #include "./QueryTemplates.h"
 #include "engine/ExportQueryExecutionTrees.h"
+#include "engine/ExternallySpecifiedValues.h"
 #include "util/Timer.h"
 
 namespace qlever {
@@ -218,14 +219,32 @@ std::vector<DrivePath> IncrementalQueryExecutor::queryDrivePathsWithFeatures(
   return drivePaths;
 }
 
+// TODO<joka921> This currently works only if we disable the "ordinary" cache,
+// or clear it after each iteration...
+Qlever::QueryPlan IncrementalQueryExecutor::getQueryPlanForSpatialQuery(
+    const QueryPointData& pointData) {
+  auto spatialPlan = planForSpatialQuery_;
+  auto& qet = std::get<0>(spatialPlan);
+  qet = qet->clone();
+  std::vector<ExternallySpecifiedValues*> values;
+  qet->getRootOperation()->getExternalValues(values);
+  AD_CORRECTNESS_CHECK(values.size() == 1,
+                       "Expected exactly one value, but got ", values.size());
+  parsedQuery::SparqlValues v;
+  v._variables.push_back(Variable{"?carPos"});
+  v._values.emplace_back(std::vector<TripleComponent>{
+      GeoPoint{pointData.wgs84Coord.latitude, pointData.wgs84Coord.longitude}});
+  values.at(0)->updateValues(std::move(v));
+  return spatialPlan;
+}
 // Execute spatial query and extract drive path IDs, updating timing info
 IncrementalQueryExecutor::SpatialQueryResult
 IncrementalQueryExecutor::executeSpatialQuery(const QueryPointData& pointData,
                                               QueryStepResult& result) {
   // Time: Execute spatial query to get current drive paths around the car
   ad_utility::Timer spatialTimer{ad_utility::Timer::Started};
-  auto spatialPlan = qlever_.parseAndPlanQuery(
-      getCurrentDrivePathQuery(pointData.coordinates));
+
+  auto spatialPlan = getQueryPlanForSpatialQuery(pointData);
   auto spatialResult = qlever_.getResult(spatialPlan, false);
   auto& [spatialQet, spatialQec, spatialParsedQuery] = spatialPlan;
   result.timing.spatialQueryUs = spatialTimer.value().count();
@@ -293,6 +312,7 @@ QueryStepResult IncrementalQueryExecutor::processNextPoint(
     const QueryPointData& pointData) {
   ad_utility::Timer totalTimer{ad_utility::Timer::Started};
   QueryStepResult result;
+  qlever_.clearCache();
 
   // Calculate distance from previous point (if not first step)
   if (!isFirstStep_ && previousCoordinate_.has_value()) {
@@ -396,8 +416,18 @@ void IncrementalQueryExecutor::pinQueries() {
   std::cout << "pinning the speed profiles" << std::endl;
   qlever_.queryAndPinResultWithName({"speed", std::nullopt},
                                     qlever::payloadQuerySpeedProfiles);
+
+  qlever_.queryAndPinResultWithName({"road-ref-to-dp", std::nullopt},
+                                    qlever::queryDpToRoadRef);
+
+  planForSpatialQuery_ =
+      qlever_.parseAndPlanQuery(queryCurrentDrivePathsWithExternalValues);
   std::cout << "Time for pinning the queries " << timer.msecs().count() << "ms"
             << std::endl;
+
+  // Column stripping in the fully materialized mode currently incurs a deep
+  // copy, which is really really wasteful.
+  setRuntimeParameter<&RuntimeParameters::stripColumns_>(false);
 }
 
 void printDetailedTimings(const QueryStepResult& stepResult) {
