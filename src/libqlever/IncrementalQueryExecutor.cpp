@@ -32,33 +32,6 @@ static ColumnIndex getColumnIndex(const VariableToColumnMap& variableColumns,
   return it->second.columnIndex_;
 }
 
-// Helper to convert vector of Ids to VALUES clause
-static std::string buildValuesClauseFromIds(
-    const std::vector<Id>& dpIds, const Index& index,
-    std::string_view variableName = "?dp") {
-  std::vector<std::string> iris;
-  iris.reserve(dpIds.size());
-
-  for (const Id& id : dpIds) {
-    auto optString =
-        ExportQueryExecutionTrees::idToStringAndType(index, id, LocalVocab{});
-    if (optString.has_value()) {
-      iris.push_back(optString->first);
-    }
-  }
-
-  if (iris.empty()) {
-    return "";
-  }
-
-  std::string result = "VALUES " + std::string(variableName) + " { ";
-  for (const auto& iri : iris) {
-    result += iri + " ";
-  }
-  result += "}";
-  return result;
-}
-
 // Compute two-sided set difference: returns (A without B, B without A)
 // Works with any container that has find() and can be iterated
 template <typename Container>
@@ -125,8 +98,8 @@ IncrementalQueryExecutor::queryRoadRefToDrivePaths(
     return {};
   }
 
-  auto query = getRoadRefToDpQuery(mppIds, added);
-  auto plan = qlever_.parseAndPlanQuery(query);
+  qlever_.clearCache();
+  auto plan = getQueryPlanForRoadRefToDp(mppIds, added);
   auto result = qlever_.getResult(plan, false);
 
   const auto& table = result->idTable();
@@ -155,17 +128,7 @@ std::vector<DrivePath> IncrementalQueryExecutor::queryDrivePathFeaturesFromIds(
     return {};
   }
 
-  auto valuesClause = buildValuesClauseFromIds(dpIds, index);
-  if (valuesClause.empty()) {
-    return {};
-  }
-
-  // Use the template and replace #values#
-  std::string query =
-      absl::StrReplaceAll(queryTemplateForDpFeaturesFromIds,
-                          {{std::string_view{"#values#"}, valuesClause}});
-
-  auto plan = qlever_.parseAndPlanQuery(query);
+  auto plan = getQueryPlanForDpFeatures(dpIds, index);
   auto result = qlever_.getResult(plan, false);
 
   return fillInterfaceForSimpleFeatures(
@@ -179,17 +142,7 @@ IncrementalQueryExecutor::queryDrivePathSpeedProfilesFromIds(
     return {};
   }
 
-  auto valuesClause = buildValuesClauseFromIds(dpIds, index);
-  if (valuesClause.empty()) {
-    return {};
-  }
-
-  // Use the template and replace #values#
-  std::string query =
-      absl::StrReplaceAll(queryTemplateForDpSpeedFromIds,
-                          {{std::string_view{"#values#"}, valuesClause}});
-
-  auto plan = qlever_.parseAndPlanQuery(query);
+  auto plan = getQueryPlanForDpSpeedProfiles(dpIds, index);
   auto result = qlever_.getResult(plan, false);
 
   return fillSpeedProfiles(*result, index,
@@ -236,6 +189,89 @@ Qlever::QueryPlan IncrementalQueryExecutor::getQueryPlanForSpatialQuery(
       GeoPoint{pointData.wgs84Coord.latitude, pointData.wgs84Coord.longitude}});
   values.at(0)->updateValues(std::move(v));
   return spatialPlan;
+}
+
+// _____________________________________________________________________________
+Qlever::QueryPlan IncrementalQueryExecutor::getQueryPlanForRoadRefToDp(
+    const std::vector<uint64_t>& mppIds, bool added) {
+  auto plan = planForRoadRefToDp_;
+  auto& qet = std::get<0>(plan);
+  qet = qet->clone();
+  std::vector<ExternallySpecifiedValues*> values;
+  qet->getRootOperation()->getExternalValues(values);
+  AD_CORRECTNESS_CHECK(values.size() == 1,
+                       "Expected exactly one external values, but got ",
+                       values.size());
+
+  parsedQuery::SparqlValues v;
+  v._variables.push_back(Variable{"?roadPart"});
+  v._variables.push_back(Variable{"?added"});
+
+  for (uint64_t id : mppIds) {
+    v._values.emplace_back(std::vector<TripleComponent>{
+        TripleComponent::Iri::fromIriref(mppIdToIri(id)),
+        TripleComponent::Literal::literalWithoutQuotes(added ? "true"
+                                                             : "false")});
+  }
+
+  values.at(0)->updateValues(std::move(v));
+  return plan;
+}
+
+// _____________________________________________________________________________
+Qlever::QueryPlan IncrementalQueryExecutor::getQueryPlanForDpFeatures(
+    const std::vector<Id>& dpIds, const Index& index) {
+  auto plan = planForDpFeatures_;
+  auto& qet = std::get<0>(plan);
+  qet = qet->clone();
+  std::vector<ExternallySpecifiedValues*> values;
+  qet->getRootOperation()->getExternalValues(values);
+  AD_CORRECTNESS_CHECK(values.size() == 1,
+                       "Expected exactly one external values, but got ",
+                       values.size());
+
+  parsedQuery::SparqlValues v;
+  v._variables.push_back(Variable{"?dp"});
+
+  for (const Id& id : dpIds) {
+    auto optString =
+        ExportQueryExecutionTrees::idToStringAndType(index, id, LocalVocab{});
+    if (optString.has_value()) {
+      v._values.emplace_back(std::vector<TripleComponent>{
+          TripleComponent::Iri::fromIriref(optString->first)});
+    }
+  }
+
+  values.at(0)->updateValues(std::move(v));
+  return plan;
+}
+
+// _____________________________________________________________________________
+Qlever::QueryPlan IncrementalQueryExecutor::getQueryPlanForDpSpeedProfiles(
+    const std::vector<Id>& dpIds, const Index& index) {
+  auto plan = planForDpSpeedProfiles_;
+  auto& qet = std::get<0>(plan);
+  qet = qet->clone();
+  std::vector<ExternallySpecifiedValues*> values;
+  qet->getRootOperation()->getExternalValues(values);
+  AD_CORRECTNESS_CHECK(values.size() == 1,
+                       "Expected exactly one external values, but got ",
+                       values.size());
+
+  parsedQuery::SparqlValues v;
+  v._variables.push_back(Variable{"?dp"});
+
+  for (const Id& id : dpIds) {
+    auto optString =
+        ExportQueryExecutionTrees::idToStringAndType(index, id, LocalVocab{});
+    if (optString.has_value()) {
+      v._values.emplace_back(std::vector<TripleComponent>{
+          TripleComponent::Iri::fromIriref(optString->first)});
+    }
+  }
+
+  values.at(0)->updateValues(std::move(v));
+  return plan;
 }
 // Execute spatial query and extract drive path IDs, updating timing info
 IncrementalQueryExecutor::SpatialQueryResult
@@ -405,6 +441,8 @@ QueryStepResult IncrementalQueryExecutor::processNextPoint(
 
 void IncrementalQueryExecutor::pinQueries() {
   ad_utility::Timer timer{ad_utility::Timer::Started};
+  setRuntimeParameter<&RuntimeParameters::cacheMaxNumEntries_>(0);
+  qlever_.clearCache();
   std::cout << "pinning the geometries" << std::endl;
   qlever_.queryAndPinResultWithName({"geos", Variable{"?geom"}},
                                     qlever::geometryQuery);
@@ -417,17 +455,25 @@ void IncrementalQueryExecutor::pinQueries() {
   qlever_.queryAndPinResultWithName({"speed", std::nullopt},
                                     qlever::payloadQuerySpeedProfiles);
 
+  std::cout << "pinning the road ref to drive path mapping" << std::endl;
   qlever_.queryAndPinResultWithName({"road-ref-to-dp", std::nullopt},
                                     qlever::queryDpToRoadRef);
 
-  planForSpatialQuery_ =
-      qlever_.parseAndPlanQuery(queryCurrentDrivePathsWithExternalValues);
-  std::cout << "Time for pinning the queries " << timer.msecs().count() << "ms"
-            << std::endl;
-
+  std::cout << "parsing and planning queries with external values" << std::endl;
   // Column stripping in the fully materialized mode currently incurs a deep
   // copy, which is really really wasteful.
   setRuntimeParameter<&RuntimeParameters::stripColumns_>(false);
+  planForSpatialQuery_ =
+      qlever_.parseAndPlanQuery(queryCurrentDrivePathsWithExternalValues);
+  planForRoadRefToDp_ =
+      qlever_.parseAndPlanQuery(queryRoadRefToDpWithExternalValues);
+  planForDpFeatures_ =
+      qlever_.parseAndPlanQuery(queryDpFeaturesFromIdsWithExternalValues);
+  planForDpSpeedProfiles_ =
+      qlever_.parseAndPlanQuery(queryDpSpeedFromIdsWithExternalValues);
+
+  std::cout << "Time for pinning the queries " << timer.msecs().count() << "ms"
+            << std::endl;
 }
 
 void printDetailedTimings(const QueryStepResult& stepResult) {

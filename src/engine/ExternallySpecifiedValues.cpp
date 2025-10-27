@@ -15,8 +15,8 @@ ExternallySpecifiedValues::ExternallySpecifiedValues(
 
 // ____________________________________________________________________________
 std::string ExternallySpecifiedValues::getCacheKeyImpl() const {
-  auto gen = ad_utility::FastRandomIntGenerator<size_t>{};
-  return absl::StrCat("EXTERNAL VALUES #", gen(), identifier_, "# (",
+  // auto gen = ad_utility::FastRandomIntGenerator<size_t>{};
+  return absl::StrCat("EXTERNAL VALUES #" /*,gen()*/, identifier_, "# (",
                       parsedValues_.variablesToString(), ") { ",
                       parsedValues_.valuesToString(), " }");
 }

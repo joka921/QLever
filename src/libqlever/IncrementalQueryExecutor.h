@@ -126,8 +126,18 @@ class IncrementalQueryExecutor {
       const std::vector<uint64_t>& currentMppIds, const Index& index);
 
   qlever::Qlever::QueryPlan planForSpatialQuery_;
+  qlever::Qlever::QueryPlan planForRoadRefToDp_;
+  qlever::Qlever::QueryPlan planForDpFeatures_;
+  qlever::Qlever::QueryPlan planForDpSpeedProfiles_;
+
   Qlever::QueryPlan getQueryPlanForSpatialQuery(
       const QueryPointData& pointData);
+  Qlever::QueryPlan getQueryPlanForRoadRefToDp(
+      const std::vector<uint64_t>& mppIds, bool added);
+  Qlever::QueryPlan getQueryPlanForDpFeatures(const std::vector<Id>& dpIds,
+                                              const Index& index);
+  Qlever::QueryPlan getQueryPlanForDpSpeedProfiles(const std::vector<Id>& dpIds,
+                                                   const Index& index);
 };
 
 // Print detailed timing breakdown to stdout

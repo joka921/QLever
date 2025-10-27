@@ -114,6 +114,57 @@ PREFIX geo: <http://www.opengis.net/ont/geosparql#>
     } INTERNAL SORT BY ?dp
 )ab";
 
+const std::string queryRoadRefToDpWithExternalValues = R"ab(
+PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
+PREFIX qlet: <https://qlever.cs.uni-freiburg.de/external-values->
+    SELECT ?dp ?added (COUNT(?roadPart) as ?cnt) {
+      SERVICE qlet:road-ref-values {
+        [] <variables> ?roadPart, ?added
+      }
+    {SELECT ?roadPart ?dp {
+      SERVICE ql:cached-result-with-name-road-ref-to-dp {}
+    }}
+    } GROUP BY ?dp ?added
+)ab";
+
+const std::string queryDpFeaturesFromIdsWithExternalValues = R"ab(
+PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
+PREFIX qlet: <https://qlever.cs.uni-freiburg.de/external-values->
+SELECT ?dp ?type ?c1 ?c2 WHERE {
+  {
+    SELECT ?dp {
+      SERVICE qlet:dp-ids {
+        [] <variables> ?dp
+      }
+    }
+  }
+  {
+    SELECT ?dp ?type ?c1 ?c2 {
+      SERVICE ql:cached-result-with-name-payload {}
+    }
+  }
+}
+)ab";
+
+const std::string queryDpSpeedFromIdsWithExternalValues = R"ab(
+PREFIX lbm: <http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/behaviorMap#>
+PREFIX qlet: <https://qlever.cs.uni-freiburg.de/external-values->
+SELECT ?dp ?start ?end ?minSpeed ?maxSpeed WHERE {
+  {
+    SELECT ?dp {
+      SERVICE qlet:dp-ids {
+        [] <variables> ?dp
+      }
+    }
+  }
+  {
+    SELECT ?dp ?start ?end ?minSpeed ?maxSpeed {
+      SERVICE ql:cached-result-with-name-speed {}
+    }
+  }
+}
+)ab";
+
 // This query gets a set of road refs that are each either added or deleted
 // to/from the MPP since the last step, via a `VALUES (?roadPart ?added)`, and
 // returns all the drive paths that are on the road parts. For each drive path
@@ -180,7 +231,10 @@ std::string getCurrentDrivePathQuery(std::string_view point) {
 }
 
 std::string mppIdToIri(uint64_t id) {
-  return absl::StrCat("lbm:roadPartId_", id);
+  return absl::StrCat(
+      "<http://www.bmw-carit.de/Foresight/Map/Ontologies/Low/"
+      "behaviorMap#roadPartId_",
+      id, ">");
 }
 
 std::string generateValuesClauseWithAdded(const std::vector<uint64_t>& mppIds,
