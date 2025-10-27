@@ -5,7 +5,6 @@
 #ifndef QLEVER_SRC_PARSER_EXTERNALVALUESQUERY_H
 #define QLEVER_SRC_PARSER_EXTERNALVALUESQUERY_H
 
-#include "parser/GraphPatternOperation.h"
 #include "parser/MagicServiceQuery.h"
 
 class SparqlTriple;

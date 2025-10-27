@@ -26,9 +26,8 @@ auto iri = ad_utility::testing::iri;
 // Check the basic methods of the `ExternallySpecifiedValues` operation.
 TEST(ExternallySpecifiedValues, basicMethods) {
   QueryExecutionContext* testQec = ad_utility::testing::getQec();
-  ValuesComponents values{{TC{1}, TC{2}, TC{3}},
-                          {TC{5}, TC{2}, TC{3}},
-                          {TC{7}, TC{42}, TC{3}}};
+  ValuesComponents values{
+      {TC{1}, TC{2}, TC{3}}, {TC{5}, TC{2}, TC{3}}, {TC{7}, TC{42}, TC{3}}};
   ExternallySpecifiedValues externalValuesOp(
       testQec, {{Variable{"?x"}, Variable{"?y"}, Variable{"?z"}}, values},
       "test-id");
@@ -45,8 +44,9 @@ TEST(ExternallySpecifiedValues, basicMethods) {
   // Check other basic methods inherited from Values
   EXPECT_EQ(externalValuesOp.getSizeEstimate(), 3u);
   EXPECT_EQ(externalValuesOp.getCostEstimate(), 3u);
-  EXPECT_EQ(externalValuesOp.getDescriptor(),
-            "External values with identifier 'test-id' and variables ?x\t?y\t?z");
+  EXPECT_EQ(
+      externalValuesOp.getDescriptor(),
+      "External values with identifier 'test-id' and variables ?x\t?y\t?z");
   EXPECT_TRUE(externalValuesOp.resultSortedOn().empty());
   EXPECT_EQ(externalValuesOp.getResultWidth(), 3u);
 }
@@ -88,13 +88,15 @@ TEST(ExternallySpecifiedValues, updateValues) {
   auto testQec = ad_utility::testing::getQec();
   ValuesComponents initialValues{{TC{1}, TC{2}}, {TC{3}, TC{4}}};
   ExternallySpecifiedValues externalValuesOp(
-      testQec, {{Variable{"?x"}, Variable{"?y"}}, initialValues}, "update-test");
+      testQec, {{Variable{"?x"}, Variable{"?y"}}, initialValues},
+      "update-test");
 
   // Check initial size
   EXPECT_EQ(externalValuesOp.getSizeEstimate(), 2u);
 
   // Update with new values (same variables)
-  ValuesComponents newValues{{TC{10}, TC{20}}, {TC{30}, TC{40}}, {TC{50}, TC{60}}};
+  ValuesComponents newValues{
+      {TC{10}, TC{20}}, {TC{30}, TC{40}}, {TC{50}, TC{60}}};
   parsedQuery::SparqlValues updatedSparqlValues{
       {Variable{"?x"}, Variable{"?y"}}, newValues};
 
@@ -117,7 +119,7 @@ TEST(ExternallySpecifiedValues, updateValuesFailsWithDifferentVariables) {
   parsedQuery::SparqlValues wrongSparqlValues{
       {Variable{"?x"}, Variable{"?y"}, Variable{"?z"}}, newValues};
 
-  EXPECT_DEATH(externalValuesOp.updateValues(std::move(wrongSparqlValues)), "");
+  EXPECT_ANY_THROW(externalValuesOp.updateValues(std::move(wrongSparqlValues)));
 }
 
 // Test that updateValues fails with same variables but different order
@@ -132,8 +134,8 @@ TEST(ExternallySpecifiedValues, updateValuesFailsWithDifferentOrder) {
   parsedQuery::SparqlValues wrongOrderSparqlValues{
       {Variable{"?y"}, Variable{"?x"}}, newValues};
 
-  EXPECT_DEATH(externalValuesOp.updateValues(std::move(wrongOrderSparqlValues)),
-               "");
+  EXPECT_ANY_THROW(
+      externalValuesOp.updateValues(std::move(wrongOrderSparqlValues)));
 }
 
 // Test clone functionality

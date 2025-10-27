@@ -744,7 +744,7 @@ void Operation::getExternalValues(
   // Recursively process all children
   for (auto* child : getChildren()) {
     if (child != nullptr) {
-      child->getOperation()->getExternalValues(externalValues);
+      child->getRootOperation()->getExternalValues(externalValues);
     }
   }
 }

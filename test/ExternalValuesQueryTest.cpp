@@ -8,8 +8,8 @@
 #include "parser/SparqlTriple.h"
 #include "util/Exception.h"
 
-using parsedQuery::ExternalValuesQuery;
 using parsedQuery::ExternalValuesException;
+using parsedQuery::ExternalValuesQuery;
 
 // Test extracting identifier from valid IRI
 TEST(ExternalValuesQuery, extractIdentifierValid) {
@@ -54,7 +54,8 @@ TEST(ExternalValuesQuery, addParameterVariables) {
 
   // Create a triple with <variables> predicate and a variable as object
   TripleComponent subject = TripleComponent::UNDEF{};
-  TripleComponent predicate = TripleComponent::Iri::fromIriref("<variables>");
+  auto predicate =
+      PropertyPath::fromIri(TripleComponent::Iri::fromIriref("<variables>"));
   TripleComponent object = Variable{"?x"};
 
   SparqlTriple triple{subject, predicate, object};
@@ -70,7 +71,8 @@ TEST(ExternalValuesQuery, addParameterMultipleVariables) {
   query.identifier_ = "test";
 
   TripleComponent subject = TripleComponent::UNDEF{};
-  TripleComponent predicate = TripleComponent::Iri::fromIriref("<variables>");
+  auto predicate =
+      PropertyPath::fromIri(TripleComponent::Iri::fromIriref("<variables>"));
 
   SparqlTriple triple1{subject, predicate, Variable{"?x"}};
   SparqlTriple triple2{subject, predicate, Variable{"?y"}};
@@ -92,7 +94,8 @@ TEST(ExternalValuesQuery, addParameterNonVariable) {
   query.identifier_ = "test";
 
   TripleComponent subject = TripleComponent::UNDEF{};
-  TripleComponent predicate = TripleComponent::Iri::fromIriref("<variables>");
+  auto predicate =
+      PropertyPath::fromIri(TripleComponent::Iri::fromIriref("<variables>"));
   TripleComponent object =
       TripleComponent::Iri::fromIriref("<http://example.com>");
 
@@ -107,7 +110,8 @@ TEST(ExternalValuesQuery, addParameterUnknownPredicate) {
   query.identifier_ = "test";
 
   TripleComponent subject = TripleComponent::UNDEF{};
-  TripleComponent predicate = TripleComponent::Iri::fromIriref("<unknown>");
+  auto predicate =
+      PropertyPath::fromIri(TripleComponent::Iri::fromIriref("<unknowwn>"));
   TripleComponent object = Variable{"?x"};
 
   SparqlTriple triple{subject, predicate, object};

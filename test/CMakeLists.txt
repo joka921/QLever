@@ -478,3 +478,7 @@ addLinkAndDiscoverTestSerial(HttpErrorTest engine)
 addLinkAndDiscoverTest(TimeTracerTest)
 
 addLinkAndDiscoverTestNoLibs(SourceLocationTest)
+
+addLinkAndDiscoverTest(ExternalValuesQueryTest engine)
+addLinkAndDiscoverTest(ExternalValuesIntegrationTest engine)
+addLinkAndDiscoverTest(ExternallySpecifiedValuesTest engine)

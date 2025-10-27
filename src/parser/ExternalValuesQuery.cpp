@@ -22,7 +22,7 @@ void ExternalValuesQuery::addParameter(const SparqlTriple& triple) {
   // and the object should be a variable
   // We use a generic IRI as the magic service base since the actual IRI
   // includes the identifier
-  std::string_view magicIri = "https://qlever.cs.uni-freiburg.de";
+  std::string_view magicIri = "<https://qlever.cs.uni-freiburg.de>";
   auto predString = extractParameterName(predicate, magicIri);
 
   if (predString == "variables" || predString == "<variables>") {
@@ -48,9 +48,9 @@ std::string ExternalValuesQuery::extractIdentifier(
   constexpr std::string_view suffix = ">";
 
   if (!ql::starts_with(serviceIri, prefix)) {
-    throw ExternalValuesException(absl::StrCat(
-        "External values service IRI must start with '", prefix, "' but got: ",
-        serviceIri));
+    throw ExternalValuesException(
+        absl::StrCat("External values service IRI must start with '", prefix,
+                     "' but got: ", serviceIri));
   }
 
   if (!ql::ends_with(serviceIri, suffix)) {
