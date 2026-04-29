@@ -768,4 +768,12 @@ class RdfMultifileParser : public RdfParserBase {
   ad_utility::JThread feederThread_;
 };
 
+// Create a single RDF parser for the given `InputFileSpecification`. The parser
+// type (Turtle vs. NQuads, sequential vs. parallel) is determined by the
+// spec's `filetype_` and `parseInParallel_` flags.
+std::unique_ptr<RdfParserBase> makeRdfParser(
+    const qlever::InputFileSpecification& spec,
+    const EncodedIriManager* encodedIriManager,
+    ad_utility::MemorySize bufferSize = DEFAULT_PARSER_BUFFER_SIZE);
+
 #endif  // QLEVER_SRC_PARSER_RDFPARSER_H

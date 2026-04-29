@@ -5,7 +5,6 @@
 #ifndef QLEVER_REDUCED_FEATURE_SET_FOR_CPP17
 #include "engine/GraphStoreProtocol.h"
 
-#include "parser/Tokenizer.h"
 #include "util/http/beast.h"
 
 // ____________________________________________________________________________
@@ -33,24 +32,41 @@ void GraphStoreProtocol::throwNotYetImplementedHTTPMethod(
 // ____________________________________________________________________________
 std::vector<TurtleTriple> GraphStoreProtocol::parseTriples(
     const std::string& body, ad_utility::MediaType contentType) {
-  using Re2Parser = RdfStringParser<TurtleParser<Tokenizer>>;
+  using qlever::Filetype;
+  using qlever::InputFileSpecification;
+
+  Filetype filetype;
   switch (contentType) {
     case ad_utility::MediaType::turtle:
-    case ad_utility::MediaType::ntriples: {
-      // TODO<joka921> We could pass in the actual manager here,
-      // then the resulting triples could (possibly) be already much
-      // smaller. This will be done in a future version where we pass the state
-      // of the underlying index more consistently to all parsing and update
-      // functions.
-      EncodedIriManager encodedIriManager;
-      auto parser = Re2Parser(&encodedIriManager);
-      parser.setInputStream(body);
-      return parser.parseAndReturnAllTriples();
-    }
-    default: {
+    case ad_utility::MediaType::ntriples:
+      filetype = Filetype::Turtle;
+      break;
+    default:
       throwUnsupportedMediatype(toString(contentType));
-    }
   }
+
+  // TODO<joka921> We could pass in the actual manager here,
+  // then the resulting triples could (possibly) be already much
+  // smaller. This will be done in a future version where we pass the state
+  // of the underlying index more consistently to all parsing and update
+  // functions.
+  EncodedIriManager encodedIriManager;
+  auto factory = [&body](size_t blocksize,
+                         std::string_view) -> std::unique_ptr<ParallelBuffer> {
+    return std::make_unique<ParallelStringBuffer>(blocksize, body);
+  };
+  InputFileSpecification spec{
+      InputFileSpecification::BufferFactoryAndDescription{factory,
+                                                          "HTTP request body"},
+      filetype, std::nullopt};
+
+  auto parser = makeRdfParser(spec, &encodedIriManager);
+  std::vector<TurtleTriple> triples;
+  while (auto batch = parser->getBatch()) {
+    triples.insert(triples.end(), std::make_move_iterator(batch->begin()),
+                   std::make_move_iterator(batch->end()));
+  }
+  return triples;
 }
 
 // ____________________________________________________________________________

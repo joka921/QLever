@@ -112,4 +112,19 @@ class ParallelBufferWithEndRegex : public ParallelBuffer {
   bool exhausted_ = false;
 };
 
+// A `ParallelBuffer` that serves an in-memory string as a single block.
+// Useful for parsing RDF data that has already been read into memory (e.g.
+// received via an HTTP request body).
+class ParallelStringBuffer : public ParallelBuffer {
+ public:
+  ParallelStringBuffer(size_t blocksize, std::string content)
+      : ParallelBuffer(blocksize), content_(std::move(content)) {}
+
+  std::optional<BufferType> getNextBlock() override;
+
+ private:
+  std::string content_;
+  bool exhausted_ = false;
+};
+
 #endif  // QLEVER_SRC_PARSER_PARALLELBUFFER_H

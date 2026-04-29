@@ -48,6 +48,15 @@ std::optional<ParallelBuffer::BufferType> ParallelFileBuffer::getNextBlock() {
 }
 
 // ____________________________________________________________________________
+std::optional<ParallelBuffer::BufferType> ParallelStringBuffer::getNextBlock() {
+  if (exhausted_) {
+    return std::nullopt;
+  }
+  exhausted_ = true;
+  return BufferType(content_.begin(), content_.end());
+}
+
+// ____________________________________________________________________________
 std::optional<size_t> ParallelBufferWithEndRegex::findRegexNearEnd(
     const BufferType& vec, const re2::RE2& regex) {
   size_t inputSize = vec.size();
