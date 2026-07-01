@@ -36,6 +36,8 @@ jobs:
             fs.writeFileSync('${{github.workspace}}/conformance-report.zip', Buffer.from(download.data));
       - run: unzip conformance-report.zip
       # Read the metadata into environment variables.
+      - name: "Read Title"
+        run: echo "run_title=$(cat run_title)" >> $GITHUB_ENV
       - name: "Read github event"
         run: echo "github_event=`cat event`" >> $GITHUB_ENV
       - name: "Read PR number"
@@ -50,6 +52,7 @@ jobs:
         run: |
             response=$(curl -L -s -o temp_response.txt -w "%{http_code}" \
               -H "x-api-key: $API_KEY" \
+              -H "x-run-title: ${{ env.run_title }}" \
               -H "event: ${{ env.github_event }}" \
               -H "sha: ${{ env.commit_sha }}" \
               -H "pr-number: ${{ env.pr_number }}" \
