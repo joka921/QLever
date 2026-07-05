@@ -1298,6 +1298,51 @@ RdfParallelParser<T>::~RdfParallelParser() {
       "During the destruction of a RdfParallelParser");
 }
 
+// ____________________________________________________________________________
+template <typename Parser>
+RdfAsyncParallelParser<Parser>::RdfAsyncParallelParser(
+    const boost::asio::any_io_executor& executor,
+    const qlever::InputFileSpecification& spec,
+    ad_utility::MemorySize blocksize,
+    const EncodedIriManager* encodedIriManager,
+    const TripleComponent& defaultGraphIri)
+    : executor_{executor},
+      parser_{encodedIriManager, defaultGraphIri},
+      driver_{executor, spec.makeAsyncBlockSource(executor, blocksize),
+              "\\.[\\t ]*([\\r\\n]+)"} {
+  RdfStringParser<Parser> declarationParser{encodedIriManager};
+  std::string_view remainder;
+  while (remainder.empty()) {
+    if (auto batch = driver_.getNextBlock()) {
+      declarationParser.setInputStream(std::move(batch.value()));
+      while (declarationParser.parseDirectiveManually()) {
+      }
+      remainder = declarationParser.getUnparsedRemainder();
+    } else {
+      AD_LOG_WARN
+          << "Empty input to the TURTLE parser, is this what you intended?"
+          << std::endl;
+      break;
+    }
+  }
+  Parser::copyHeaderFrom(std::move(declarationParser), parser_);
+  remainderFromInit_.reserve(remainder.size());
+  ql::ranges::copy(remainder, std::back_inserter(remainderFromInit_));
+}
+
+// ____________________________________________________________________________
+template <typename Parser>
+std::vector<TurtleTriple> RdfAsyncParallelParser<Parser>::parseBatch(
+    qlever::parser::ByteBlock batch) {
+  RdfStringParser<Parser> parser{&parser_.encodedIriManager(),
+                                 parser_.defaultGraphIri_};
+  Parser::copyHeaderFrom(parser_, parser);
+  parser.useSimplifiedGrammar();
+  parser.setFileBlankNodePrefix(parser_.fileBlankNodePrefix_);
+  parser.setInputStream(std::move(batch));
+  return parser.parseAndReturnAllTriples();
+}
+
 // Create a parser for a single file of an `InputFileSpecification`. The type
 // of the parser depends on the filetype (Turtle or N-Quads) and on whether the
 // file is to be parsed in parallel.
@@ -1429,7 +1474,11 @@ template class RdfStreamParser<TurtleParser<Tokenizer>>;
 template class RdfStreamParser<TurtleParser<TokenizerCtre>>;
 template class RdfParallelParser<TurtleParser<Tokenizer>>;
 template class RdfParallelParser<TurtleParser<TokenizerCtre>>;
+template class RdfAsyncParallelParser<TurtleParser<Tokenizer>>;
+template class RdfAsyncParallelParser<TurtleParser<TokenizerCtre>>;
 template class RdfStreamParser<NQuadParser<Tokenizer>>;
 template class RdfStreamParser<NQuadParser<TokenizerCtre>>;
 template class RdfParallelParser<NQuadParser<Tokenizer>>;
 template class RdfParallelParser<NQuadParser<TokenizerCtre>>;
+template class RdfAsyncParallelParser<NQuadParser<Tokenizer>>;
+template class RdfAsyncParallelParser<NQuadParser<TokenizerCtre>>;
