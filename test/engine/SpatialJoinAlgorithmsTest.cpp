@@ -19,14 +19,15 @@
 #include "../util/IndexTestHelpers.h"
 #include "../util/RuntimeParametersTestHelpers.h"
 #include "./SpatialJoinTestHelpers.h"
+#include "backports/filesystem.h"
 #include "engine/IndexScan.h"
 #include "engine/QueryExecutionTree.h"
 #include "engine/SpatialJoin.h"
 #include "engine/SpatialJoinAlgorithms.h"
 #include "engine/SpatialJoinConfig.h"
 #include "index/vocabulary/VocabularyType.h"
+#include "rdfTypes/GeoSparqlHelpers.h"
 #include "rdfTypes/Variable.h"
-#include "util/GeoSparqlHelpers.h"
 #include "util/SourceLocation.h"
 
 namespace {  // anonymous namespace to avoid linker problems
@@ -1776,7 +1777,7 @@ TEST(SpatialJoin, LibspatialJoinWithPlainOnDiskBase) {
   auto res = spatialJoin->computeResult(false);
 
   // Each area only intersects itself, so the result has two rows.
-  EXPECT_EQ(res.idTable().numRows(), 2);
+  EXPECT_EQ(res.idTableView().numRows(), 2);
 }
 
 // _____________________________________________________________________________
@@ -1785,7 +1786,7 @@ TEST(SpatialJoin, LibspatialJoinWithAbsoluteOnDiskBase) {
   addArea(kg, "1", "\"Uni Freiburg TF Area\"", areaUniFreiburg);
   addArea(kg, "2", "\"Minster Freiburg Area\"", areaMuenster);
 
-  auto base = std::filesystem::current_path() / "_spatialjoinAbsTestIndex";
+  auto base = ql::filesystem::current_path() / "_spatialjoinAbsTestIndex";
 
   ad_utility::testing::TestIndexConfig idxConfig{kg};
   std::optional<ad_utility::VocabularyType> vocabType = std::nullopt;
@@ -1810,7 +1811,7 @@ TEST(SpatialJoin, LibspatialJoinWithAbsoluteOnDiskBase) {
   auto res = spatialJoin->computeResult(false);
 
   // Each area only intersects itself, so the result has two rows.
-  EXPECT_EQ(res.idTable().numRows(), 2);
+  EXPECT_EQ(res.idTableView().numRows(), 2);
 }
 
 }  // namespace runtimeParameters

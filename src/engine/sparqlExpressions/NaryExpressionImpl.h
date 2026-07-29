@@ -46,6 +46,11 @@ class NaryExpressionStronglyTyped : public SparqlExpression {
   [[nodiscard]] std::string getCacheKey(
       const VariableToColumnMap& varColMap) const override;
 
+  // Deterministic iff all children are deterministic.
+  [[nodiscard]] bool isDeterministic() const override {
+    return areChildrenDeterministic();
+  }
+
  private:
   // _________________________________________________________________________
   ql::span<SparqlExpression::Ptr> childrenImpl() override;
@@ -213,6 +218,11 @@ class NaryExpressionTypeErasedImpl : public SparqlExpression {
     return key;
   }
 
+  // Deterministic iff all children are deterministic.
+  [[nodiscard]] bool isDeterministic() const override {
+    return areChildrenDeterministic();
+  }
+
  private:
   // _________________________________________________________________________
   ql::span<SparqlExpression::Ptr> childrenImpl() override { return children_; }
@@ -234,8 +244,8 @@ class NaryExpressionTypeErasedImpl : public SparqlExpression {
     // respective child result.
     auto zipper = std::apply(
         [&](const auto&... getters) {
-          return ::ranges::views::zip(ad_utility::OwningView{
-              getters(std::move(operands), context, targetSize)}...);
+          return ::ranges::views::zip(
+              getters(std::move(operands), context, targetSize)...);
         },
         getters_);
 

@@ -12,9 +12,13 @@
 
 #include <gtest/gtest_prod.h>
 
+#include <array>
+
+#include "backports/filesystem.h"
 #include "engine/MaterializedViewsQueryAnalysis.h"
 #include "engine/VariableToColumnMap.h"
 #include "engine/idTable/CompressedExternalIdTable.h"
+#include "global/Constants.h"
 #include "index/DeltaTriples.h"
 #include "index/ExternalSortFunctors.h"
 #include "index/Permutation.h"
@@ -24,6 +28,7 @@
 #include "parser/ParsedQuery.h"
 #include "parser/SparqlTriple.h"
 #include "util/HashMap.h"
+#include "util/StringUtils.h"
 #include "util/Synchronized.h"
 
 // Forward declarations
@@ -36,6 +41,17 @@ class IndexScan;
 // cleanly without breaking the entire index format.
 static constexpr size_t MATERIALIZED_VIEWS_VERSION = 1;
 
+// Filename suffixes for the on-disk representation of a materialized view.
+constexpr inline std::string_view VIEW_INFO_SUFFIX = ".viewinfo.json";
+constexpr inline std::string_view VIEW_SPO_SUFFIX = ".index.spo";
+constexpr inline std::string_view VIEW_SPO_META_SUFFIX =
+    ad_utility::constexprStrCat<VIEW_SPO_SUFFIX, META_FILE_SUFFIX>();
+
+// All suffixes of the files that make up a materialized view's on-disk
+// representation. Used to delete a view's files.
+constexpr inline std::array VIEW_ALL_SUFFIXES = {
+    VIEW_INFO_SUFFIX, VIEW_SPO_SUFFIX, VIEW_SPO_META_SUFFIX};
+
 // The `MaterializedViewWriter` can be used to write a new materialized view to
 // disk, given an already planned query. The query will be executed lazily and
 // the results will be written to the view.
@@ -46,8 +62,8 @@ class MaterializedViewWriter {
   std::string name_;
 
   // Query plan to retrieve the view's rows.
-  std::shared_ptr<QueryExecutionTree> qet_;
-  std::shared_ptr<QueryExecutionContext> qec_;
+  std::shared_ptr<const QueryExecutionTree> qet_;
+  std::shared_ptr<const QueryExecutionContext> qec_;
   ParsedQuery parsedQuery_;
 
   // Memory limit and allocator for `CompressedExternalIdTableSorter`, which is
@@ -74,13 +90,13 @@ class MaterializedViewWriter {
   // argument `NumStaticCols == 0`)
   using Sorter = ad_utility::CompressedExternalIdTableSorter<Comparator, 0>;
 
-  using QueryPlan = qlever::QueryPlan;
+  using PlannedQuery = qlever::PlannedQuery;
 
-  // Initialize a writer given the base filename of the view and a query plan.
-  // The view will be written to files prefixed with the index basename followed
-  // by the view name.
+  // Initialize a writer given the base filename of the view and a planned
+  // query. The view will be written to files prefixed with the index basename
+  // followed by the view name.
   MaterializedViewWriter(std::string onDiskBase, std::string name,
-                         const QueryPlan& queryPlan,
+                         const PlannedQuery& plannedQuery,
                          ad_utility::MemorySize memoryLimit,
                          ad_utility::AllocatorWithLimit<Id> allocator);
 
@@ -129,7 +145,7 @@ class MaterializedViewWriter {
   // Helper for `computeResultAndWritePermutation`: given sorted and permuted
   // blocks from `getSortedBlocks`, write the `Permutation` to disk using
   // `CompressedRelationWriter`. Returns the permutation metadata.
-  IndexMetaDataMmap writePermutation(RangeOfIdTables sortedBlocksSPO) const;
+  IndexMetaData writePermutation(RangeOfIdTables sortedBlocksSPO) const;
 
   // Helper for `computeResultAndWritePermutation`: Writes the metadata JSON
   // files with column names and ordering to disk.
@@ -278,6 +294,13 @@ class MaterializedViewsManager {
 
   mutable ad_utility::Synchronized<LoadedViews> loadedViews_;
 
+  // Load the given view into `state` if it isn't loaded yet and return it.
+  // Requires `state` to be the locked contents of `loadedViews_` (this is a
+  // helper for `loadView` and `getView`, so that the latter can look up the
+  // view atomically with loading it, without releasing the lock in between).
+  std::shared_ptr<MaterializedView> loadViewIntoLockedState(
+      const std::string& name, LoadedViews& state) const;
+
  public:
   MaterializedViewsManager() = default;
   explicit MaterializedViewsManager(std::string onDiskBase)
@@ -291,6 +314,14 @@ class MaterializedViewsManager {
   // Check if a materialized view is currently loaded.
   bool isViewLoaded(const std::string& name) const;
 
+  // Return the names of all view files (of all views, loaded or not) that exist
+  // on disk for the given index base name. Views are loaded lazily by name, so
+  // the only way to enumerate them is to scan the directory for files with the
+  // `<base>.view.` prefix (see `MaterializedView::getFilenameBase`). This is
+  // used to move the views together with their index after a rebuild.
+  static std::vector<ql::filesystem::path> viewFilesOnDisk(
+      const ql::filesystem::path& onDiskBase);
+
   // Since we don't want to break the const-ness in a lot of places just for the
   // loading of views, `loadedViews_` is mutable. Note that this is okay,
   // because the views themselves aren't changed (only loaded on-demand).
@@ -299,6 +330,10 @@ class MaterializedViewsManager {
   // Unload a materialized view if it is loaded. This function is a no-op
   // otherwise. It is `const` for the same reason described above.
   void unloadViewIfLoaded(const std::string& name) const;
+
+  // Delete a materialized view: unload it if loaded and delete all of its files
+  // from disk. Throws if the view does not exist.
+  void deleteView(const std::string& name) const;
 
   // Load the given view if it is not already loaded and return it. This pointer
   // is never `nullptr`. If the view does not exist, the function throws.
@@ -320,7 +355,7 @@ class MaterializedViewsManager {
       const parsedQuery::BasicGraphPattern& triples) const;
 
   // Write a `MaterializedView` given a valid `name` (consisting only of
-  // alphanumerics and hyphens) and a `queryPlan` to be executed. The query's
+  // alphanumerics and hyphens) and a `plannedQuery` to be executed. The query's
   // result is written to the view.
   //
   // If a view with the same name is already loaded, it is unloaded before
@@ -328,9 +363,9 @@ class MaterializedViewsManager {
   //
   // The `memoryLimit` and `allocator` are used only for sorting the
   // permutation if the query result is not correctly sorted already. The
-  // `queryPlan` is executed with the normal query memory limit.
+  // `plannedQuery` is executed with the normal query memory limit.
   void writeViewToDisk(
-      std::string name, const qlever::QueryPlan& queryPlan,
+      std::string name, const qlever::PlannedQuery& plannedQuery,
       ad_utility::MemorySize memoryLimit = ad_utility::MemorySize::gigabytes(4),
       ad_utility::AllocatorWithLimit<Id> allocator =
           ad_utility::makeUnlimitedAllocator<Id>()) const;
