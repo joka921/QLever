@@ -30,21 +30,6 @@
 
 using namespace ad_utility::vocabulary_merger;
 namespace {
-// equality operator used in this test
-bool vocabTestCompare(const IdMap& a, const std::vector<std::pair<Id, Id>>& b) {
-  if (a.size() != b.size()) {
-    return false;
-  }
-
-  for (size_t i = 0; i < a.size(); ++i) {
-    if (a[i] != b[i]) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
 auto V = ad_utility::testing::VocabId;
 
 // Write the given `words` as a partial vocabulary file at `path`, assigning
@@ -82,7 +67,7 @@ class MergeVocabularyTest : public ::testing::Test {
 
   // two std::vectors where we store the expected mapping
   // form partial to global ids;
-  using Mapping = std::vector<std::pair<Id, Id>>;
+  using Mapping = IdMap;
   Mapping _expMapping0;
   Mapping _expMapping1;
 
@@ -158,7 +143,7 @@ class MergeVocabularyTest : public ::testing::Test {
             if (mapping) {
               if (w.isBlankNode({})) {
                 mapping->emplace_back(
-                    V(localIdx),
+                    localIdx,
                     Id::makeFromBlankNodeIndex(BlankNodeIndex::make(globalId)));
               } else {
                 using GeoVocab = SplitGeoVocabulary<
@@ -166,7 +151,7 @@ class MergeVocabularyTest : public ::testing::Test {
                 if (GeoVocab::getMarkerForWord(w.iriOrLiteral()) == 1) {
                   globalId = GeoVocab::addMarker(globalId, 1);
                 }
-                mapping->emplace_back(V(localIdx), V(globalId));
+                mapping->emplace_back(localIdx, V(globalId));
               }
             }
             localIdx++;
@@ -251,10 +236,10 @@ TEST_F(MergeVocabularyTest, mergeVocabulary) {
   // Check that vocabulary has the right form.
   IdMap mapping0 = getIdMapFromFile(_basePath + PARTIAL_VOCAB_IDMAP_INFIX +
                                     std::to_string(0));
-  ASSERT_TRUE(vocabTestCompare(mapping0, _expMapping0));
+  EXPECT_THAT(mapping0, ::testing::ElementsAreArray(_expMapping0));
   IdMap mapping1 = getIdMapFromFile(_basePath + PARTIAL_VOCAB_IDMAP_INFIX +
                                     std::to_string(1));
-  ASSERT_TRUE(vocabTestCompare(mapping1, _expMapping1));
+  EXPECT_THAT(mapping1, ::testing::ElementsAreArray(_expMapping1));
 }
 
 // _____________________________________________________________________________
@@ -341,12 +326,12 @@ TEST(MergeVocabulary, treatIrisAsBlankNodesViaRegex) {
     return Id::makeFromBlankNodeIndex(BlankNodeIndex::make(index));
   };
   IdMap idMap = getIdMapFromFile(idMapFile);
-  EXPECT_THAT(idMap, ::testing::ElementsAreArray(std::vector<std::pair<Id, Id>>{
-                         {V(0), V(0)},     // "bn_lit"
-                         {V(1), V(1)},     // <http://ex/apple>
-                         {V(2), BN(0)},    // <http://ex/bn_1>
-                         {V(3), BN(1)},    // <http://ex/bn_2>
-                         {V(4), V(2)}}));  // <http://ex/cherry>
+  EXPECT_THAT(idMap, ::testing::ElementsAreArray(
+                         IdMap{{0, V(0)},     // "bn_lit"
+                               {1, V(1)},     // <http://ex/apple>
+                               {2, BN(0)},    // <http://ex/bn_1>
+                               {3, BN(1)},    // <http://ex/bn_2>
+                               {4, V(2)}}));  // <http://ex/cherry>
 }
 
 TEST(VocabularyGeneratorTest, createInternalMapping) {
