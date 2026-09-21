@@ -89,6 +89,12 @@ Qlever::Qlever(const EngineConfig& config, bool skipLoading,
   if (config.loadTextIndex_) {
     index.addTextFromOnDiskIndex();
   }
+  if (config.indexDescription_.has_value()) {
+    index.setKbName(config.indexDescription_.value());
+  }
+  if (config.textDescription_.has_value()) {
+    index.setTextName(config.textDescription_.value());
+  }
 
   materializedViewsManager.setOnDiskBase(config.baseName_);
 
@@ -151,7 +157,7 @@ void Qlever::buildIndex(IndexBuilderConfig config) {
   // Build text index if requested (various options).
   if (!config.onlyAddTextIndex_) {
     AD_CONTRACT_CHECK(!config.inputFiles_.empty());
-    index.createFromFiles(config.inputFiles_);
+    index.createFromFiles(config.inputFiles_, config.numThreads_);
   }
 
   if (config.wordsAndDocsFileSpecified() || config.addWordsFromLiterals_) {
@@ -393,6 +399,11 @@ void IndexBuilderConfig::validate() const {
         "The vocabulary type \"", vocabType_.toString(),
         "\" cannot be used for index building, the supported types are ",
         ad_utility::VocabularyType::getListOfValuesForIndexBuilding()));
+  }
+  if (numThreads_ == 0) {
+    throw std::invalid_argument(
+        "The number of threads for the index build (`num-threads`) must be at "
+        "least 1");
   }
   if (kScoringParam_ < 0) {
     throw std::invalid_argument("The value of bm25-k must be >= 0");

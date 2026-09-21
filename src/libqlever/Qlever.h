@@ -9,10 +9,12 @@
 
 #include <gtest/gtest_prod.h>
 
+#include <algorithm>
 #include <boost/optional.hpp>
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -124,6 +126,12 @@ struct IndexBuilderConfig : CommonConfig {
   // building the index are not deleted. This can be useful for debugging.
   bool keepTemporaryFiles_ = false;
 
+  // The number of threads used during the index build (see
+  // `Index::createFromFiles`). Must be at least 1. Defaults to the number of
+  // hardware threads of the machine (`std::thread::hardware_concurrency()`
+  // returns `0` if that number cannot be determined, hence the `max`).
+  size_t numThreads_ = std::max<size_t>(1, std::thread::hardware_concurrency());
+
   // A list of regexes for IRIs that should be treated as blank nodes. During
   // index building, an IRI that is fully matched by one of these regexes (via
   // `RE2::FullMatch`, applied to the full IRI text including the angle
@@ -155,9 +163,9 @@ struct IndexBuilderConfig : CommonConfig {
   // number, for example `<http://example.org/range_536870912_50_25P>`, where
   // several numbers are separated by fixed strings, and where the individual
   // numbers may have bits that are always known (see
-  // `encodedIri::Pattern` in `index/vocabulary/EncodedIriPattern.h` for the
-  // details and for an example). Such IRIs are also encoded directly in the
-  // internal ID, with the same benefits and limitations as the
+  // `encodedIri::Pattern` in `index/vocabulary/EncodedIriPattern.h`
+  // for the details and for an example). Such IRIs are also encoded directly in
+  // the internal ID, with the same benefits and limitations as the
   // `prefixesForIdEncodedIris_` above. The patterns are stored in the index
   // and restored from it, so they don't have to be specified again when the
   // index is loaded. The order of the patterns determines the IDs of the
@@ -264,6 +272,14 @@ struct EngineConfig : CommonConfig {
   // Names of materialized views to load from disk during initialization.
   // If a view doesn't exist, a warning is logged and startup continues.
   std::vector<std::string> preloadMaterializedViews_ = {};
+
+  // Descriptions of the index and of the text index. They are returned by the
+  // API (`cmd=stats`, fields `name-index` and `name-text-index`), which is
+  // used, for example, by the QLever UI. If set, they replace the names stored
+  // in the index files. Both can also be changed while the server is running,
+  // via the `index-description` and `text-description` API commands.
+  std::optional<std::string> indexDescription_;
+  std::optional<std::string> textDescription_;
 };
 
 // Class to use QLever as an embedded database, without the HTTP server. See

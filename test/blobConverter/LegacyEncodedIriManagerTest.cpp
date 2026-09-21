@@ -296,13 +296,15 @@ TEST(LegacyEncodedIriManager, plainAndZeroBitRange) {
           {"prefix":"<http://z/","zeroBitStart":8,"zeroBitEnd":16}]})"));
   // Plain digits: four bits per digit, left-aligned, digit `d` stored as
   // `d + 1`.
-  expectRoundtrip(manager, "<http://example.org/123>",
-                  encoded(0, encodedIri::encodeDigits("123", numBitsEncoding)));
+  expectRoundtrip(
+      manager, "<http://example.org/123>",
+      encoded(0, encodedIri::encodeDigitsAsNibbles("123", numBitsEncoding)));
   expectRoundtrip(manager, "<http://example.org/0>",
                   encoded(0, 1ULL << (numBitsEncoding - 4)));
   // Leading zeros are preserved by the digit encoding.
-  expectRoundtrip(manager, "<http://example.org/007>",
-                  encoded(0, encodedIri::encodeDigits("007", numBitsEncoding)));
+  expectRoundtrip(
+      manager, "<http://example.org/007>",
+      encoded(0, encodedIri::encodeDigitsAsNibbles("007", numBitsEncoding)));
   // At most 13 digits fit.
   EXPECT_TRUE(manager.encode("<http://example.org/1234567890123>"));
   EXPECT_FALSE(manager.encode("<http://example.org/12345678901234>"));

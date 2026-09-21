@@ -235,6 +235,10 @@ TEST(IndexBuilderConfig, validate) {
   AD_EXPECT_THROW_WITH_MESSAGE(c.validate(), HasSubstr("must be between"));
 
   c = IndexBuilderConfig{};
+  c.numThreads_ = 0;
+  AD_EXPECT_THROW_WITH_MESSAGE(c.validate(), HasSubstr("must be at least 1"));
+
+  c = IndexBuilderConfig{};
   c.wordsfile_ = "blibb";
   AD_EXPECT_THROW_WITH_MESSAGE(c.validate(),
                                HasSubstr("Only specified wordsfile"));
@@ -267,6 +271,19 @@ TEST(IndexBuilderConfig, validate) {
       ad_utility::VocabularyType::Enum::InMemoryCompressedWithHoles};
   AD_EXPECT_THROW_WITH_MESSAGE(Qlever::buildIndex(c),
                                HasSubstr("cannot be used for index building"));
+}
+
+// _____________________________________________________________________________
+// The descriptions from the `EngineConfig` replace the names stored in the
+// index files.
+TEST(LibQlever, indexAndTextDescription) {
+  EngineConfig ec = buildTestIndex("<s> <p> <o> .");
+  ec.indexDescription_ = "Some dataset, version 42";
+  ec.textDescription_ = "Some text";
+  Qlever engine{ec};
+  const auto& index = engine.indexAndViewsSnapshot()->index_;
+  EXPECT_EQ(index.getKbName(), "Some dataset, version 42");
+  EXPECT_EQ(index.getTextName(), "Some text");
 }
 
 // _____________________________________________________________________________

@@ -177,9 +177,10 @@ std::vector<char> writeSyntheticLegacyBlob(
 // columns, with a `VocabIndex`, an `Int`, an encoded IRI (plain prefix `p`),
 // and another `VocabIndex`.
 SyntheticEntry syntheticEntry() {
-  uint64_t encodedIri = makeLegacyBits(
-      LegacyDatatype::EncodedVal,
-      encodedIri::encodeDigits("42", EncodedIriManager::NumBitsEncoding));
+  uint64_t encodedIri =
+      makeLegacyBits(LegacyDatatype::EncodedVal,
+                     encodedIri::encodeDigitsAsNibbles(
+                         "42", EncodedIriManager::NumBitsEncoding));
   return SyntheticEntry{
       "synthetic",
       {"?s", "?o"},

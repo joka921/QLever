@@ -223,7 +223,7 @@ std::vector<FixedBitRange> withExcessBitsFixed(
     }
     --numExcess;
     if (current.has_value()) {
-      current->begin_ = position;
+      current->begin_ = static_cast<uint8_t>(position);
     } else {
       current = FixedBitRange{position, position + 1, 0};
     }
@@ -240,17 +240,20 @@ std::vector<FixedBitRange> parseBitRangeConstraints(
     const nlohmann::json& json) {
   std::vector<FixedBitRange> constraints;
   for (const auto& c : json) {
-    FixedBitRange range{static_cast<size_t>(c.at("bitStart")),
-                        static_cast<size_t>(c.at("bitEnd")),
-                        static_cast<uint64_t>(c.at("value"))};
-    if (range.begin_ >= range.end_ || range.end_ > 64 ||
-        range.value_ > ad_utility::bitMaskForLowerBits(range.numBits())) {
-      throw std::runtime_error{absl::StrCat(
-          "Invalid bit range constraint in the legacy encoded-IRI "
-          "configuration: bitStart = ",
-          range.begin_, ", bitEnd = ", range.end_, ", value = ", range.value_)};
+    auto begin = static_cast<uint64_t>(c.at("bitStart"));
+    auto end = static_cast<uint64_t>(c.at("bitEnd"));
+    auto value = static_cast<uint64_t>(c.at("value"));
+    // NOTE: The constructor of `FixedBitRange` checks the same constraints,
+    // but they are checked here first to report the error in the terms of the
+    // legacy configuration.
+    if (begin >= end || end > 64 ||
+        value > ad_utility::bitMaskForLowerBits(end - begin)) {
+      throw std::runtime_error{
+          absl::StrCat("Invalid bit range constraint in the legacy encoded-IRI "
+                       "configuration: bitStart = ",
+                       begin, ", bitEnd = ", end, ", value = ", value)};
     }
-    constraints.push_back(range);
+    constraints.emplace_back(begin, end, value);
   }
   ql::ranges::sort(constraints, {}, &FixedBitRange::begin_);
   for (size_t i = 1; i < constraints.size(); ++i) {
@@ -430,7 +433,7 @@ void LegacyEncodedIriManager::decodePayload(std::string& result,
     uint64_t upperBits = payload >> begin;
     absl::StrAppend(&result, (upperBits << end) | lowerBits);
   } else {
-    encodedIri::decodeDigits(result, payload, NumBitsEncoding);
+    encodedIri::decodeNibblesToDigits(result, payload, NumBitsEncoding);
   }
 }
 
@@ -543,7 +546,7 @@ std::optional<uint64_t> LegacyEncodedIriManager::encodePayload(
   if (digits.size() > NumDigits) {
     return std::nullopt;
   }
-  return encodedIri::encodeDigits(digits, NumBitsEncoding);
+  return encodedIri::encodeDigitsAsNibbles(digits, NumBitsEncoding);
 }
 
 // _____________________________________________________________________________

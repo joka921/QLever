@@ -6,7 +6,6 @@
 
 #include "../util/GTestHelpers.h"
 #include "index/vocabulary/EncodedIriManager.h"
-#include "util/BitUtils.h"
 #include "util/Random.h"
 #include "util/TransparentFunctors.h"
 
@@ -144,19 +143,21 @@ TEST(EncodedIriManager, splitIntoPrefixIdxAndPayload) {
 }
 
 // _____________________________________________________________________________
-TEST(EncodedIriManager, toStringWithGivenPrefix) {
-  auto str = EncodedIriManager::toStringWithGivenPrefix(
-      EncodedIriManager::encodeDecimalToNBit("7643"), "<blibb_");
-  EXPECT_EQ(str, "<blibb_7643>");
-}
-
-// _____________________________________________________________________________
 TEST(EncodedIriManager, makeIdFromPrefixIdxAndPayload) {
   EncodedIriManager em{{"blabb", "blubb"}};
   auto id = EncodedIriManager::makeIdFromPrefixIdxAndPayload(
       1, EncodedIriManager::encodeDecimalToNBit("7643"));
   EXPECT_EQ(em.toString(id), "<blubb7643>");
 }
+
+// The encoding is usable in a constant expression. This is not only a nice
+// property, but also required: a `constexpr` function that can never yield a
+// constant expression is ill-formed, and several compilers reject it (see the
+// note in `NibbleEncoding.h`).
+// The digit `1` is stored as the nibble `2` in the leftmost nibble.
+static_assert(EncodedIriManager::encodeDecimalToNBit("1") ==
+              uint64_t{2} << (EncodedIriManager::NumBitsEncoding -
+                              EncodedIriManager::NibbleSize));
 
 // _____________________________________________________________________________
 TEST(EncodedIriManager, decodeDecimalFrom64Bit) {
@@ -260,35 +261,44 @@ TEST(EncodedIriManager, HardcodedPrefixesJson) {
   ASSERT_TRUE(id2.has_value());
 }
 
+// _____________________________________________________________________________
+TEST(EncodedIriManager, noPrefixesAtAll) {
+  // The default `EncodedIriManager` always contains the `AlwaysOnPrefixes`, so
+  // an explicit instantiation with `NoHardcodedPrefixes` (the default for the
+  // third template parameter) is required to obtain a manager with a truly
+  // empty list of prefixes.
+  using Manager = EncodedIriManagerImpl<Id::numDataBits, 8>;
+
+  // Calls the default constructor.
+  Manager em;
+  EXPECT_TRUE(em.patterns_.empty());
+  EXPECT_FALSE(em.encode("<http://example.org/42>").has_value());
+
+  // Calls the constructor with an explicitly empty list of prefixes.
+  Manager em2{std::vector<std::string>{}};
+  EXPECT_TRUE(em2.patterns_.empty());
+  EXPECT_FALSE(em2.encode("<http://example.org/42>").has_value());
+}
+
 using encodedIri::Part;
 using encodedIri::Pattern;
 
-// The patterns that are used in the tests below. They are modelled after the
-// IRIs of a real-world dataset: `range_` and `valRange_` consist of a 32-bit
-// number, the three highest bits of which are always `001`, followed by two
-// smaller numbers and a fixed letter. The `ref_` patterns consist of a 64-bit
-// number, the three highest bits of which are always `001` and the bits
-// `[17, 32)` of which are always zero, followed by a number smaller than 16.
-// The numbers `545554944` and `2343140642651111426` that appear in the tests
-// fulfill these constraints; the numbers of the negative test cases are
-// deliberate perturbations of them.
+// The patterns that are used in the tests below, see
+// `EncodedIriPatternTest.cpp` for a detailed description of their constraints
+// and for the tests of the patterns themselves. The tests in this file only
+// test the interplay of the patterns with the `EncodedIriManager`, in
+// particular the assignment of the tags and the JSON format of the manager.
 constexpr std::string_view basePrefix = "http://example.org/map#";
 
-// Build the IRI `<http://example.org/map#suffix>`.
-std::string mapIri(std::string_view suffix) {
-  return absl::StrCat("<", basePrefix, suffix, ">");
+// Build the IRI `<http://example.org/map#rest>`.
+std::string mapIri(std::string_view rest) {
+  return absl::StrCat("<", basePrefix, rest, ">");
 }
 
 Pattern rangePattern() {
   return Pattern{
       absl::StrCat(basePrefix, "range_"),
       {Part{32, {{29, 32, 1}}, "_"}, Part{8, {}, "_"}, Part{8, {}, "P"}}};
-}
-
-Pattern valRangePattern() {
-  return Pattern{
-      absl::StrCat(basePrefix, "valRange_"),
-      {Part{32, {{29, 32, 1}}, "_"}, Part{11, {}, "_"}, Part{11, {}, "M"}}};
 }
 
 Pattern refPattern(std::string_view name) {
@@ -312,54 +322,6 @@ void expectNotEncodable(
     ad_utility::source_location l = AD_CURRENT_SOURCE_LOC()) {
   auto trace = generateLocationTrace(l);
   EXPECT_FALSE(manager.encode(iri).has_value());
-}
-
-// _____________________________________________________________________________
-TEST(EncodedIriManager, PatternWithSeveralNumbers) {
-  EncodedIriManager em{{}, {rangePattern(), valRangePattern()}};
-  expectRoundTrip(em, mapIri("range_545554944_0_0P"));
-  expectRoundTrip(em, mapIri("range_536870912_50_25P"));
-  expectRoundTrip(em, mapIri("range_1073741823_255_255P"));
-  expectRoundTrip(em, mapIri("valRange_545555094_809_830M"));
-  expectRoundTrip(em, mapIri("valRange_1073741823_2047_2047M"));
-
-  // The three highest bits of the first number are not `001`.
-  expectNotEncodable(em, mapIri("range_1073741824_0_0P"));
-  expectNotEncodable(em, mapIri("range_100_0_0P"));
-  // The second and third number don't fit into eight bits.
-  expectNotEncodable(em, mapIri("range_545554944_256_0P"));
-  expectNotEncodable(em, mapIri("range_545554944_0_256P"));
-  // The trailing `P` and the third number are missing.
-  expectNotEncodable(em, mapIri("range_545554944_0_0"));
-  expectNotEncodable(em, mapIri("range_545554944_0P"));
-  // The `M` of the `valRange` pattern doesn't match the `P` here.
-  expectNotEncodable(em, mapIri("valRange_545555094_1_1P"));
-  expectRoundTrip(em, mapIri("valRange_536870912_0_0M"));
-  expectNotEncodable(em, mapIri("valRange_1073741824_100_100M"));
-  expectNotEncodable(em, mapIri("valRange_100_100_100M"));
-  // The second and third number of `valRange` don't fit into eleven bits.
-  expectNotEncodable(em, mapIri("valRange_545555094_2048_100M"));
-  expectNotEncodable(em, mapIri("valRange_545555094_100_2048M"));
-  // Leading zeros cannot be encoded in binary mode, because they would be lost.
-  expectNotEncodable(em, mapIri("range_545554944_00_0P"));
-}
-
-// _____________________________________________________________________________
-TEST(EncodedIriManager, PatternWithFixedBitsInTheMiddle) {
-  EncodedIriManager em{{}, {refPattern("laneRef_"), refPattern("roadRef_")}};
-  expectRoundTrip(em, mapIri("laneRef_2343140642651111426_0"));
-  expectRoundTrip(em, mapIri("laneRef_2343140642651111426_15"));
-  expectRoundTrip(em, mapIri("laneRef_2305843009213693952_0"));
-  expectRoundTrip(em, mapIri("roadRef_2343140642651111426_5"));
-
-  // The second number is not smaller than 16.
-  expectNotEncodable(em, mapIri("laneRef_2343140642651111426_16"));
-  // Bit 61 is not set, and the bits `[17, 32)` are not zero.
-  expectNotEncodable(em, mapIri("laneRef_1000000000000000000_0"));
-  // Bit 62 is set.
-  expectNotEncodable(em, mapIri("laneRef_4611686018427387904_0"));
-  // The pattern of the `laneRef_` prefix doesn't apply to other prefixes.
-  expectNotEncodable(em, mapIri("otherRef_2343140642651111426_0"));
 }
 
 // _____________________________________________________________________________
@@ -415,60 +377,25 @@ TEST(EncodedIriManager, PlainPrefixesAndPatternsTogether) {
 }
 
 // _____________________________________________________________________________
-TEST(EncodedIriManager, DigitEncodingInsideAPattern) {
-  // A pattern that uses the order-preserving digit encoding for a number that
-  // is followed by a separator.
-  EncodedIriManager em{
-      {},
-      {Pattern{"http://example.org/",
-               {Part{24, {}, "-", encodedIri::NumberEncoding::Digits},
-                Part{8, {}, ""}}}}};
-  expectRoundTrip(em, "<http://example.org/123456-255>");
-  expectRoundTrip(em, "<http://example.org/007-0>");
-  // Only six digits fit into 24 bits.
-  expectNotEncodable(em, "<http://example.org/1234567-0>");
-  expectNotEncodable(em, "<http://example.org/123456-256>");
-}
-
-// _____________________________________________________________________________
 TEST(EncodedIriManager, illegalPatterns) {
   using namespace ::testing;
   using V = std::vector<std::string>;
   using P = std::vector<Pattern>;
-  auto expectThrowForPattern = [](Pattern pattern, const std::string& message,
-                                  ad_utility::source_location l =
-                                      AD_CURRENT_SOURCE_LOC()) {
+  auto expectThrow = [](Pattern pattern, const std::string& message,
+                        ad_utility::source_location l =
+                            AD_CURRENT_SOURCE_LOC()) {
     auto trace = generateLocationTrace(l);
     AD_EXPECT_THROW_WITH_MESSAGE(EncodedIriManager(V{}, P{std::move(pattern)}),
                                  HasSubstr(message));
   };
-  // The same for a pattern with a fixed prefix that is valid.
-  auto expectThrow = [&expectThrowForPattern](std::vector<Part> parts,
-                                              const std::string& message,
-                                              ad_utility::source_location l =
-                                                  AD_CURRENT_SOURCE_LOC()) {
-    expectThrowForPattern(Pattern{"http://example.org/", std::move(parts)},
-                          message, l);
-  };
-  expectThrowForPattern(Pattern{"<http://example.org/", {Part{8, {}, ""}}},
-                        "enclosed in angle brackets");
-  expectThrow({}, "at least one number");
-  expectThrow({Part{65, {}, ""}}, "only 1 to 64 bits are supported");
-  expectThrow({Part{8, {{4, 12, 0}}, ""}}, "not contained in the [0, 8) bits");
-  expectThrow({Part{16, {{4, 8, 0}, {6, 10, 0}}, ""}},
-              "sorted and must not overlap");
-  expectThrow({Part{16, {{4, 8, 16}}, ""}},
-              "doesn't fit into the fixed bit range");
-  expectThrow({Part{10, {}, "", encodedIri::NumberEncoding::Digits}},
-              "multiple of four bits and no fixed bit ranges");
-  expectThrow({Part{8, {}, "a>b"}}, "must not contain an angle bracket");
-  expectThrow({Part{8, {}, "1"}}, "must not start with a digit");
-  expectThrow({Part{8, {}, ""}, Part{8, {}, ""}},
-              "only the last number of a pattern may be followed");
-  expectThrow({Part{53, {}, ""}},
+  // The prefix of a pattern is specified without the leading `<`, which the
+  // manager adds itself.
+  expectThrow(Pattern{"<http://example.org/", {Part{8, {}, ""}}},
+              "enclosed in angle brackets");
+  // The patterns are checked against the number of payload bits of the
+  // manager (see `validatePattern` in `EncodedIriPatternTest.cpp`).
+  expectThrow(Pattern{"http://example.org/", {Part{53, {}, ""}}},
               "it requires 53 bits, but only 52 bits are available");
-  expectThrowForPattern(Pattern{"http://example.org/a>b", {Part{8, {}, ""}}},
-                        "prefix must not contain a `>`");
 }
 
 // _____________________________________________________________________________
@@ -509,7 +436,7 @@ TEST(EncodedIriManager, aPatternWithFewerDigitsIsNotPlain) {
   EncodedIriManager em{
       {},
       {Pattern{"http://example.org/",
-               {Part{16, {}, "", encodedIri::NumberEncoding::Digits}}}}};
+               {Part{16, {}, "", encodedIri::NumberEncoding::Nibbles}}}}};
   nlohmann::json j = em;
   EXPECT_TRUE(j.contains("patterns"));
   EXPECT_EQ(j.get<EncodedIriManager>(), em);
@@ -538,67 +465,16 @@ TEST(EncodedIriManager, invalidPatternsInJsonAreDetected) {
   j["patterns"][0]["parts"][0]["num-bits"] = 65;
   AD_EXPECT_THROW_WITH_MESSAGE(j.get<EncodedIriManager>(),
                                HasSubstr("only 1 to 64 bits are supported"));
-  nlohmann::json j2 = EncodedIriManager{{}, {rangePattern()}};
-  j2["patterns"][0]["parts"][0]["encoding"] = "octal";
-  AD_EXPECT_THROW_WITH_MESSAGE(j2.get<EncodedIriManager>(),
-                               HasSubstr("Unknown encoding \"octal\""));
 }
 
 // _____________________________________________________________________________
-TEST(EncodedIriManager, compressAndDecompressNumber) {
-  // Expect that the `value` is compressed to the `compressed` value, and that
-  // decompressing the latter yields the `value` again.
-  auto expectCompressed =
-      [](const Part& part, uint64_t value, uint64_t compressed,
-         ad_utility::source_location l = AD_CURRENT_SOURCE_LOC()) {
-        auto trace = generateLocationTrace(l);
-        EXPECT_THAT(encodedIri::compressNumber(part, value),
-                    ::testing::Optional(compressed));
-        EXPECT_EQ(encodedIri::decompressNumber(part, compressed), value);
-      };
-  // Expect that the `value` violates the constraints of the `part`.
-  auto expectNotCompressible = [](const Part& part, uint64_t value,
-                                  ad_utility::source_location l =
-                                      AD_CURRENT_SOURCE_LOC()) {
-    auto trace = generateLocationTrace(l);
-    EXPECT_EQ(encodedIri::compressNumber(part, value), std::nullopt);
-  };
-
-  // Without constraints the number is stored as it is.
-  Part plain{16, {}, ""};
-  expectCompressed(plain, 12345, 12345);
-  expectNotCompressible(plain, 1 << 16);
-
-  // A fixed range at the very beginning and one at the very end.
-  Part part{16, {{0, 4, 3}, {12, 16, 5}}, ""};
-  EXPECT_EQ(part.numBitsStored(), 8);
-  uint64_t value = (5ull << 12) | (0xabull << 4) | 3ull;
-  expectCompressed(part, value, 0xab);
-  // The fixed ranges have the wrong value.
-  expectNotCompressible(part, value + 1);
-  expectNotCompressible(part, value ^ (1ull << 15));
-
-  // Adjacent fixed ranges.
-  Part adjacent{12, {{4, 6, 1}, {6, 8, 2}}, ""};
-  uint64_t adjacentValue = (0xaull << 8) | (2ull << 6) | (1ull << 4) | 0xbull;
-  expectCompressed(adjacent, adjacentValue, 0xab);
+TEST(EncodedIriManager, tooManyDigits) {
+  // The manager encodes at most `NumDigits` digits. Note that `encode` never
+  // triggers this, because it rejects too long digit sequences beforehand (see
+  // `EncodedIriManager::encode`).
+  using M = EncodedIriManager;
+  EXPECT_NO_THROW(M::encodeDecimalToNBit(std::string(M::NumDigits, '9')));
+  EXPECT_THROW(M::encodeDecimalToNBit(std::string(M::NumDigits + 1, '9')),
+               std::out_of_range);
 }
-
-// _____________________________________________________________________________
-TEST(EncodedIriManager, randomRoundTripOfAPattern) {
-  EncodedIriManager em{{}, {refPattern("laneRef_")}};
-  auto gen = ad_utility::SlowRandomIntGenerator<uint64_t>(0, (1ull << 46) - 1);
-  for (size_t i = 0; i < 1000; ++i) {
-    auto compressed = gen();
-    // Distribute the 46 free bits of the first number to the bits `[0, 17)`
-    // and `[32, 61)` and set the fixed bits.
-    uint64_t number = (1ull << 61) | ((compressed >> 17) << 32) |
-                      (compressed & ad_utility::bitMaskForLowerBits(17));
-    for (uint64_t second : {0ull, 7ull, 15ull}) {
-      expectRoundTrip(em, absl::StrCat("<http://example.org/map#laneRef_",
-                                       number, "_", second, ">"));
-    }
-  }
-}
-
 }  // namespace
