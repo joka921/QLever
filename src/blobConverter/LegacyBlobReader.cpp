@@ -318,7 +318,10 @@ std::string LegacyPaddingConvention::description() const {
 
 // _____________________________________________________________________________
 size_t LegacyBlob::numWords() const {
-  return std::visit([](const auto& vocab) { return vocab.size(); },
+  // NOTE: The explicit return type is required, because the `size()` of the
+  // two vocabulary types returns `size_t` resp. `uint64_t`, which are different
+  // types on some platforms (e.g. with `libc++` on macOS).
+  return std::visit([](const auto& vocab) -> size_t { return vocab.size(); },
                     vocabulary_);
 }
 
