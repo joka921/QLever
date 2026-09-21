@@ -14,10 +14,12 @@
 
 #include <boost/uuid/uuid.hpp>
 #include <cstring>
+#include <optional>
 #include <stdexcept>
 #include <string_view>
 #include <utility>
 
+#include "backports/algorithm.h"
 #include "index/vocabulary/CompressionWrappers.h"
 #include "index/vocabulary/VocabularyType.h"
 #include "util/CompressionUsingZstd/ZstdWrapper.h"
@@ -73,6 +75,13 @@ decltype(auto) rethrowAsLegacyBlobError(const Function& function) {
   }
 }
 
+// The `Reader` together with the padding convention under which the blob is
+// read (see `LegacyPaddingConvention`).
+struct ConventionReader {
+  Reader reader_;
+  LegacyPaddingConvention convention_;
+};
+
 // The number of bytes of the `reader` that have not been consumed yet.
 size_t numRemainingBytes(const Reader& reader) {
   return reader.data().size() - reader.getCurrentPosition();
@@ -91,6 +100,39 @@ void checkCount(const Reader& reader, uint64_t count, size_t elementSize,
   }
 }
 
+// Skip the padding that fills up to the next multiple of `alignment` (nothing
+// if the current position is already aligned). The skipped bytes have to be
+// zero, otherwise the input was not written with the assumed padding
+// convention, and an error is thrown. The `description` names the padded item
+// for the error message.
+void skipPadding(Reader& reader, size_t alignment,
+                 std::string_view description) {
+  size_t position = reader.getCurrentPosition();
+  size_t padding = (alignment - (position % alignment)) % alignment;
+  if (padding == 0) {
+    return;
+  }
+  if (numRemainingBytes(reader) < padding) {
+    throwNotALegacyBlob(
+        absl::StrCat("the input ends inside the padding before ", description));
+  }
+  auto bytes = reader.getSpanToBytes(padding);
+  if (!ql::ranges::all_of(bytes, [](char c) { return c == '\0'; })) {
+    throwNotALegacyBlob(absl::StrCat("the ", padding, " padding bytes before ",
+                                     description, " are not zero"));
+  }
+}
+
+// Skip the explicit padding to `alignof(Id)` before the `NamedResultCache` or
+// before a column, if the padding convention has it (see
+// `LegacyPaddingConvention::explicitAlignmentBeforeCacheAndColumns_`).
+void skipExplicitAlignment(ConventionReader& reader,
+                           std::string_view description) {
+  if (reader.convention_.explicitAlignmentBeforeCacheAndColumns_) {
+    skipPadding(reader.reader_, alignof(Id), description);
+  }
+}
+
 // Read a value of type `T` (which must be trivially serializable) from the
 // `reader`.
 template <typename T>
@@ -101,7 +143,9 @@ T read(Reader& reader) {
 }
 
 // Read a `std::string` (a `uint64_t` length followed by the characters),
-// checking the length against the remaining bytes before allocating.
+// checking the length against the remaining bytes before allocating. NOTE: The
+// padding convention plays no role here, because the alignment of `char` is
+// one.
 std::string readString(Reader& reader, std::string_view description) {
   auto size = read<uint64_t>(reader);
   checkCount(reader, size, 1, description);
@@ -110,50 +154,70 @@ std::string readString(Reader& reader, std::string_view description) {
   return result;
 }
 
-// Read a vector of trivially serializable values (a `uint64_t` count followed
-// by the padding and the values, see `SerializeVector.h`), checking the count
-// against the remaining bytes before allocating.
+// Read a vector of trivially serializable values (a `uint64_t` count, followed
+// by the padding to `alignof(T)` if the convention has it, followed by the
+// values, see `SerializeVector.h`), checking the count against the remaining
+// bytes before allocating.
 template <typename T>
-std::vector<T> readVector(Reader& reader, std::string_view description) {
-  auto count = read<uint64_t>(reader);
-  checkCount(reader, count, sizeof(T), description);
-  ad_utility::serialization::alignSerializerForType<T>(reader);
-  auto bytes = reader.getSpanToBytes(count * sizeof(T));
+std::vector<T> readVector(ConventionReader& reader,
+                          std::string_view description) {
+  auto count = read<uint64_t>(reader.reader_);
+  checkCount(reader.reader_, count, sizeof(T), description);
+  if (reader.convention_.padInsideVectors_) {
+    skipPadding(reader.reader_, alignof(T), description);
+  }
+  auto bytes = reader.reader_.getSpanToBytes(count * sizeof(T));
   std::vector<T> result(count);
   std::memcpy(result.data(), bytes.data(), bytes.size());
   return result;
 }
 
-// Check the count of a serialized vector of `elementSize`-byte elements
-// (aligned to `alignment`) that starts `offset` bytes after the current
-// position of the `reader`, WITHOUT consuming anything. Return the offset
-// (again relative to the current position) directly after that vector. This
-// is used to check the counts inside a structure that is subsequently read via
-// its own serialization function (which would allocate before checking).
-size_t checkVectorAhead(const Reader& reader, size_t offset, size_t elementSize,
-                        size_t alignment, std::string_view description) {
-  size_t total = reader.data().size();
-  size_t position = reader.getCurrentPosition() + offset;
-  if (position > total || total - position < sizeof(uint64_t)) {
-    throwNotALegacyBlob(
-        absl::StrCat("the input ends before the number of ", description));
+// Deserialize a `T` from the `parts` that were written to the `writer`. This is
+// how the vectors of a structure are handed to the current serialization
+// function of that structure after they were read with bounds checks and under
+// the padding convention (the current serialization function would allocate
+// before checking, and always expects padding inside vectors).
+template <typename T>
+T deserializeFromWriter(
+    ad_utility::serialization::AlignedByteBufferWriteSerializer&& writer,
+    T result) {
+  ad_utility::serialization::AlignedByteBufferReadSerializer reader{
+      std::move(writer).data()};
+  reader >> result;
+  return result;
+}
+
+// Read the vocabulary: the word data (a vector of `char`) and the offsets of
+// the words (a vector of `uint64_t`) of the `VocabularyInMemory`, and, if
+// `isCompressed`, the decoders of the `CompressedVocabulary`. Check the
+// consistency of the offsets, which are the first data of the blob that
+// discriminate between the padding conventions.
+LegacyVocabulary readVocabulary(ConventionReader& reader, bool isCompressed) {
+  using Decoder =
+      ad_utility::vocabulary::FsstSquaredCompressionWrapper::Decoder;
+  auto data = readVector<char>(reader, "vocabulary bytes");
+  auto offsets = readVector<uint64_t>(reader, "vocabulary offsets");
+  // There is one offset more than there are words, and the last offset is the
+  // size of the data (see `CompactVectorOfStrings`).
+  if (!offsets.empty() &&
+      (offsets.back() != data.size() || !ql::ranges::is_sorted(offsets))) {
+    throwNotALegacyBlob("the offsets of the vocabulary are inconsistent");
   }
-  uint64_t count;
-  std::memcpy(&count, reader.data().data() + position, sizeof(uint64_t));
-  position += sizeof(uint64_t);
-  position += (alignment - (position % alignment)) % alignment;
-  if (position > total || count > (total - position) / elementSize) {
-    throwNotALegacyBlob(absl::StrCat("the number of ", description, " (", count,
-                                     ") exceeds the size of the input"));
+  ad_utility::serialization::AlignedByteBufferWriteSerializer writer;
+  writer << data;
+  writer << offsets;
+  if (isCompressed) {
+    writer << readVector<Decoder>(reader, "vocabulary decoders");
+    return deserializeFromWriter(std::move(writer),
+                                 CompressedVocabulary<VocabularyInMemory>{});
   }
-  return position + count * elementSize - reader.getCurrentPosition();
+  return deserializeFromWriter(std::move(writer), VocabularyInMemory{});
 }
 
 // Read a `SpatialJoinCachedIndex` (the variable name, the serialized S2 index,
 // and the map from shape indices to rows). The parts are first read with
 // bounds checks, and then handed to the serialization function of
-// `SpatialJoinCachedIndex` (which would allocate before checking) via a small
-// buffer.
+// `SpatialJoinCachedIndex` (see `deserializeFromWriter`).
 SpatialJoinCachedIndex readGeoIndex(Reader& reader) {
   ad_utility::serialization::AlignedByteBufferWriteSerializer writer;
   writer << readString(reader, "characters of a geo index variable name");
@@ -164,18 +228,16 @@ SpatialJoinCachedIndex readGeoIndex(Reader& reader) {
   for (uint64_t i = 0; i < numShapes; ++i) {
     writer << read<std::pair<size_t, size_t>>(reader);
   }
-  ad_utility::serialization::AlignedByteBufferReadSerializer geoReader{
-      std::move(writer).data()};
-  SpatialJoinCachedIndex geoIndex{
-      SpatialJoinCachedIndex::TagForSerialization{}};
-  geoReader >> geoIndex;
-  return geoIndex;
+  return deserializeFromWriter(
+      std::move(writer),
+      SpatialJoinCachedIndex{SpatialJoinCachedIndex::TagForSerialization{}});
 }
 
 // Read one entry of the legacy `NamedResultCache`.
-LegacyNamedCacheEntry readEntry(Reader& reader) {
+LegacyNamedCacheEntry readEntry(ConventionReader& conventionReader) {
   using OwnedBlocksEntry =
       ad_utility::BlankNodeManager::LocalBlankNodeManager::OwnedBlocksEntry;
+  Reader& reader = conventionReader.reader_;
   LegacyNamedCacheEntry entry;
   entry.name_ = readString(reader, "characters of a cached result name");
   // The `LocalVocab`: the owned blank node blocks (each a 16-byte UUID and a
@@ -189,7 +251,7 @@ LegacyNamedCacheEntry readEntry(Reader& reader) {
     OwnedBlocksEntry block;
     ad_utility::serialization::triviallySerialize(reader, block.uuid_);
     block.blockIndices_ =
-        readVector<uint64_t>(reader, "blank node block indices");
+        readVector<uint64_t>(conventionReader, "blank node block indices");
     entry.blankNodeBlocks_.push_back(std::move(block));
   }
   auto numWords = read<uint64_t>(reader);
@@ -206,8 +268,9 @@ LegacyNamedCacheEntry readEntry(Reader& reader) {
   checkCount(reader, entry.numColumns_, sizeof(uint64_t), "columns");
   entry.columns_.reserve(entry.numColumns_);
   for (size_t i = 0; i < entry.numColumns_; ++i) {
+    skipExplicitAlignment(conventionReader, "a column");
     auto& column = entry.columns_.emplace_back(
-        readVector<uint64_t>(reader, "rows of a column"));
+        readVector<uint64_t>(conventionReader, "rows of a column"));
     if (column.size() != entry.numRows_) {
       throwNotALegacyBlob(absl::StrCat("column ", i, " of the cached result \"",
                                        entry.name_, "\" has ", column.size(),
@@ -232,7 +295,8 @@ LegacyNamedCacheEntry readEntry(Reader& reader) {
     }
     entry.variables_.emplace_back(std::move(name), columnInfo);
   }
-  entry.resultSortedOn_ = readVector<ColumnIndex>(reader, "sort columns");
+  entry.resultSortedOn_ =
+      readVector<ColumnIndex>(conventionReader, "sort columns");
   entry.cacheKey_ = readString(reader, "characters of a cache key");
   if (read<bool>(reader)) {
     entry.geoIndex_ = readGeoIndex(reader);
@@ -240,6 +304,17 @@ LegacyNamedCacheEntry readEntry(Reader& reader) {
   return entry;
 }
 }  // namespace
+
+// _____________________________________________________________________________
+std::string LegacyPaddingConvention::description() const {
+  return absl::StrCat(
+      padInsideVectors_ ? "padding inside vectors"
+                        : "no padding inside vectors",
+      explicitAlignmentBeforeCacheAndColumns_
+          ? ", explicit alignment before the named result cache and before "
+            "each column"
+          : ", no explicit alignment");
+}
 
 // _____________________________________________________________________________
 size_t LegacyBlob::numWords() const {
@@ -315,9 +390,11 @@ DecompressedBuffer decompressLegacyBlob(ql::span<const char> compressedBlob) {
 }
 
 // _____________________________________________________________________________
-LegacyBlob readLegacyBlob(ql::span<const char> decompressedBlob) {
-  return rethrowAsLegacyBlobError([&decompressedBlob]() {
-    Reader reader{decompressedBlob};
+LegacyBlob readLegacyBlob(ql::span<const char> decompressedBlob,
+                          const LegacyPaddingConvention& convention) {
+  return rethrowAsLegacyBlobError([&decompressedBlob, &convention]() {
+    ConventionReader conventionReader{Reader{decompressedBlob}, convention};
+    Reader& reader = conventionReader.reader_;
     // The magic header was written as a `std::string`, so it is preceded by
     // its length. Check the length explicitly first, so that arbitrary input
     // does not lead to a huge allocation.
@@ -343,6 +420,7 @@ LegacyBlob readLegacyBlob(ql::span<const char> decompressedBlob) {
     }
 
     LegacyBlob result;
+    result.paddingConvention_ = convention;
     auto metadataString =
         readString(reader, "characters of the index metadata JSON");
     try {
@@ -365,25 +443,11 @@ LegacyBlob readLegacyBlob(ql::span<const char> decompressedBlob) {
           "\", but only the types \"in-memory-uncompressed\" and "
           "\"in-memory-compressed\" are supported by the converter")};
     }
-    // The vocabularies are read via their own serialization functions, which
-    // would allocate for a corrupt count before checking it (see
-    // `SerializeVector.h`), so check all their counts first: the word data
-    // and the offsets of the `VocabularyInMemory`, and the decoders of the
-    // `CompressedVocabulary`.
-    using Decoder =
-        ad_utility::vocabulary::FsstSquaredCompressionWrapper::Decoder;
-    auto offset = checkVectorAhead(reader, 0, 1, 1, "vocabulary bytes");
-    offset = checkVectorAhead(reader, offset, sizeof(uint64_t),
-                              alignof(uint64_t), "vocabulary offsets");
-    if (isCompressed) {
-      checkVectorAhead(reader, offset, sizeof(Decoder), alignof(Decoder),
-                       "vocabulary decoders");
-      reader >> result.vocabulary_
-                    .emplace<CompressedVocabulary<VocabularyInMemory>>();
-    } else {
-      reader >> result.vocabulary_.emplace<VocabularyInMemory>();
-    }
+    // NOTE: The first versions of the fork aligned to `alignof(char)` before
+    // the vocabulary, which is a no-op, so no padding has to be skipped here.
+    result.vocabulary_ = readVocabulary(conventionReader, isCompressed);
 
+    skipExplicitAlignment(conventionReader, "the named result cache");
     auto numEntries = read<size_t>(reader);
     // An entry has at least a name, the two local vocabulary counts, and the
     // two dimensions.
@@ -391,7 +455,7 @@ LegacyBlob readLegacyBlob(ql::span<const char> decompressedBlob) {
                "named cached queries");
     result.entries_.reserve(numEntries);
     for (size_t i = 0; i < numEntries; ++i) {
-      result.entries_.push_back(readEntry(reader));
+      result.entries_.push_back(readEntry(conventionReader));
     }
     if (numRemainingBytes(reader) != 0) {
       throwNotALegacyBlob(absl::StrCat(
@@ -400,6 +464,29 @@ LegacyBlob readLegacyBlob(ql::span<const char> decompressedBlob) {
     }
     return result;
   });
+}
+
+// _____________________________________________________________________________
+LegacyBlob readLegacyBlob(ql::span<const char> decompressedBlob) {
+  // The consistency checks of `readLegacyBlob` (in particular that the padding
+  // bytes are zero, that the offsets of the vocabulary are consistent, that
+  // each column has the right number of rows, and that all the bytes of the
+  // input are consumed) make it practically impossible that a blob parses
+  // completely under a convention other than the one it was written with.
+  std::optional<std::string> firstError;
+  for (const auto& convention : legacyPaddingConventions) {
+    try {
+      return readLegacyBlob(decompressedBlob, convention);
+    } catch (const LegacyBlobError& e) {
+      if (!firstError.has_value()) {
+        firstError = e.what();
+      }
+    }
+  }
+  throw LegacyBlobError{absl::StrCat(
+      firstError.value(), " (NOTE: all ", legacyPaddingConventions.size(),
+      " known padding conventions of the legacy format were tried, this is "
+      "the error for the first one)")};
 }
 
 // _____________________________________________________________________________

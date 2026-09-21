@@ -68,6 +68,9 @@ struct EntryStatistics {
 struct ConversionStatistics {
   std::string vocabularyType_;
   size_t numVocabularyWords_ = 0;
+  // The padding convention under which the legacy blob was parsed (see
+  // `LegacyPaddingConvention::description`).
+  std::string paddingConvention_;
   // The legacy encoded-IRI configuration and the patterns it was mapped to, as
   // JSON.
   nlohmann::json legacyEncodedIriConfig_;

@@ -10,6 +10,7 @@
 #ifndef QLEVER_SRC_BLOBCONVERTER_LEGACYBLOBREADER_H
 #define QLEVER_SRC_BLOBCONVERTER_LEGACYBLOBREADER_H
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -39,14 +40,61 @@
 //    metadata determines (see `LegacyVocabulary`).
 // 4. The `NamedResultCache` (see `LegacyNamedCacheEntry`), without any header.
 //
-// The byte-level rules of the legacy serializer (no padding for single values,
-// padding to the alignment of the element type for the contents of vectors,
-// spans, and strings) are the same as those of the current
-// `AlignedByteBufferWriteSerializer`, so the legacy blob can be read with the
-// current aligned read serializer, and all the types whose serialization has
-// not changed (strings, vectors, the vocabularies, the
-// `SpatialJoinCachedIndex`) are read via their current serialization functions.
+// The byte-level rules of the legacy serializer are the same as those of the
+// current `AlignedByteBufferWriteSerializer` (no padding for single values,
+// padding to the alignment of the element type after the size of a vector,
+// span, or string), with one caveat: the fork changed where alignment padding
+// is inserted while the blob format was already at version 1 (see
+// `LegacyPaddingConvention`). The reader therefore tries the known padding
+// conventions one after the other and accepts the first one under which the
+// complete blob parses consistently.
 namespace qlever::blobConverter {
+
+// Where the legacy writer inserted alignment padding (zero bytes). Two places
+// are affected:
+//
+// 1. Inside the serialization of a vector, span, or string of trivially
+//    serializable elements, directly after the `uint64_t` size: padding to the
+//    alignment of the element type (`padInsideVectors_`). This is what the
+//    final version of the fork (commit `56172e855`, and the versions from
+//    commit `f176c255e` of 2026-01-20 on) did, via `alignForType` in its
+//    `SerializeVector.h`.
+// 2. Explicitly before the `NamedResultCache` (that is, before its number of
+//    entries) and before each column of an `IdTable` (that is, before the size
+//    of the column): padding to `alignof(Id)`
+//    (`explicitAlignmentBeforeCacheAndColumns_`). This is what the first
+//    versions of the fork that wrote the `QLVUBLOB` format did (commits
+//    `42161cd92` and `e34f1bc14` of 2026-01-19), which at the same time did
+//    NOT pad inside vectors. Those versions also aligned to `alignof(char)`
+//    before the vocabulary, which is a no-op.
+//
+// In both places the padding fills up to the next multiple of the alignment
+// and is empty if the position is already aligned.
+struct LegacyPaddingConvention {
+  bool padInsideVectors_ = true;
+  bool explicitAlignmentBeforeCacheAndColumns_ = false;
+
+  // A human-readable description of the convention.
+  std::string description() const;
+
+  bool operator==(const LegacyPaddingConvention& other) const {
+    return padInsideVectors_ == other.padInsideVectors_ &&
+           explicitAlignmentBeforeCacheAndColumns_ ==
+               other.explicitAlignmentBeforeCacheAndColumns_;
+  }
+  bool operator!=(const LegacyPaddingConvention& other) const {
+    return !(*this == other);
+  }
+};
+
+// The padding conventions that `readLegacyBlob` tries, in this order. The
+// first one is the convention of the final version of the fork (and of all the
+// blobs that are known to exist), so that blob is parsed at the first attempt.
+inline constexpr std::array<LegacyPaddingConvention, 4>
+    legacyPaddingConventions{LegacyPaddingConvention{true, false},
+                             LegacyPaddingConvention{true, true},
+                             LegacyPaddingConvention{false, true},
+                             LegacyPaddingConvention{false, false}};
 
 // The vocabulary implementations of the legacy format that a blob can hold.
 // Their byte layout is identical to that of the current implementations of the
@@ -83,6 +131,9 @@ struct LegacyBlob {
   nlohmann::json metadata_;
   LegacyVocabulary vocabulary_;
   std::vector<LegacyNamedCacheEntry> entries_;
+  // The padding convention under which the blob was parsed (see
+  // `readLegacyBlob`).
+  LegacyPaddingConvention paddingConvention_;
 
   // The number of words in the vocabulary, and the word at a given index.
   size_t numWords() const;
@@ -102,11 +153,21 @@ using DecompressedBuffer =
 // is not a legacy blob.
 DecompressedBuffer decompressLegacyBlob(ql::span<const char> compressedBlob);
 
-// Read the decompressed contents of a legacy blob (see `decompressLegacyBlob`).
-// Throw a `std::runtime_error` if the header is wrong, if the vocabulary type
-// is not supported, if the contents are inconsistent, or if not all the bytes
-// of the input are consumed. NOTE: The `decompressedBlob` has to be aligned to
-// `alignof(std::max_align_t)` (which a `DecompressedBuffer` guarantees).
+// Read the decompressed contents of a legacy blob (see `decompressLegacyBlob`)
+// under the given padding `convention`. Throw a `std::runtime_error` if the
+// header is wrong, if the vocabulary type is not supported, if the contents
+// are inconsistent (this includes non-zero padding bytes), or if not all the
+// bytes of the input are consumed. NOTE: The `decompressedBlob` has to be
+// aligned to `alignof(std::max_align_t)` (which a `DecompressedBuffer`
+// guarantees).
+LegacyBlob readLegacyBlob(ql::span<const char> decompressedBlob,
+                          const LegacyPaddingConvention& convention);
+
+// Same as above, but try all the `legacyPaddingConventions` in their order and
+// return the result of the first one under which the blob parses completely
+// and consistently (recorded in `LegacyBlob::paddingConvention_`). If none
+// does, rethrow the error of the first convention, with a note that all the
+// conventions were tried.
 LegacyBlob readLegacyBlob(ql::span<const char> decompressedBlob);
 
 // The combination of `decompressLegacyBlob` and `readLegacyBlob`.

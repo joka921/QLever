@@ -90,6 +90,9 @@ std::string ConversionStatistics::toString() const {
   std::string result;
   absl::StrAppend(&result, "Vocabulary: ", numVocabularyWords_,
                   " words, type \"", vocabularyType_, "\"\n");
+  absl::StrAppend(&result,
+                  "Padding convention of the legacy blob: ", paddingConvention_,
+                  "\n");
   absl::StrAppend(&result, "Legacy encoded-IRI configuration: ",
                   legacyEncodedIriConfig_.dump(), "\n");
   absl::StrAppend(&result, "Current encoded-IRI configuration: ",
@@ -169,6 +172,7 @@ ConversionResult convertLegacyBlob(const LegacyBlob& legacyBlob) {
   statistics.vocabularyType_ =
       static_cast<std::string>(result.metadata_["vocabulary-type"]);
   statistics.numVocabularyWords_ = legacyBlob.numWords();
+  statistics.paddingConvention_ = legacyBlob.paddingConvention_.description();
 
   // Convert the named cached queries.
   NamedResultCache cache;

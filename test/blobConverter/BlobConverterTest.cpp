@@ -16,6 +16,7 @@
 #include <iterator>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "../util/GTestHelpers.h"
@@ -104,18 +105,77 @@ const std::vector<std::string> syntheticWords{"\"lit\"", "<http://x/a>",
 
 using Writer = ad_utility::serialization::AlignedByteBufferWriteSerializer;
 
+// The padding convention of the final version of the fork, which is the one of
+// the sample blobs (see `legacyPaddingConventions`).
+const LegacyPaddingConvention sampleConvention = legacyPaddingConventions[0];
+
+// Write `numBytes` bytes with the `value` to the `writer`.
+void writeBytes(Writer& writer, size_t numBytes, char value = '\0') {
+  std::string bytes(numBytes, value);
+  writer.serializeBytes(bytes.data(), bytes.size());
+}
+
+// The number of padding bytes that fill up the current position of the
+// `writer` to the next multiple of `alignment`.
+size_t paddingSize(const Writer& writer, size_t alignment) {
+  return (alignment - (writer.getCurrentPosition() % alignment)) % alignment;
+}
+
+// Write a string in the legacy format: the length, then the characters. There
+// is never any padding, because the alignment of `char` is one.
+void writeString(Writer& writer, std::string_view string) {
+  writer << static_cast<uint64_t>(string.size());
+  writer.serializeBytes(string.data(), string.size());
+}
+
+// Write a vector of trivially copyable elements in the legacy format under the
+// given padding `convention`: the number of elements, then (only if the
+// convention pads inside vectors) zero bytes up to the next multiple of
+// `alignof(T)`, then the elements. NOTE: This deliberately does not use the
+// serialization of the `Writer` for vectors, so that the conventions without
+// padding inside vectors can be written as well.
+template <typename T>
+void writeVector(Writer& writer, const std::vector<T>& vector,
+                 const LegacyPaddingConvention& convention) {
+  writer << static_cast<uint64_t>(vector.size());
+  if (convention.padInsideVectors_) {
+    writeBytes(writer, paddingSize(writer, alignof(T)));
+  }
+  writer.serializeBytes(reinterpret_cast<const char*>(vector.data()),
+                        vector.size() * sizeof(T));
+}
+
+// Write the explicit padding to `alignof(Id)` before the named result cache or
+// before a column, if the `convention` has it.
+void writeExplicitAlignment(Writer& writer,
+                            const LegacyPaddingConvention& convention) {
+  if (convention.explicitAlignmentBeforeCacheAndColumns_) {
+    writeBytes(writer, paddingSize(writer, alignof(Id)));
+  }
+}
+
 // Write the header, the `metadata`, and an uncompressed in-memory vocabulary
-// with the `words` in the legacy format (an independent reimplementation of
-// the legacy writer, see `LegacyBlobReader.h` for the format).
-void writeHeaderMetadataAndVocabulary(Writer& writer,
-                                      const nlohmann::json& metadata,
-                                      const std::vector<std::string>& words) {
-  writer << std::string{"QLVUBLOB"};
+// with the `words` in the legacy format under the given padding `convention`
+// (an independent reimplementation of the legacy writer, see
+// `LegacyBlobReader.h` for the format). The vocabulary is a
+// `CompactVectorOfStrings`: the concatenated words, then the offsets of the
+// words (one more than there are words).
+void writeHeaderMetadataAndVocabulary(
+    Writer& writer, const nlohmann::json& metadata,
+    const std::vector<std::string>& words,
+    const LegacyPaddingConvention& convention = sampleConvention) {
+  writeString(writer, "QLVUBLOB");
   writer << uint32_t{1};
-  writer << metadata.dump();
-  VocabularyInMemory::Words compactWords;
-  compactWords.build(words);
-  writer << VocabularyInMemory{std::move(compactWords)};
+  writeString(writer, metadata.dump());
+  std::vector<char> data;
+  std::vector<uint64_t> offsets;
+  for (const auto& word : words) {
+    offsets.push_back(data.size());
+    data.insert(data.end(), word.begin(), word.end());
+  }
+  offsets.push_back(data.size());
+  writeVector(writer, data, convention);
+  writeVector(writer, offsets, convention);
 }
 
 // A cached result of a synthetic legacy blob.
@@ -126,25 +186,27 @@ struct SyntheticEntry {
   std::vector<std::vector<uint64_t>> columns_;
 };
 
-// Write the `entry` in the legacy format (with an empty local vocabulary, no
-// sort order, and no geo index).
-void writeEntry(Writer& writer, const SyntheticEntry& entry) {
-  writer << entry.name_;
-  writer << std::vector<
-      ad_utility::BlankNodeManager::LocalBlankNodeManager::OwnedBlocksEntry>{};
+// Write the `entry` in the legacy format under the given padding `convention`
+// (with an empty local vocabulary, no sort order, and no geo index).
+void writeEntry(Writer& writer, const SyntheticEntry& entry,
+                const LegacyPaddingConvention& convention = sampleConvention) {
+  writeString(writer, entry.name_);
+  // No blank node blocks and no local vocabulary words.
+  writer << uint64_t{0};
   writer << uint64_t{0};
   writer << static_cast<size_t>(entry.columns_.at(0).size());
   writer << entry.columns_.size();
   for (const auto& column : entry.columns_) {
-    writer << column;
+    writeExplicitAlignment(writer, convention);
+    writeVector(writer, column, convention);
   }
   writer << entry.variables_.size();
   for (size_t i = 0; i < entry.variables_.size(); ++i) {
-    writer << entry.variables_[i];
+    writeString(writer, entry.variables_[i]);
     writer << ColumnIndexAndTypeInfo{i, ColumnIndexAndTypeInfo::AlwaysDefined};
   }
-  writer << std::vector<ColumnIndex>{};
-  writer << std::string{"synthetic cache key"};
+  writeVector(writer, std::vector<ColumnIndex>{}, convention);
+  writeString(writer, "synthetic cache key");
   writer << false;
 }
 
@@ -159,15 +221,17 @@ std::vector<char> compressLegacy(ql::span<const char> uncompressed) {
 }
 
 // Write a complete synthetic legacy blob (compressed) with the given
-// `metadata` and `entries`.
+// `metadata` and `entries` under the given padding `convention`.
 std::vector<char> writeSyntheticLegacyBlob(
-    const nlohmann::json& metadata,
-    const std::vector<SyntheticEntry>& entries) {
+    const nlohmann::json& metadata, const std::vector<SyntheticEntry>& entries,
+    const LegacyPaddingConvention& convention = sampleConvention) {
   Writer writer;
-  writeHeaderMetadataAndVocabulary(writer, metadata, syntheticWords);
+  writeHeaderMetadataAndVocabulary(writer, metadata, syntheticWords,
+                                   convention);
+  writeExplicitAlignment(writer, convention);
   writer << entries.size();
   for (const auto& entry : entries) {
-    writeEntry(writer, entry);
+    writeEntry(writer, entry, convention);
   }
   auto data = std::move(writer).data();
   return compressLegacy(ql::span<const char>{data.data(), data.size()});
@@ -257,6 +321,8 @@ TEST_P(BlobConverterSampleTest, convertAndQuery) {
   // Read the legacy blob and check its contents.
   auto legacyBlob = readLegacyBlobFromCompressed(legacyBytes);
   EXPECT_EQ(legacyBlob.numWords(), sample.numWords_);
+  // All the sample blobs were written by the final version of the fork.
+  EXPECT_EQ(legacyBlob.paddingConvention_, sampleConvention);
   EXPECT_EQ(legacyBlob.metadata_["vocabulary-type"], "in-memory-compressed");
   EXPECT_EQ(legacyBlob.metadata_["index-format-version"]["pull-request-number"],
             1572);
@@ -705,6 +771,100 @@ TEST(BlobConverter, syntheticLegacyBlob) {
                           "ql:cached-result-with-name-synthetic {} }",
                           ad_utility::MediaType::tsv),
             "?s\n<http://x/a>\n\"lit\"\n");
+}
+
+// _____________________________________________________________________________
+// The legacy blobs of the fork's first versions had a different padding
+// convention (see `LegacyPaddingConvention`). Write a synthetic blob under each
+// of the known conventions (with lengths that make the positions of the size
+// fields and of the column data misaligned, so that the conventions actually
+// differ in the written bytes), and check that the reader detects the
+// convention, and that the converted blob works. Under any other convention,
+// the blob must be rejected.
+TEST(BlobConverter, paddingConventions) {
+  // The name has three characters, so that everything after it is misaligned.
+  SyntheticEntry entry = syntheticEntry();
+  entry.name_ = "syn";
+  std::vector<std::string> descriptions;
+  for (const auto& convention : legacyPaddingConventions) {
+    descriptions.push_back(convention.description());
+    auto compressed =
+        writeSyntheticLegacyBlob(syntheticMetadata(), {entry}, convention);
+    auto decompressed = decompressLegacyBlob(compressed);
+    ql::span<const char> decompressedSpan{decompressed.data(),
+                                          decompressed.size()};
+    auto legacyBlob = readLegacyBlob(decompressedSpan);
+    EXPECT_EQ(legacyBlob.paddingConvention_, convention)
+        << convention.description();
+    EXPECT_EQ(legacyBlob.numWords(), 3u);
+    EXPECT_EQ(legacyBlob.word(2), "<http://x/b>");
+    ASSERT_EQ(legacyBlob.entries_.size(), 1u);
+    EXPECT_EQ(legacyBlob.entries_[0].name_, "syn");
+    EXPECT_EQ(legacyBlob.entries_[0].columns_, entry.columns_);
+    for (const auto& other : legacyPaddingConventions) {
+      if (other != convention) {
+        SCOPED_TRACE(absl::StrCat(convention.description(), " read as ",
+                                  other.description()));
+        AD_EXPECT_THROW_WITH_MESSAGE(readLegacyBlob(decompressedSpan, other),
+                                     HasSubstr(notALegacyBlob));
+      }
+    }
+
+    auto result = convertLegacyBlob(ql::span<const char>{compressed});
+    EXPECT_EQ(result.statistics_.paddingConvention_, convention.description());
+    EXPECT_THAT(result.statistics_.toString(),
+                HasSubstr(convention.description()));
+    qlever::Qlever target{qlever::EngineConfig{}, /*skipLoading=*/true};
+    ASSERT_NO_THROW(
+        target.deserializeVocabAndNamedCacheFromCompressedBlob(result.blob_));
+    EXPECT_EQ(
+        target.query(
+            "SELECT ?s ?o WHERE { SERVICE ql:cached-result-with-name-syn {} }",
+            ad_utility::MediaType::tsv),
+        "?s\t?o\n<http://x/a>\t5\n<http://p/42>\t<http://x/b>\n");
+  }
+  // The descriptions of the conventions are distinct.
+  ql::ranges::sort(descriptions);
+  EXPECT_EQ(std::unique(descriptions.begin(), descriptions.end()),
+            descriptions.end());
+}
+
+// _____________________________________________________________________________
+// Padding bytes that are not zero are rejected under every convention.
+TEST(BlobConverter, rejectNonZeroPadding) {
+  const LegacyPaddingConvention convention{true, true};
+  SyntheticEntry entry = syntheticEntry();
+  entry.name_ = "syn";
+  Writer writer;
+  writeHeaderMetadataAndVocabulary(writer, syntheticMetadata(), syntheticWords,
+                                   convention);
+  writeExplicitAlignment(writer, convention);
+  writer << size_t{1};
+  writeString(writer, entry.name_);
+  writer << uint64_t{0};
+  writer << uint64_t{0};
+  writer << static_cast<size_t>(entry.columns_.at(0).size());
+  writer << entry.columns_.size();
+  // The three-character name misaligns the position, so the explicit padding
+  // before the first column is not empty. Fill it with non-zero bytes.
+  size_t padding = paddingSize(writer, alignof(Id));
+  ASSERT_GT(padding, 0u);
+  writeBytes(writer, padding, '\xFF');
+  for (const auto& column : entry.columns_) {
+    writeVector(writer, column, convention);
+  }
+  auto data = std::move(writer).data();
+  ql::span<const char> dataSpan{data.data(), data.size()};
+  AD_EXPECT_THROW_WITH_MESSAGE(
+      readLegacyBlob(dataSpan, convention),
+      AllOf(HasSubstr(notALegacyBlob),
+            HasSubstr("padding bytes before a column are not zero")));
+  // No other convention can make sense of the blob either.
+  AD_EXPECT_THROW_WITH_MESSAGE(
+      readLegacyBlob(dataSpan),
+      AllOf(HasSubstr(notALegacyBlob),
+            HasSubstr("known padding conventions of the legacy format were "
+                      "tried")));
 }
 
 // _____________________________________________________________________________
