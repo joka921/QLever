@@ -32,6 +32,10 @@ namespace {
 // The key of the encoded-IRI configuration in the index metadata.
 constexpr std::string_view encodedIriKey = "encoded-iri-prefixes";
 
+// The key of the ICU setting in the index metadata (see
+// `IndexImpl::writeConfiguration`).
+constexpr std::string_view hasIcuSupportKey = "has-icu-support";
+
 // Convert one legacy named cache entry to a `NamedResultCache::Value`, and
 // record the `statistics`.
 NamedResultCache::Value convertEntry(
@@ -146,15 +150,24 @@ Id convertId(uint64_t legacyBits, const LegacyEncodedIriManager& legacyManager,
 
 // _____________________________________________________________________________
 nlohmann::json convertMetadata(const nlohmann::json& legacyMetadata,
-                               const EncodedIriManager& currentManager) {
+                               const EncodedIriManager& currentManager,
+                               const ConversionOptions& options) {
   nlohmann::json metadata = legacyMetadata;
   metadata["index-format-version"] = qlever::indexFormatVersion;
   metadata[encodedIriKey] = currentManager;
+  // The loading side rejects a blob whose ICU setting differs from the one of
+  // the binary, and assumes ICU support if the key is missing. The legacy
+  // blobs were written without ICU support, but before that was recorded (see
+  // `ConversionOptions::hasIcuSupport_`).
+  if (!metadata.contains(hasIcuSupportKey)) {
+    metadata[hasIcuSupportKey] = options.hasIcuSupport_;
+  }
   return metadata;
 }
 
 // _____________________________________________________________________________
-ConversionResult convertLegacyBlob(const LegacyBlob& legacyBlob) {
+ConversionResult convertLegacyBlob(const LegacyBlob& legacyBlob,
+                                   const ConversionOptions& options) {
   ConversionResult result;
   auto& statistics = result.statistics_;
 
@@ -168,7 +181,7 @@ ConversionResult convertLegacyBlob(const LegacyBlob& legacyBlob) {
   auto currentManager = legacyManager.makeCurrentManager();
   statistics.currentEncodedIriConfig_ = currentManager;
 
-  result.metadata_ = convertMetadata(metadata, currentManager);
+  result.metadata_ = convertMetadata(metadata, currentManager, options);
   statistics.vocabularyType_ =
       static_cast<std::string>(result.metadata_["vocabulary-type"]);
   statistics.numVocabularyWords_ = legacyBlob.numWords();
@@ -197,8 +210,10 @@ ConversionResult convertLegacyBlob(const LegacyBlob& legacyBlob) {
 }
 
 // _____________________________________________________________________________
-ConversionResult convertLegacyBlob(ql::span<const char> legacyCompressedBlob) {
-  return convertLegacyBlob(readLegacyBlobFromCompressed(legacyCompressedBlob));
+ConversionResult convertLegacyBlob(ql::span<const char> legacyCompressedBlob,
+                                   const ConversionOptions& options) {
+  return convertLegacyBlob(readLegacyBlobFromCompressed(legacyCompressedBlob),
+                           options);
 }
 
 }  // namespace qlever::blobConverter

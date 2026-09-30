@@ -100,19 +100,36 @@ struct ConversionResult {
 Id convertId(uint64_t legacyBits, const LegacyEncodedIriManager& legacyManager,
              const EncodedIriManager& currentManager);
 
+// Options for the conversion of a legacy blob.
+struct ConversionOptions {
+  // Whether the legacy blob was written by a QLever that was built with ICU
+  // (Unicode) support. This determines the collation of the vocabulary, so
+  // the converted blob can only be loaded by a QLever that was built the same
+  // way (see `has-icu-support` in `IndexImpl::applyConfiguration`). The legacy
+  // `qlever-bmw` fork was built without ICU and did not record this in the
+  // metadata yet, hence the default. This value is only used if the legacy
+  // metadata does not contain the key `"has-icu-support"`; if it does, the
+  // recorded value is kept.
+  bool hasIcuSupport_ = false;
+};
+
 // Convert the index metadata of a legacy blob to the metadata that is stored
 // in the converted blob: the `"index-format-version"` becomes the current one,
-// and the `"encoded-iri-prefixes"` are replaced by the JSON of the
-// `currentManager`. All other keys are copied.
+// the `"encoded-iri-prefixes"` are replaced by the JSON of the
+// `currentManager`, and the `"has-icu-support"` is added if it is missing (see
+// `ConversionOptions::hasIcuSupport_`). All other keys are copied.
 nlohmann::json convertMetadata(const nlohmann::json& legacyMetadata,
-                               const EncodedIriManager& currentManager);
+                               const EncodedIriManager& currentManager,
+                               const ConversionOptions& options = {});
 
 // Convert an already read legacy blob (see `LegacyBlobReader.h`).
-ConversionResult convertLegacyBlob(const LegacyBlob& legacyBlob);
+ConversionResult convertLegacyBlob(const LegacyBlob& legacyBlob,
+                                   const ConversionOptions& options = {});
 
 // Convert a legacy blob, given as the compressed bytes that were written by the
 // legacy `qlever-bmw` fork (typically the contents of a `.dat` file).
-ConversionResult convertLegacyBlob(ql::span<const char> legacyCompressedBlob);
+ConversionResult convertLegacyBlob(ql::span<const char> legacyCompressedBlob,
+                                   const ConversionOptions& options = {});
 
 }  // namespace qlever::blobConverter
 

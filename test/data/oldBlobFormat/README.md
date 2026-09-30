@@ -10,7 +10,11 @@ blob format of `Qlever::serializeVocabAndNamedCacheToCompressedBlob` (see
 `src/blobConverter/BlobConverter.h` and the `qlever-blob-converter` binary).
 
 The blobs have to be checked in, because the current code can no longer write
-the legacy format. They were created by the `qlever-bmw` fork from four small
+the legacy format. They were written by a build of the fork without ICU
+(Unicode) support, which the legacy metadata does not record; the converter
+therefore marks the converted blobs with `"has-icu-support": false` by default,
+and they can only be loaded by a QLever that was built without ICU
+(`QLEVER_NO_UNICODE=ON`). They were created by the `qlever-bmw` fork from four small
 map tiles of the BMW unified map model; the numbers in the file names are the
 tile ids. Each blob contains the named cached queries `boundaries`,
 `dp-payload`, `geos` (with a cached geo index), `lane-payload`,

@@ -37,6 +37,7 @@
 #include "util/Serializer/ByteBufferSerializer.h"
 #include "util/Serializer/SerializeString.h"
 #include "util/Serializer/SerializeVector.h"
+#include "util/UnicodeSupport.h"
 #include "util/json.h"
 
 using namespace qlever::blobConverter;
@@ -88,6 +89,15 @@ constexpr std::string_view notALegacyBlob = "not a blob in the legacy format";
 // `writeHeaderMetadataAndVocabulary` below: all the keys that
 // `IndexImpl::applyConfiguration` requires, the uncompressed in-memory
 // vocabulary, and a single plain prefix for encoded IRIs.
+// The conversion options with which a converted blob can be loaded into the
+// binary that runs the tests: the ICU setting of the blob has to match the one
+// of the binary (see `ConversionOptions::hasIcuSupport_`).
+ConversionOptions optionsForThisBinary() {
+  ConversionOptions options;
+  options.hasIcuSupport_ = ad_utility::useICUDefault;
+  return options;
+}
+
 nlohmann::json syntheticMetadata() {
   return nlohmann::json::parse(R"({
     "encoded-iri-prefixes":{"prefixes-with-leading-angle-brackets":["<http://p/"]},
@@ -343,7 +353,7 @@ TEST_P(BlobConverterSampleTest, convertAndQuery) {
               AnyOf(StartsWith("<"), StartsWith("\"")));
 
   // Convert.
-  auto result = convertLegacyBlob(legacyBlob);
+  auto result = convertLegacyBlob(legacyBlob, optionsForThisBinary());
   ASSERT_FALSE(result.blob_.empty());
   EXPECT_EQ(result.statistics_.numVocabularyWords_, sample.numWords_);
   EXPECT_EQ(result.statistics_.entries_.size(), expectedEntryNames.size());
@@ -448,7 +458,8 @@ TEST_P(BlobConverterSampleTest, convertAndQuery) {
 
   // Also the direct conversion from the compressed bytes yields the same blob
   // contents.
-  auto directResult = convertLegacyBlob(ql::span<const char>{legacyBytes});
+  auto directResult = convertLegacyBlob(ql::span<const char>{legacyBytes},
+                                        optionsForThisBinary());
   EXPECT_EQ(directResult.metadata_, result.metadata_);
   EXPECT_EQ(directResult.statistics_.toString(), result.statistics_.toString());
 }
@@ -547,6 +558,43 @@ TEST(BlobConverter, convertMetadata) {
       current["encoded-iri-prefixes"]["prefixes-with-leading-angle-brackets"],
       UnorderedElementsAre("<http://a/",
                            absl::StrCat("<", QLEVER_NEW_GRAPH_PREFIX)));
+
+  // The legacy metadata does not record the ICU setting; by default the blob
+  // is marked as written without ICU support (which is what the legacy fork
+  // was built with), and the option can override this.
+  EXPECT_EQ(current["has-icu-support"], false);
+  ConversionOptions withIcu;
+  withIcu.hasIcuSupport_ = true;
+  auto currentWithIcu =
+      convertMetadata(legacy, legacyManager.makeCurrentManager(), withIcu);
+  EXPECT_EQ(currentWithIcu["has-icu-support"], true);
+  // A recorded ICU setting is kept as it is, regardless of the option.
+  nlohmann::json legacyWithIcu = legacy;
+  legacyWithIcu["has-icu-support"] = true;
+  EXPECT_EQ(
+      convertMetadata(legacyWithIcu,
+                      legacyManager.makeCurrentManager())["has-icu-support"],
+      true);
+}
+
+// _____________________________________________________________________________
+// A blob converted with the default options is marked as written without ICU
+// support, which only a QLever binary that was built without ICU can load.
+TEST(BlobConverter, hasIcuSupportOfConvertedBlob) {
+  auto compressed =
+      writeSyntheticLegacyBlob(syntheticMetadata(), {syntheticEntry()});
+  auto result = convertLegacyBlob(ql::span<const char>{compressed});
+  EXPECT_EQ(result.metadata_["has-icu-support"], false);
+  EXPECT_EQ(metadataOfCurrentBlob(result.blob_)["has-icu-support"], false);
+  qlever::Qlever target{qlever::EngineConfig{}, /*skipLoading=*/true};
+  if constexpr (ad_utility::useICUDefault) {
+    AD_EXPECT_THROW_WITH_MESSAGE(
+        target.deserializeVocabAndNamedCacheFromCompressedBlob(result.blob_),
+        AllOf(HasSubstr("without ICU"), HasSubstr("built with it")));
+  } else {
+    EXPECT_NO_THROW(
+        target.deserializeVocabAndNamedCacheFromCompressedBlob(result.blob_));
+  }
 }
 
 // _____________________________________________________________________________
@@ -734,7 +782,8 @@ TEST(BlobConverter, syntheticLegacyBlob) {
   ASSERT_NE(legacyBlob.findEntry("synthetic"), nullptr);
   EXPECT_EQ(legacyBlob.findEntry("other"), nullptr);
 
-  auto result = convertLegacyBlob(ql::span<const char>{compressed});
+  auto result = convertLegacyBlob(ql::span<const char>{compressed},
+                                  optionsForThisBinary());
   EXPECT_EQ(result.metadata_["vocabulary-type"], "in-memory-uncompressed");
   EXPECT_EQ(result.statistics_.entries_.at(0).numReencodedIris_, 1u);
   qlever::Qlever target{qlever::EngineConfig{}, /*skipLoading=*/true};
@@ -758,8 +807,8 @@ TEST(BlobConverter, syntheticLegacyBlob) {
   SyntheticEntry entry = syntheticEntry();
   entry.columns_[0][1] = makeLegacyBits(LegacyDatatype::VocabIndex, 0);
   auto withoutPrefixes = writeSyntheticLegacyBlob(metadata, {entry});
-  auto resultWithoutPrefixes =
-      convertLegacyBlob(ql::span<const char>{withoutPrefixes});
+  auto resultWithoutPrefixes = convertLegacyBlob(
+      ql::span<const char>{withoutPrefixes}, optionsForThisBinary());
   EXPECT_TRUE(
       resultWithoutPrefixes.statistics_.legacyEncodedIriConfig_.is_null());
   EXPECT_EQ(resultWithoutPrefixes.metadata_["encoded-iri-prefixes"],
@@ -810,7 +859,8 @@ TEST(BlobConverter, paddingConventions) {
       }
     }
 
-    auto result = convertLegacyBlob(ql::span<const char>{compressed});
+    auto result = convertLegacyBlob(ql::span<const char>{compressed},
+                                    optionsForThisBinary());
     EXPECT_EQ(result.statistics_.paddingConvention_, convention.description());
     EXPECT_THAT(result.statistics_.toString(),
                 HasSubstr(convention.description()));

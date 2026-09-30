@@ -91,6 +91,7 @@ int main(int argc, char** argv) {
   std::string outputFile;
   size_t numVocabularyWordsToPrint = 0;
   size_t numResultRowsToPrint = 0;
+  bool hasIcuSupport = false;
   ad_utility::ParameterToProgramOptionFactory optionFactory{
       &globalRuntimeParameters};
 
@@ -117,6 +118,12 @@ int main(int argc, char** argv) {
       "Load the converted blob into a blob-only QLever instance and print the "
       "first N rows of every named cached query (as a check that the "
       "converted blob works).");
+  add("has-icu-support", po::value(&hasIcuSupport)->default_value(false),
+      "Whether the legacy blob was written by a QLever that was built with "
+      "ICU (Unicode) support, which the legacy format did not record. The "
+      "converted blob can only be loaded by a QLever that was built the same "
+      "way. The legacy `qlever-bmw` fork was built without ICU, hence the "
+      "default.");
   add("log-level",
       optionFactory.getProgramOption<&RuntimeParameters::logLevel_>(),
       "Runtime log level: FATAL, ERROR, WARN, INFO, DEBUG, TIMING, or TRACE. "
@@ -148,7 +155,9 @@ int main(int argc, char** argv) {
     using namespace qlever::blobConverter;
     auto input = readBinaryFile(inputFile);
     auto legacyBlob = readLegacyBlobFromCompressed(input);
-    auto result = convertLegacyBlob(legacyBlob);
+    ConversionOptions options;
+    options.hasIcuSupport_ = hasIcuSupport;
+    auto result = convertLegacyBlob(legacyBlob, options);
     {
       auto stream = ad_utility::makeOfstream(outputFile, std::ios::binary);
       stream.write(result.blob_.data(),
