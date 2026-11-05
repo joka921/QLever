@@ -1,0 +1,67 @@
+# Round 6 of the reproducer, see `REPORT.md`: build only `IndexBuildLoopTest`
+# (which builds the tiny named-graph test index of the failing tests over and
+# over and checks it) at a fixed commit of QLever, cache that build, and run
+# several instances of it in parallel, with different `jemalloc` settings.
+name: arm64 stall reproducer (index build loop)
+
+on:
+  push:
+    branches: [ arm64-stall-repro ]
+  workflow_dispatch:
+
+env:
+  QLEVER_REF: 7f8b3be50d47ee3ca97ee6c85e93063760a1f04a
+
+jobs:
+  loop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: loop-default, parallel: 4, malloc_conf: "" }
+          - { name: loop-purge0, parallel: 4, malloc_conf: "dirty_decay_ms:0,muzzy_decay_ms:0" }
+          - { name: loop-nopurge, parallel: 4, malloc_conf: "dirty_decay_ms:-1,muzzy_decay_ms:-1" }
+          - { name: loop-default-p1, parallel: 1, malloc_conf: "" }
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: repro
+      - name: Print kernel and CPU information
+        run: |
+          uname -a
+          lscpu | grep -E 'Model name|Stepping'
+          free -m
+      - uses: actions/checkout@v4
+        with:
+          repository: ad-freiburg/qlever
+          ref: ${{ env.QLEVER_REF }}
+          path: qlever
+      # Make the GitHub Actions cache available to `docker buildx`.
+      - uses: crazy-max/ghaction-github-runtime@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            env.BUILDKIT_STEP_LOG_MAX_SIZE=-1
+            env.BUILDKIT_STEP_LOG_MAX_SPEED=-1
+      - name: Build IndexBuildLoopTest
+        working-directory: qlever
+        run: |
+          mkdir repro && cp ../repro/{run-test-with-diagnostics.sh,index-loop.sh,IndexBuildLoopTest.cpp} repro/
+          echo '!repro/' >> .dockerignore
+          docker buildx build --progress=plain --target build \
+            --cache-from type=gha,scope=index-loop \
+            --cache-to type=gha,mode=max,scope=index-loop \
+            -f ../repro/Dockerfile.loop .
+      - name: Loop
+        working-directory: qlever
+        run: |
+          docker buildx build --progress=plain --target loop \
+            --cache-from type=gha,scope=index-loop \
+            --build-arg DURATION=3600 --build-arg PARALLEL=${{ matrix.parallel }} \
+            --build-arg "MALLOC_CONF=${{ matrix.malloc_conf }}" \
+            --build-arg CACHE_BUST=${{ github.run_id }} \
+            -f ../repro/Dockerfile.loop .

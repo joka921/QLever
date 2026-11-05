@@ -16,9 +16,8 @@
 # - `synth-jemalloc`: the `mixed` workload with `jemalloc` (immediate purging).
 name: arm64 stall reproducer
 
+# Since round 6 (see `loop.yml`), only run on demand.
 on:
-  push:
-    branches: [ arm64-stall-repro ]
   workflow_dispatch:
 
 jobs:

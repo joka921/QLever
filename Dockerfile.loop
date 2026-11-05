@@ -1,0 +1,36 @@
+# Build only `IndexBuildLoopTest` (see `IndexBuildLoopTest.cpp`) in the same
+# way as the `Dockerfile` of QLever, and then run several instances of it in
+# parallel inside the build (stage `loop`), see `index-loop.sh`. The build
+# context is a checkout of QLever, with the files of this branch in `repro/`.
+# The stage `build` is cached between the jobs via the GitHub Actions cache.
+FROM ubuntu:24.04 AS build
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+ENV LC_CTYPE=C.UTF-8
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y wget
+RUN wget https://apt.kitware.com/kitware-archive.sh && chmod +x kitware-archive.sh && ./kitware-archive.sh
+RUN apt-get update && apt-get install -y build-essential cmake libicu-dev tzdata pkg-config uuid-runtime uuid-dev git libjemalloc-dev ninja-build libzstd-dev libssl-dev mold liburing-dev libboost1.83-dev libboost-program-options1.83-dev libboost-iostreams1.83-dev libboost-url1.83-dev libboost-container1.83-dev gdb procps
+COPY src /qlever/src/
+COPY test /qlever/test/
+COPY e2e /qlever/e2e/
+COPY benchmark /qlever/benchmark/
+COPY .git /qlever/.git/
+COPY CMakeLists.txt /qlever/
+COPY CompilationInfo.cmake /qlever/
+COPY GitVersion.cmake /qlever/
+COPY repro/IndexBuildLoopTest.cpp /qlever/test/
+RUN echo 'addLinkAndDiscoverTest(IndexBuildLoopTest engine)' >> /qlever/test/CMakeLists.txt
+WORKDIR /qlever/build/
+RUN cmake -DCMAKE_BUILD_TYPE=Release -DLOGLEVEL=INFO -D_NO_TIMING_TESTS=ON -DCOMPILER_SUPPORTS_MARCH_NATIVE=FALSE -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=mold" -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=mold" -DCMAKE_CXX_FLAGS="-Wno-psabi" -GNinja ..
+RUN cmake --build . -j 4 --target IndexBuildLoopTest
+
+FROM build AS loop
+COPY repro/run-test-with-diagnostics.sh repro/index-loop.sh /qlever/misc/
+ARG DURATION=3600
+ARG PARALLEL=4
+# The runtime configuration of `jemalloc`, e.g. how fast it returns freed
+# memory to the kernel via `madvise`.
+ARG MALLOC_CONF=
+ARG CACHE_BUST=0
+RUN MALLOC_CONF="$MALLOC_CONF" /qlever/misc/index-loop.sh "$DURATION" "$PARALLEL"
