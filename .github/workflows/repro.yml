@@ -3,8 +3,15 @@
 # workload, see `repro.c`, `stress.sh`, and `ctest-loop.sh`.
 #
 # Round 1 (`memmove`, `zstd`, and `mixed` natively and `mixed` in `docker run`,
-# 100 minutes each) found nothing. Round 2 adds the aspects of the original
-# failures that round 1 lacked.
+# 100 minutes each) found nothing. In round 2, building only five of the QLever
+# unit tests and running them over and over via `ctest` (`qlever`) reproduced a
+# stall in the first iteration. A stall in the full Docker build showed a storm
+# of spurious page faults (~4 million per second in a `memmove`).
+#
+# Round 3 tests which conditions of the machine are needed for the stalls:
+# `qlever` (as in round 2), `qlever-noswap` (without swap, which the
+# compilation otherwise fills), and `qlever-nocompact` (without proactive
+# compaction and without THP defragmentation).
 name: arm64 stall reproducer
 
 on:
@@ -17,18 +24,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # `pool`: the copies run as tasks on a pool of mostly idle threads.
-        # `pressure`: `mixed`, while a memory hog forces reclaim, compaction,
-        #   and page migration.
-        # `buildkit`: `mixed` in a `RUN` step of `docker build`.
-        # `qlever`: the QLever unit tests that stalled, built and run in a
-        #   `RUN` step of `docker build`, as in the CI of QLever.
-        kind: [ pool, pressure, buildkit, qlever ]
+        kind: [ qlever, qlever-noswap, qlever-nocompact ]
     name: ${{ matrix.kind }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 240
-    env:
-      DURATION: 6000
     steps:
       - uses: actions/checkout@v4
         with:
@@ -36,48 +35,42 @@ jobs:
       - name: Print kernel and CPU information
         run: |
           uname -a
-          lscpu | grep -E 'Model name|Stepping|Flags'
-          sudo dmesg | grep -iE 'errat|workaround|sve' | head -n 50
-          grep -r . /sys/kernel/mm/transparent_hugepage/ 2> /dev/null | grep -E 'enabled|defrag' || true
-      - name: Install packages
-        if: matrix.kind == 'pool' || matrix.kind == 'pressure'
-        run: sudo apt-get update -q && sudo apt-get install -y -q gdb libzstd-dev stress-ng > /dev/null
-      - name: Stress with a thread pool
-        if: matrix.kind == 'pool'
-        working-directory: repro
+          lscpu | grep -E 'Model name|Stepping'
+          free -m
+          swapon --show
+          sysctl vm.compaction_proactiveness vm.swappiness
+      - name: Disable swap
+        if: matrix.kind == 'qlever-noswap'
         run: |
-          gcc -O2 -g -o repro repro.c -lzstd -lpthread
-          ./stress.sh "$DURATION" ./repro pool 16 40
-      - name: Stress under memory pressure
-        if: matrix.kind == 'pressure'
-        working-directory: repro
+          sudo swapoff -a
+          free -m
+      - name: Disable proactive compaction and THP defragmentation
+        if: matrix.kind == 'qlever-nocompact'
         run: |
-          gcc -O2 -g -o repro repro.c -lzstd -lpthread
-          stress-ng --vm 2 --vm-bytes 42% --timeout "${DURATION}s" --quiet &
-          ./stress.sh "$DURATION" ./repro mixed 8 40
+          sudo sysctl -w vm.compaction_proactiveness=0
+          echo never | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
+          echo never | sudo tee /sys/kernel/mm/transparent_hugepage/defrag
+          echo 0 | sudo tee /sys/kernel/mm/transparent_hugepage/khugepaged/defrag
       - name: Set up Docker Buildx
-        if: matrix.kind == 'buildkit' || matrix.kind == 'qlever'
         uses: docker/setup-buildx-action@v3
         with:
           driver-opts: |
             env.BUILDKIT_STEP_LOG_MAX_SIZE=-1
             env.BUILDKIT_STEP_LOG_MAX_SPEED=-1
-      - name: Stress in docker build
-        if: matrix.kind == 'buildkit'
-        working-directory: repro
-        run: |
-          docker buildx build --progress=plain --build-arg DURATION="$DURATION" \
-            -f Dockerfile.buildkit .
       - uses: actions/checkout@v4
-        if: matrix.kind == 'qlever'
         with:
           repository: ad-freiburg/qlever
           path: qlever
       - name: Build and loop the QLever tests in docker build
-        if: matrix.kind == 'qlever'
         working-directory: qlever
         run: |
           mkdir repro && cp ../repro/{run-test-with-diagnostics.sh,ctest-loop.sh} repro/
           echo '!repro/' >> .dockerignore
-          docker buildx build --progress=plain --build-arg DURATION=9000 \
+          docker buildx build --progress=plain --build-arg DURATION=5400 \
+            --build-arg BUILD_JOBS=${{ matrix.kind == 'qlever-noswap' && 3 || 4 }} \
             -f ../repro/Dockerfile.qlever .
+      - name: Print the swap and compaction counters
+        if: always()
+        run: |
+          free -m
+          grep -E '^(pswpin|pswpout|pgmigrate_success|compact_stall|compact_daemon_wake|thp_collapse_alloc|pgfault) ' /proc/vmstat

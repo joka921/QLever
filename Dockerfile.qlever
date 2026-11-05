@@ -23,6 +23,7 @@ COPY repro/run-test-with-diagnostics.sh repro/ctest-loop.sh /qlever/misc/
 WORKDIR /qlever/build/
 RUN cmake -DCMAKE_BUILD_TYPE=Release -DLOGLEVEL=INFO -D_NO_TIMING_TESTS=ON -DCOMPILER_SUPPORTS_MARCH_NATIVE=FALSE -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=mold" -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=mold" -DCMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE=PRE_TEST -DCMAKE_CXX_FLAGS="-Wno-psabi" -DCMAKE_TEST_LAUNCHER=/qlever/misc/run-test-with-diagnostics.sh -GNinja ..
 ARG TARGETS="TransitivePathTest JoinTest CompressedRelationsTest GroupByTest OptionalJoinTest"
-RUN cmake --build . --target $TARGETS
+ARG BUILD_JOBS=4
+RUN cmake --build . -j "$BUILD_JOBS" --target $TARGETS
 ARG DURATION=9000
 RUN /qlever/misc/ctest-loop.sh "$DURATION"
