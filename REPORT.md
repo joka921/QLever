@@ -1,6 +1,6 @@
 # Spurious stalls and corruptions of the QLever tests on the arm64 runners
 
-Status: 2026-11-05, 22:00 UTC. Related: ad-freiburg/qlever PR #3892 (diagnostics
+Status: 2026-11-05, 22:30 UTC. Related: ad-freiburg/qlever PR #3892 (diagnostics
 launcher), this branch (`arm64-stall-repro` on `joka921/QLever`) for the
 reproducers.
 
@@ -37,7 +37,16 @@ reproducers.
    candidate: the TLBI level-hint commit `752a0d1d483e9` (known to cause
    spurious-fault loops, fixed March 2026, but for huge pages, which aren't
    used here). Neither is confirmed.
-6. **Reproducer:** building only five QLever test binaries (about 20 minutes)
+6. **Page migration (memory compaction) is the trigger.** With proactive
+   compaction and THP defragmentation disabled on the host, the same
+   reproducer ran 169 iterations (90 minutes, 75,205 tests) without a single
+   stall or failure, whereas the two jobs with the default settings had 11
+   stalls and 2 corruptions in 46 iterations. `pgmigrate_success` was 7k
+   there vs. 311k and 365k. Migration replaces the page behind a live
+   mapping, which requires a correct TLB invalidation on all CPUs; a stale
+   entry explains both the fault loop (stalls) and writes to the old page
+   (corruption).
+7. **Reproducer:** building only five QLever test binaries (about 20 minutes)
    and looping them via `ctest` reproduces both the stalls (about one per two
    minutes) and the **corruption (after 10 to 12 minutes of testing)**,
    independently of swap. Purely synthetic workloads (about 274,000 processes
@@ -45,6 +54,10 @@ reproducers.
    nothing.
 
 ## Workarounds / next steps
+
+- **Candidate CI workaround:** `sudo sysctl -w vm.compaction_proactiveness=0`
+  (and possibly THP `never`) on the host before the Docker build. Round 4
+  checks which of the two settings is needed.
 
 - Short term: the stalls/corruptions are not QLever bugs; if they block
   merges, pin or avoid the `7.0.0-1017-azure` runner image (not possible on
@@ -121,7 +134,7 @@ Workflow `.github/workflows/repro.yml`, all on `ubuntu-24.04-arm` with
 | 2 `qlever`                          | `Dockerfile.qlever`: build 5 test binaries, loop `ctest`   | stall in iteration 1 |
 | 3 `qlever` (42101451126)            | as round 2, continue after stalls                          | 4 stalls in 27 iterations, **corruption in iteration 27** |
 | 3 `qlever-noswap`                   | as above, `swapoff -a` (pswpout stays 0)                   | 7 stalls in 19 iterations, **corruption in iteration 19** |
-| 3 `qlever-nocompact`                | no proactive compaction, THP/khugepaged defrag off          | still running at the time of writing |
+| 3 `qlever-nocompact`                | no proactive compaction, THP/khugepaged defrag off          | **0 stalls in 169 iterations (90 min)**, no failure |
 
 Details of round 3:
 

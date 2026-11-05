@@ -1,17 +1,20 @@
 # Try to reproduce the stalls (and corruptions) of the QLever unit tests on the
 # arm64 GitHub runners with the kernel `7.0.0-1017-azure` with a reduced
-# workload, see `repro.c`, `stress.sh`, and `ctest-loop.sh`.
+# workload, see `REPORT.md` for the previous rounds.
 #
-# Round 1 (`memmove`, `zstd`, and `mixed` natively and `mixed` in `docker run`,
-# 100 minutes each) found nothing. In round 2, building only five of the QLever
-# unit tests and running them over and over via `ctest` (`qlever`) reproduced a
-# stall in the first iteration. A stall in the full Docker build showed a storm
-# of spurious page faults (~4 million per second in a `memmove`).
-#
-# Round 3 tests which conditions of the machine are needed for the stalls:
-# `qlever` (as in round 2), `qlever-noswap` (without swap, which the
-# compilation otherwise fills), and `qlever-nocompact` (without proactive
-# compaction and without THP defragmentation).
+# Round 3 showed that the stalls and corruptions disappear when proactive
+# compaction and THP defragmentation are disabled (0 stalls in 169 iterations,
+# vs. 11 stalls and 2 corruptions in 46 iterations), and that page migrations
+# were ~50 times rarer then. Round 4 checks whether page migration is the
+# trigger:
+# - `synth-compact-mixed`/`synth-compact-pool`: the cheap synthetic workload of
+#   `repro.c`, which found nothing so far, while memory is compacted every
+#   second (`vm.compact_memory`), which migrates the pages of the workload.
+# - `qlever-forcecompact`: the QLever tests with the same forced compaction
+#   (should stall and fail more often than in round 3).
+# - `qlever-proactiveness0`: only `vm.compaction_proactiveness=0` (the
+#   candidate workaround for the QLever CI).
+# - `qlever-thp-never`: only THP and its defragmentation disabled.
 name: arm64 stall reproducer
 
 on:
@@ -24,7 +27,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        kind: [ qlever, qlever-noswap, qlever-nocompact ]
+        kind:
+          - synth-compact-mixed
+          - synth-compact-pool
+          - qlever-forcecompact
+          - qlever-proactiveness0
+          - qlever-thp-never
     name: ${{ matrix.kind }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 240
@@ -37,37 +45,56 @@ jobs:
           uname -a
           lscpu | grep -E 'Model name|Stepping'
           free -m
-          swapon --show
           sysctl vm.compaction_proactiveness vm.swappiness
-      - name: Disable swap
-        if: matrix.kind == 'qlever-noswap'
+          grep -r . /sys/kernel/mm/transparent_hugepage/ 2> /dev/null | grep -E 'enabled|defrag' || true
+      - name: Disable proactive compaction
+        if: matrix.kind == 'qlever-proactiveness0'
+        run: sudo sysctl -w vm.compaction_proactiveness=0
+      - name: Disable THP and its defragmentation
+        if: matrix.kind == 'qlever-thp-never'
         run: |
-          sudo swapoff -a
-          free -m
-      - name: Disable proactive compaction and THP defragmentation
-        if: matrix.kind == 'qlever-nocompact'
-        run: |
-          sudo sysctl -w vm.compaction_proactiveness=0
           echo never | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
           echo never | sudo tee /sys/kernel/mm/transparent_hugepage/defrag
           echo 0 | sudo tee /sys/kernel/mm/transparent_hugepage/khugepaged/defrag
+      # Compact all memory once per second in the background (for the rest of
+      # the job), which migrates movable pages, in particular anonymous pages
+      # of running processes.
+      - name: Start forced compaction
+        if: contains(matrix.kind, 'compact')
+        run: |
+          nohup bash -c 'while true; do echo 1 | sudo tee /proc/sys/vm/compact_memory > /dev/null; sleep 1; done' > /dev/null 2>&1 &
+          sleep 3
+          grep -E '^(pgmigrate_success|compact_stall) ' /proc/vmstat
+      - name: Stress the synthetic workload
+        if: startsWith(matrix.kind, 'synth-')
+        working-directory: repro
+        env:
+          QLEVER_TEST_STALL_SECONDS: 15
+        run: |
+          grep -E '^(pgmigrate_success|compact_stall) ' /proc/vmstat
+          sudo apt-get update -q && sudo apt-get install -y -q gdb libzstd-dev > /dev/null
+          gcc -O2 -g -o repro repro.c -lzstd -lpthread
+          if [ "${{ matrix.kind }}" = synth-compact-pool ]; then ARGS="pool 8 200"; else ARGS="mixed 4 400"; fi
+          ./stress.sh 9000 ./repro $ARGS
       - name: Set up Docker Buildx
+        if: startsWith(matrix.kind, 'qlever-')
         uses: docker/setup-buildx-action@v3
         with:
           driver-opts: |
             env.BUILDKIT_STEP_LOG_MAX_SIZE=-1
             env.BUILDKIT_STEP_LOG_MAX_SPEED=-1
       - uses: actions/checkout@v4
+        if: startsWith(matrix.kind, 'qlever-')
         with:
           repository: ad-freiburg/qlever
           path: qlever
       - name: Build and loop the QLever tests in docker build
+        if: startsWith(matrix.kind, 'qlever-')
         working-directory: qlever
         run: |
           mkdir repro && cp ../repro/{run-test-with-diagnostics.sh,ctest-loop.sh} repro/
           echo '!repro/' >> .dockerignore
           docker buildx build --progress=plain --build-arg DURATION=5400 \
-            --build-arg BUILD_JOBS=${{ matrix.kind == 'qlever-noswap' && 3 || 4 }} \
             -f ../repro/Dockerfile.qlever .
       - name: Print the swap and compaction counters
         if: always()
