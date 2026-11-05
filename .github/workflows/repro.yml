@@ -1,0 +1,48 @@
+# Try to reproduce the stalls (and corruptions) of the QLever unit tests on the
+# arm64 GitHub runners with the kernel `7.0.0-1017-azure` with a minimal
+# workload, see `repro.c` and `stress.sh`.
+name: arm64 stall reproducer
+
+on:
+  push:
+    branches: [ arm64-stall-repro ]
+  workflow_dispatch:
+
+jobs:
+  repro:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: memmove, mode: memmove, docker: false }
+          - { name: zstd, mode: zstd, docker: false }
+          - { name: mixed, mode: mixed, docker: false }
+          - { name: mixed-in-docker, mode: mixed, docker: true }
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    env:
+      DURATION: 6000
+      ARGS: ${{ matrix.mode }} 8 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Print kernel and CPU information
+        run: |
+          uname -a
+          lscpu
+          sudo dmesg | grep -iE 'errat|workaround|sve|sme|fpsimd|hyper-?v|hv_|contpte|thp' | head -n 100
+          grep -r . /sys/kernel/mm/transparent_hugepage/ 2> /dev/null | grep -E 'enabled|defrag' || true
+          cat /proc/sys/abi/sve_default_vector_length || true
+      - name: Stress natively
+        if: ${{ !matrix.docker }}
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q gdb libzstd-dev > /dev/null
+          gcc -O2 -g -o repro repro.c -lzstd -lpthread
+          ./stress.sh "$DURATION" ./repro $ARGS
+      - name: Stress in Docker
+        if: ${{ matrix.docker }}
+        run: |
+          docker run --rm -v "$PWD:/w" -w /w -e DURATION -e ARGS ubuntu:24.04 bash -c '
+            apt-get update -q && apt-get install -y -q gcc gdb procps libzstd-dev > /dev/null &&
+            gcc -O2 -g -o repro repro.c -lzstd -lpthread &&
+            ./stress.sh "$DURATION" ./repro $ARGS'
