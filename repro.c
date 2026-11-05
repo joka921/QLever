@@ -14,7 +14,9 @@
 // `__memmove_sve` on these CPUs) and/or compresses them via `ZSTD_compress`.
 // Every copy is verified, so a lost write is reported as a corruption.
 //
-// Usage: repro <memmove|zstd|mixed> <numThreads> <numIterationsPerThread>
+// Usage: repro <memmove|zstd|mixed|pool> <numThreads> <numIterationsPerThread>
+// In the `pool` mode, the copies and compressions run as tasks on a thread
+// pool, see `runPool`.
 // Exit status: 0 on success, 3 on a corruption, 2 on a usage error.
 
 #include <pthread.h>
@@ -52,11 +54,10 @@ static size_t randomSize(uint64_t* state) {
   return size + nextRandom(state) % size;
 }
 
-// The work of a single thread, see the comment at the top of the file.
-static void* worker(void* arg) {
-  uint64_t state = (uint64_t)(uintptr_t)arg * 0x9E3779B97F4A7C15ull ^
-                   (uint64_t)time(NULL) ^ 0x1234567ull;
-  for (long i = 0; i < numIterations; ++i) {
+// Copy and/or compress a buffer of a random size once, and verify the result.
+static void doOneIteration(uint64_t* stateArg) {
+  uint64_t state = *stateArg;
+  {
     size_t size = randomSize(&state);
     unsigned char* source = malloc(size);
     unsigned char* target = malloc(size);
@@ -109,12 +110,81 @@ static void* worker(void* arg) {
     free(source);
     free(target);
   }
+  *stateArg = state;
+}
+
+// The work of a single thread, see the comment at the top of the file.
+static void* worker(void* arg) {
+  uint64_t state = (uint64_t)(uintptr_t)arg * 0x9E3779B97F4A7C15ull ^
+                   (uint64_t)time(NULL) ^ 0x1234567ull;
+  for (long i = 0; i < numIterations; ++i) {
+    doOneIteration(&state);
+  }
   return NULL;
+}
+
+// A minimal thread pool like the one of Boost.Asio: the workers sleep on a
+// condition variable until a task is posted, run it, and sleep again. The main
+// thread posts the tasks one by one, so the workers are constantly woken up and
+// put to sleep (which saves and restores their FP/SIMD/SVE state).
+static pthread_mutex_t poolMutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t poolHasTask = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t poolTaskDone = PTHREAD_COND_INITIALIZER;
+static long numPostedTasks = 0;
+static long numStartedTasks = 0;
+static long numFinishedTasks = 0;
+static int poolDone = 0;
+
+static void* poolWorker(void* arg) {
+  uint64_t state = (uint64_t)(uintptr_t)arg * 0x9E3779B97F4A7C15ull ^
+                   (uint64_t)time(NULL) ^ 0x7654321ull;
+  pthread_mutex_lock(&poolMutex);
+  for (;;) {
+    while (!poolDone && numStartedTasks == numPostedTasks) {
+      pthread_cond_wait(&poolHasTask, &poolMutex);
+    }
+    if (numStartedTasks == numPostedTasks) {
+      break;
+    }
+    ++numStartedTasks;
+    pthread_mutex_unlock(&poolMutex);
+    doOneIteration(&state);
+    pthread_mutex_lock(&poolMutex);
+    ++numFinishedTasks;
+    pthread_cond_signal(&poolTaskDone);
+  }
+  pthread_mutex_unlock(&poolMutex);
+  return NULL;
+}
+
+// Run `numTasks` tasks on a pool of `numThreads` workers, with at most
+// `numThreads / 2` tasks in flight, so that some workers are always idle.
+static void runPool(long numThreads, long numTasks) {
+  pthread_t* threads = calloc((size_t)numThreads, sizeof(pthread_t));
+  for (long t = 0; t < numThreads; ++t) {
+    pthread_create(&threads[t], NULL, poolWorker, (void*)(uintptr_t)(t + 1));
+  }
+  long maxInFlight = numThreads / 2 > 0 ? numThreads / 2 : 1;
+  pthread_mutex_lock(&poolMutex);
+  for (long i = 0; i < numTasks; ++i) {
+    while (numPostedTasks - numFinishedTasks >= maxInFlight) {
+      pthread_cond_wait(&poolTaskDone, &poolMutex);
+    }
+    ++numPostedTasks;
+    pthread_cond_signal(&poolHasTask);
+  }
+  poolDone = 1;
+  pthread_cond_broadcast(&poolHasTask);
+  pthread_mutex_unlock(&poolMutex);
+  for (long t = 0; t < numThreads; ++t) {
+    pthread_join(threads[t], NULL);
+  }
+  free(threads);
 }
 
 int main(int argc, char** argv) {
   if (argc != 4) {
-    fprintf(stderr, "Usage: %s <memmove|zstd|mixed> <numThreads> <numIterations>\n",
+    fprintf(stderr, "Usage: %s <memmove|zstd|mixed|pool> <numThreads> <numIterations>\n",
             argv[0]);
     return 2;
   }
@@ -125,6 +195,11 @@ int main(int argc, char** argv) {
   } else if (strcmp(argv[1], "mixed") == 0) {
     useMemmove = 1;
     useZstd = 1;
+  } else if (strcmp(argv[1], "pool") == 0) {
+    useMemmove = 1;
+    useZstd = 1;
+    runPool(atol(argv[2]), atol(argv[2]) * atol(argv[3]));
+    return 0;
   } else {
     fprintf(stderr, "Unknown mode %s\n", argv[1]);
     return 2;

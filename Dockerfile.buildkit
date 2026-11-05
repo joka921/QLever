@@ -1,0 +1,11 @@
+# Run `stress.sh` inside a `RUN` step of `docker build`, which is where the
+# stalls and corruptions of the QLever unit tests occurred.
+FROM ubuntu:24.04
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y gcc gdb procps libzstd-dev
+WORKDIR /w
+COPY repro.c stress.sh run-test-with-diagnostics.sh /w/
+RUN gcc -O2 -g -o repro repro.c -lzstd -lpthread
+ARG DURATION=6000
+ARG ARGS="mixed 8 40"
+RUN ./stress.sh "$DURATION" ./repro $ARGS

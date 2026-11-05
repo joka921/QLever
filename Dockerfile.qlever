@@ -1,0 +1,28 @@
+# Build only the QLever unit tests of which some stalled or failed on the arm64
+# runners, in the same way as the `Dockerfile` of QLever, and then run them over
+# and over via `ctest` (one test at a time, as in the CI) inside the build. The
+# build context is a checkout of QLever, with the files of this branch in
+# `repro/`.
+FROM ubuntu:24.04
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+ENV LC_CTYPE=C.UTF-8
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y wget
+RUN wget https://apt.kitware.com/kitware-archive.sh && chmod +x kitware-archive.sh && ./kitware-archive.sh
+RUN apt-get update && apt-get install -y build-essential cmake libicu-dev tzdata pkg-config uuid-runtime uuid-dev git libjemalloc-dev ninja-build libzstd-dev libssl-dev mold liburing-dev libboost1.83-dev libboost-program-options1.83-dev libboost-iostreams1.83-dev libboost-url1.83-dev libboost-container1.83-dev gdb procps
+COPY src /qlever/src/
+COPY test /qlever/test/
+COPY e2e /qlever/e2e/
+COPY benchmark /qlever/benchmark/
+COPY .git /qlever/.git/
+COPY CMakeLists.txt /qlever/
+COPY CompilationInfo.cmake /qlever/
+COPY GitVersion.cmake /qlever/
+COPY repro/run-test-with-diagnostics.sh repro/ctest-loop.sh /qlever/misc/
+WORKDIR /qlever/build/
+RUN cmake -DCMAKE_BUILD_TYPE=Release -DLOGLEVEL=INFO -D_NO_TIMING_TESTS=ON -DCOMPILER_SUPPORTS_MARCH_NATIVE=FALSE -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=mold" -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=mold" -DCMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE=PRE_TEST -DCMAKE_CXX_FLAGS="-Wno-psabi" -DCMAKE_TEST_LAUNCHER=/qlever/misc/run-test-with-diagnostics.sh -GNinja ..
+ARG TARGETS="TransitivePathTest JoinTest CompressedRelationsTest GroupByTest OptionalJoinTest"
+RUN cmake --build . --target $TARGETS
+ARG DURATION=9000
+RUN /qlever/misc/ctest-loop.sh "$DURATION"
