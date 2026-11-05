@@ -1,6 +1,6 @@
 # Spurious stalls and corruptions of the QLever tests on the arm64 runners
 
-Status: 2026-11-05, 23:00 UTC. Related: ad-freiburg/qlever PR #3892 (diagnostics
+Status: 2026-11-05, 23:15 UTC. Related: ad-freiburg/qlever PR #3892 (diagnostics
 launcher), this branch (`arm64-stall-repro` on `joka921/QLever`) for the
 reproducers.
 
@@ -141,7 +141,12 @@ Workflow `.github/workflows/repro.yml`, all on `ubuntu-24.04-arm` with
 | 3 `qlever-nocompact`                | no proactive compaction, THP/khugepaged defrag off          | **0 stalls in 169 iterations (90 min)**, no failure |
 | 4 `qlever-proactiveness0` (42119334732) | only `vm.compaction_proactiveness=0`                    | stall + **corruption in iteration 1** (1,073 migrations) |
 | 4 `qlever-thp-never`                | only THP and its defragmentation off                       | running |
-| 4 `qlever-forcecompact`             | `vm.compact_memory` every second                           | running |
+| 4 `qlever-forcecompact`             | `vm.compact_memory` every second                           | 5 stalls in 9 iterations, **corruption in iteration 9** despite 30 million page migrations, i.e. about the default rate |
+| 5 `qlever-purge0` (42123152400)     | `MALLOC_CONF=dirty_decay_ms:0,muzzy_decay_ms:0` (`jemalloc` returns freed memory immediately) | 9 slow tests in 3 iterations (some only slowdowns by the `madvise` calls, e.g. `CompressedRelationWriter.MixedSizes`), **corruption in iteration 3** |
+| 5 `qlever-nopurge`                  | `MALLOC_CONF=dirty_decay_ms:-1,muzzy_decay_ms:-1` (never returns memory) | running |
+| 5 `qlever-nojemalloc`               | built without `jemalloc`                                   | running |
+| 5 `synth-madvfree`/`-madvdontneed`/`-jemalloc` | `repro.c` with chunks returned via `madvise` and reused by other threads / with `jemalloc` | running |
+| 6 `loop-*` (42127430005)            | `IndexBuildLoopTest`: only the build of the 3-triple NQuads test index in a loop, 4 or 1 instances, `jemalloc` default / immediate / no purging | running |
 | 4 `synth-compact-mixed`/`-pool`     | `repro.c` + `vm.compact_memory` every second               | running |
 
 Details of round 3:
