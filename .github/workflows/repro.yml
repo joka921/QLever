@@ -2,19 +2,18 @@
 # arm64 GitHub runners with the kernel `7.0.0-1017-azure` with a reduced
 # workload, see `REPORT.md` for the previous rounds.
 #
-# Round 3 showed that the stalls and corruptions disappear when proactive
-# compaction and THP defragmentation are disabled (0 stalls in 169 iterations,
-# vs. 11 stalls and 2 corruptions in 46 iterations), and that page migrations
-# were ~50 times rarer then. Round 4 checks whether page migration is the
-# trigger:
-# - `synth-compact-mixed`/`synth-compact-pool`: the cheap synthetic workload of
-#   `repro.c`, which found nothing so far, while memory is compacted every
-#   second (`vm.compact_memory`), which migrates the pages of the workload.
-# - `qlever-forcecompact`: the QLever tests with the same forced compaction
-#   (should stall and fail more often than in round 3).
-# - `qlever-proactiveness0`: only `vm.compaction_proactiveness=0` (the
-#   candidate workaround for the QLever CI).
-# - `qlever-thp-never`: only THP and its defragmentation disabled.
+# Round 4 showed that compaction is NOT the trigger (stall and corruption in
+# the first iteration with `vm.compaction_proactiveness=0` and only 1k page
+# migrations). Round 5 checks the next candidate: QLever links `jemalloc`,
+# which returns freed memory to the kernel via `madvise` (`MADV_FREE` /
+# `MADV_DONTNEED`), after which other threads write to these pages again.
+# The synthetic workload (glibc `malloc`) never did that.
+# - `qlever-nopurge`: `jemalloc` never returns memory (no `madvise`).
+# - `qlever-purge0`: `jemalloc` returns freed memory immediately.
+# - `qlever-nojemalloc`: QLever built without `jemalloc`.
+# - `synth-madvfree`/`synth-madvdontneed`: `repro.c` with chunks that are
+#   returned via `madvise` after each use and reused by other threads.
+# - `synth-jemalloc`: the `mixed` workload with `jemalloc` (immediate purging).
 name: arm64 stall reproducer
 
 on:
@@ -28,11 +27,12 @@ jobs:
       fail-fast: false
       matrix:
         kind:
-          - synth-compact-mixed
-          - synth-compact-pool
-          - qlever-forcecompact
-          - qlever-proactiveness0
-          - qlever-thp-never
+          - qlever-nopurge
+          - qlever-purge0
+          - qlever-nojemalloc
+          - synth-madvfree
+          - synth-madvdontneed
+          - synth-jemalloc
     name: ${{ matrix.kind }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 240
@@ -47,24 +47,6 @@ jobs:
           free -m
           sysctl vm.compaction_proactiveness vm.swappiness
           grep -r . /sys/kernel/mm/transparent_hugepage/ 2> /dev/null | grep -E 'enabled|defrag' || true
-      - name: Disable proactive compaction
-        if: matrix.kind == 'qlever-proactiveness0'
-        run: sudo sysctl -w vm.compaction_proactiveness=0
-      - name: Disable THP and its defragmentation
-        if: matrix.kind == 'qlever-thp-never'
-        run: |
-          echo never | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
-          echo never | sudo tee /sys/kernel/mm/transparent_hugepage/defrag
-          echo 0 | sudo tee /sys/kernel/mm/transparent_hugepage/khugepaged/defrag
-      # Compact all memory once per second in the background (for the rest of
-      # the job), which migrates movable pages, in particular anonymous pages
-      # of running processes.
-      - name: Start forced compaction
-        if: contains(matrix.kind, 'compact')
-        run: |
-          nohup bash -c 'while true; do echo 1 | sudo tee /proc/sys/vm/compact_memory > /dev/null; sleep 1; done' > /dev/null 2>&1 &
-          sleep 3
-          grep -E '^(pgmigrate_success|compact_stall) ' /proc/vmstat
       - name: Stress the synthetic workload
         if: startsWith(matrix.kind, 'synth-')
         working-directory: repro
@@ -72,10 +54,15 @@ jobs:
           QLEVER_TEST_STALL_SECONDS: 15
         run: |
           grep -E '^(pgmigrate_success|compact_stall) ' /proc/vmstat
-          sudo apt-get update -q && sudo apt-get install -y -q gdb libzstd-dev > /dev/null
+          sudo apt-get update -q && sudo apt-get install -y -q gdb libzstd-dev libjemalloc2 > /dev/null
           gcc -O2 -g -o repro repro.c -lzstd -lpthread
-          if [ "${{ matrix.kind }}" = synth-compact-pool ]; then ARGS="pool 8 200"; else ARGS="mixed 4 400"; fi
-          ./stress.sh 9000 ./repro $ARGS
+          case "${{ matrix.kind }}" in
+            synth-madvfree) ./stress.sh 9000 ./repro madvfree 8 20000 ;;
+            synth-madvdontneed) ./stress.sh 9000 ./repro madvdontneed 8 3000 ;;
+            synth-jemalloc)
+              export MALLOC_CONF=dirty_decay_ms:0,muzzy_decay_ms:0
+              ./stress.sh 9000 env LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libjemalloc.so.2 ./repro mixed 4 400 ;;
+          esac
       - name: Set up Docker Buildx
         if: startsWith(matrix.kind, 'qlever-')
         uses: docker/setup-buildx-action@v3
@@ -94,7 +81,12 @@ jobs:
         run: |
           mkdir repro && cp ../repro/{run-test-with-diagnostics.sh,ctest-loop.sh} repro/
           echo '!repro/' >> .dockerignore
-          docker buildx build --progress=plain --build-arg DURATION=5400 \
+          case "${{ matrix.kind }}" in
+            qlever-nopurge) ARGS="--build-arg MALLOC_CONF=dirty_decay_ms:-1,muzzy_decay_ms:-1" ;;
+            qlever-purge0) ARGS="--build-arg MALLOC_CONF=dirty_decay_ms:0,muzzy_decay_ms:0" ;;
+            qlever-nojemalloc) ARGS="--build-arg NO_JEMALLOC=1" ;;
+          esac
+          docker buildx build --progress=plain --build-arg DURATION=5400 $ARGS \
             -f ../repro/Dockerfile.qlever .
       - name: Print the swap and compaction counters
         if: always()

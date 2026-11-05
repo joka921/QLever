@@ -14,12 +14,16 @@
 // `__memmove_sve` on these CPUs) and/or compresses them via `ZSTD_compress`.
 // Every copy is verified, so a lost write is reported as a corruption.
 //
-// Usage: repro <memmove|zstd|mixed|pool> <numThreads> <numIterationsPerThread>
+// Usage: repro <memmove|zstd|mixed|pool|madvfree|madvdontneed> <numThreads>
+//              <numIterationsPerThread>
 // In the `pool` mode, the copies and compressions run as tasks on a thread
-// pool, see `runPool`.
+// pool, see `runPool`. In the `madv...` modes, the threads share a pool of
+// chunks of one big mapping and hand them back to the kernel via `madvise`
+// after each use (like `jemalloc` does with freed memory), see `runMadvise`.
 // Exit status: 0 on success, 3 on a corruption, 2 on a usage error.
 
 #include <pthread.h>
+#include <sys/mman.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -182,9 +186,85 @@ static void runPool(long numThreads, long numTasks) {
   free(threads);
 }
 
+// The `madv...` modes: `numChunks` chunks of `CHUNK_SIZE` bytes in one big
+// anonymous mapping, a stack of the currently unused chunks, and the advice
+// with which a chunk is returned to the kernel after each use.
+#define CHUNK_SIZE ((size_t)1 << 20)
+static unsigned char* chunkBase = NULL;
+static long* freeChunks = NULL;
+static long numFreeChunks = 0;
+static pthread_mutex_t chunkMutex = PTHREAD_MUTEX_INITIALIZER;
+static int madviseAdvice = 0;
+
+// Take an unused chunk, fill a random part of it from a thread-local source
+// buffer via `memmove` (so that it write faults on a page that the kernel may
+// have freed or not), verify it, return the touched pages to the kernel via
+// `madvise`, and put the chunk back, so that it is reused by an arbitrary
+// thread (on an arbitrary CPU).
+static void* madviseWorker(void* arg) {
+  uint64_t state = (uint64_t)(uintptr_t)arg * 0x9E3779B97F4A7C15ull ^
+                   (uint64_t)time(NULL) ^ 0xabcdefull;
+  unsigned char* source = malloc(CHUNK_SIZE);
+  for (long i = 0; i < numIterations; ++i) {
+    pthread_mutex_lock(&chunkMutex);
+    long chunk = freeChunks[--numFreeChunks];
+    pthread_mutex_unlock(&chunkMutex);
+    unsigned char* target = chunkBase + (size_t)chunk * CHUNK_SIZE;
+    size_t size = 4096 + nextRandom(&state) % (CHUNK_SIZE - 4096);
+    uint64_t seed = nextRandom(&state);
+    for (size_t j = 0; j + 8 <= size; j += 8) {
+      uint64_t value = seed + j;
+      memcpy(source + j, &value, 8);
+    }
+    memmovePtr(target, source, size);
+    if (memcmp(target, source, size) != 0) {
+      size_t j = 0;
+      while (target[j] == source[j]) {
+        ++j;
+      }
+      fprintf(stderr,
+              "CORRUPTION: memmove of %zu bytes into chunk %ld differs at "
+              "offset %zu\n",
+              size, chunk, j);
+      exit(3);
+    }
+    if (madvise(target, (size + 4095) & ~(size_t)4095, madviseAdvice) != 0) {
+      perror("madvise");
+      exit(4);
+    }
+    pthread_mutex_lock(&chunkMutex);
+    freeChunks[numFreeChunks++] = chunk;
+    pthread_mutex_unlock(&chunkMutex);
+  }
+  free(source);
+  return NULL;
+}
+
+static void runMadvise(long numThreads) {
+  long numChunks = 2 * numThreads;
+  chunkBase = mmap(NULL, (size_t)numChunks * CHUNK_SIZE, PROT_READ | PROT_WRITE,
+                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (chunkBase == MAP_FAILED) {
+    perror("mmap");
+    exit(4);
+  }
+  freeChunks = calloc((size_t)numChunks, sizeof(long));
+  for (long c = 0; c < numChunks; ++c) {
+    freeChunks[numFreeChunks++] = c;
+  }
+  pthread_t* threads = calloc((size_t)numThreads, sizeof(pthread_t));
+  for (long t = 0; t < numThreads; ++t) {
+    pthread_create(&threads[t], NULL, madviseWorker, (void*)(uintptr_t)(t + 1));
+  }
+  for (long t = 0; t < numThreads; ++t) {
+    pthread_join(threads[t], NULL);
+  }
+  free(threads);
+}
+
 int main(int argc, char** argv) {
   if (argc != 4) {
-    fprintf(stderr, "Usage: %s <memmove|zstd|mixed|pool> <numThreads> <numIterations>\n",
+    fprintf(stderr, "Usage: %s <memmove|zstd|mixed|pool|madvfree|madvdontneed> <numThreads> <numIterations>\n",
             argv[0]);
     return 2;
   }
@@ -199,6 +279,12 @@ int main(int argc, char** argv) {
     useMemmove = 1;
     useZstd = 1;
     runPool(atol(argv[2]), atol(argv[2]) * atol(argv[3]));
+    return 0;
+  } else if (strcmp(argv[1], "madvfree") == 0 ||
+             strcmp(argv[1], "madvdontneed") == 0) {
+    madviseAdvice = strcmp(argv[1], "madvfree") == 0 ? MADV_FREE : MADV_DONTNEED;
+    numIterations = atol(argv[3]);
+    runMadvise(atol(argv[2]));
     return 0;
   } else {
     fprintf(stderr, "Unknown mode %s\n", argv[1]);

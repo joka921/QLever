@@ -11,6 +11,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y wget
 RUN wget https://apt.kitware.com/kitware-archive.sh && chmod +x kitware-archive.sh && ./kitware-archive.sh
 RUN apt-get update && apt-get install -y build-essential cmake libicu-dev tzdata pkg-config uuid-runtime uuid-dev git libjemalloc-dev ninja-build libzstd-dev libssl-dev mold liburing-dev libboost1.83-dev libboost-program-options1.83-dev libboost-iostreams1.83-dev libboost-url1.83-dev libboost-container1.83-dev gdb procps
+# Build without `jemalloc` (QLever then uses glibc's `malloc`).
+ARG NO_JEMALLOC=0
+RUN if [ "$NO_JEMALLOC" = 1 ]; then apt-get remove -y libjemalloc-dev; fi
 COPY src /qlever/src/
 COPY test /qlever/test/
 COPY e2e /qlever/e2e/
@@ -26,4 +29,7 @@ ARG TARGETS="TransitivePathTest JoinTest CompressedRelationsTest GroupByTest Opt
 ARG BUILD_JOBS=4
 RUN cmake --build . -j "$BUILD_JOBS" --target $TARGETS
 ARG DURATION=9000
-RUN /qlever/misc/ctest-loop.sh "$DURATION"
+# The runtime configuration of `jemalloc`, e.g. how fast it returns freed
+# memory to the kernel via `madvise`.
+ARG MALLOC_CONF=
+RUN MALLOC_CONF="$MALLOC_CONF" /qlever/misc/ctest-loop.sh "$DURATION"

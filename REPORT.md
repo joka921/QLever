@@ -1,6 +1,6 @@
 # Spurious stalls and corruptions of the QLever tests on the arm64 runners
 
-Status: 2026-11-05, 22:30 UTC. Related: ad-freiburg/qlever PR #3892 (diagnostics
+Status: 2026-11-05, 23:00 UTC. Related: ad-freiburg/qlever PR #3892 (diagnostics
 launcher), this branch (`arm64-stall-repro` on `joka921/QLever`) for the
 reproducers.
 
@@ -37,32 +37,36 @@ reproducers.
    candidate: the TLBI level-hint commit `752a0d1d483e9` (known to cause
    spurious-fault loops, fixed March 2026, but for huge pages, which aren't
    used here). Neither is confirmed.
-6. **Page migration (memory compaction) is the trigger.** With proactive
-   compaction and THP defragmentation disabled on the host, the same
-   reproducer ran 169 iterations (90 minutes, 75,205 tests) without a single
-   stall or failure, whereas the two jobs with the default settings had 11
-   stalls and 2 corruptions in 46 iterations. `pgmigrate_success` was 7k
-   there vs. 311k and 365k. Migration replaces the page behind a live
-   mapping, which requires a correct TLB invalidation on all CPUs; a stale
-   entry explains both the fault loop (stalls) and writes to the old page
-   (corruption).
-7. **Reproducer:** building only five QLever test binaries (about 20 minutes)
+6. **Reproducer:** building only five QLever test binaries (about 20 minutes)
    and looping them via `ctest` reproduces both the stalls (about one per two
-   minutes) and the **corruption (after 10 to 12 minutes of testing)**,
-   independently of swap. Purely synthetic workloads (about 274,000 processes
-   of `memmove`/`zstd` stress, thread pools, memory pressure) reproduced
-   nothing.
+   minutes) and the **corruption (after 0.5 to 12 minutes of testing)**.
+   Purely synthetic workloads with glibc `malloc` (about 274,000 processes of
+   `memmove`/`zstd` stress, thread pools, memory pressure) reproduced nothing.
+7. **What the trigger is not:** swap (round 3, no swap, still corrupt) and
+   memory compaction / page migration (round 4: with
+   `vm.compaction_proactiveness=0` and only 1k page migrations, stall plus
+   corruption in the first iteration). One job with compaction *and* THP
+   defragmentation disabled ran 90 minutes without any stall (round 3); round
+   4 checks whether THP is the reason or whether that was a lucky VM.
+8. **Current candidate trigger (round 5):** QLever links `jemalloc`, which
+   returns freed memory to the kernel via `madvise(MADV_FREE/MADV_DONTNEED)`;
+   other threads then write to these pages again, which takes exactly the
+   write-fault path of the suspected kernel change. The synthetic workloads
+   (glibc `malloc`) never did that.
 
-## Workarounds / next steps
+## Mitigations
 
-- **Candidate CI workaround:** `sudo sysctl -w vm.compaction_proactiveness=0`
-  (and possibly THP `never`) on the host before the Docker build. Round 4
-  checks which of the two settings is needed.
+| Mitigation | Status |
+|---|---|
+| Rerun failed arm64 jobs; classify via the launcher of #3892 (minor faults/s, system time) | works, but costs time and leaves a small chance of silently corrupt test results |
+| Wait for a fixed `linux-azure` kernel / runner image (the 6.17 image was fine) | not under our control; report upstream (Ubuntu `linux-azure` Launchpad, GitHub `runner-images`) once a small reproducer exists |
+| `vm.compaction_proactiveness=0` on the host | **does not help** (round 4) |
+| Disable THP and its defragmentation on the host | unclear, round 4 `qlever-thp-never` |
+| Change `jemalloc`'s purging via `MALLOC_CONF` in the Docker build (e.g. `dirty_decay_ms:-1,muzzy_decay_ms:-1`, never return memory) | unclear, round 5 `qlever-nopurge` |
+| Run the arm64 tests outside the Docker build or on amd64 only | avoids the symptom only if the trigger is specific to the build; not tested |
 
-- Short term: the stalls/corruptions are not QLever bugs; if they block
-  merges, pin or avoid the `7.0.0-1017-azure` runner image (not possible on
-  hosted runners directly), or rerun. The launcher of #3892 gives a clear
-  signature (minor faults/s, system time) to classify a failure as this bug.
+## Next steps
+
 - Narrow the reproducer to one test binary and one test filter, then to a
   standalone program that mimics that test's memory access pattern (see
   appendix D), to report the bug upstream (Ubuntu `linux-azure`, arm64
@@ -135,6 +139,10 @@ Workflow `.github/workflows/repro.yml`, all on `ubuntu-24.04-arm` with
 | 3 `qlever` (42101451126)            | as round 2, continue after stalls                          | 4 stalls in 27 iterations, **corruption in iteration 27** |
 | 3 `qlever-noswap`                   | as above, `swapoff -a` (pswpout stays 0)                   | 7 stalls in 19 iterations, **corruption in iteration 19** |
 | 3 `qlever-nocompact`                | no proactive compaction, THP/khugepaged defrag off          | **0 stalls in 169 iterations (90 min)**, no failure |
+| 4 `qlever-proactiveness0` (42119334732) | only `vm.compaction_proactiveness=0`                    | stall + **corruption in iteration 1** (1,073 migrations) |
+| 4 `qlever-thp-never`                | only THP and its defragmentation off                       | running |
+| 4 `qlever-forcecompact`             | `vm.compact_memory` every second                           | running |
+| 4 `synth-compact-mixed`/`-pool`     | `repro.c` + `vm.compact_memory` every second               | running |
 
 Details of round 3:
 
@@ -163,7 +171,12 @@ Details of round 3:
   asio pool tasks that allocate, fill, compress, and free blocks, with
   `memmove` into freshly reused heap memory), not the machine state.
 
-Next variants (planned):
+Round 4 `qlever-proactiveness0` corruption:
+`GroupByOptimizations.computeGroupByForSingleIndexScanWithNamedGraphDuplicates`
+(3002 ms, also stalled): POS row `V:7 V:9 U:4294967295 I:2147483647`, the
+pattern of a row is `4294967295` (garbage) instead of 0.
+
+Next variants (planned, before round 4):
 
 1. Build only `TransitivePathTest` and loop only the graph-variable
    empty-path tests (more stalls per minute, shorter build).

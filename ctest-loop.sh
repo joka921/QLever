@@ -15,7 +15,7 @@ set -u
 DURATION="$1"
 LABELS="${2:-^(TransitivePathTest|JoinTest|CompressedRelationsTest|GroupByTest|OptionalJoinTest)$}"
 export QLEVER_TEST_STALL_SECONDS="${QLEVER_TEST_STALL_SECONDS:-3}"
-MAX_STALLS="${MAX_STALLS:-10}"
+MAX_STALLS="${MAX_STALLS:-30}"
 export QLEVER_TEST_DIAGNOSTICS_DIR="$PWD/test-diagnostics"
 rm -rf "$QLEVER_TEST_DIAGNOSTICS_DIR"
 mkdir -p "$QLEVER_TEST_DIAGNOSTICS_DIR"
@@ -24,7 +24,7 @@ END=$((SECONDS + DURATION))
 ITERATION=0
 NUM_TESTS=0
 NUM_STALLS=0
-echo "Kernel: $(uname -r), CPUs: $(nproc), labels: $LABELS, duration: ${DURATION}s"
+echo "Kernel: $(uname -r), CPUs: $(nproc), labels: $LABELS, duration: ${DURATION}s, MALLOC_CONF: ${MALLOC_CONF:-}"
 while [ "$SECONDS" -lt "$END" ]; do
   ITERATION=$((ITERATION + 1))
   START=$SECONDS
