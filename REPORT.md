@@ -23,11 +23,38 @@ The symptoms follow from that:
 - accesses through a reused page hit the wrong physical page, which is the
   corruption.
 
-Upstream fix: commit `478a1c3abebf` "mm: fix incorrect flush address in
-direct page table reclaim" (Andy Lutomirski, 2026-08-05, `Cc: stable`,
-`Fixes: 4c640eb4181c`). It passes `start` instead of `addr`. It isn't in the
-runners' kernel yet. `PT_RECLAIM` was x86-only before Qi Zheng's series
-enabled it on more architectures in 7.0, so 6.17 was fine.
+**It's a bug in the Linux kernel itself** (generic memory management code in
+`mm/memory.c`, triggered by the arm64 TLB semantics). It is not specific to
+Azure, Hyper-V, Docker, `jemalloc` or QLever. Both commit hashes below refer
+to Linus Torvalds' mainline repository `torvalds/linux`
+(git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git, GitHub mirror
+github.com/torvalds/linux).
+
+- **The bug** came with
+  [`4c640eb4181c`](https://github.com/torvalds/linux/commit/4c640eb4181cf8de74c8b9e7c9cf16bf8d26b73e)
+  "mm: move pte table reclaim code to memory.c" (David Hildenbrand), first in
+  v7.0-rc1. `PT_RECLAIM` was x86-only before Qi Zheng's series enabled it on
+  more architectures in 7.0, so 6.17 was fine.
+- **The fix** is
+  [`478a1c3abebf`](https://github.com/torvalds/linux/commit/478a1c3abebfc717db0d1281a9cdd7befafee542)
+  "mm: fix incorrect flush address in direct page table reclaim" (Andy
+  Lutomirski, authored 2026-08-03, `Cc: stable`,
+  `Fixes: 4c640eb4181c`). It is a one-line change that passes `start`
+  instead of `addr` to `pte_free_tlb`.
+
+**Kernel versions with the fix:**
+
+| Kernel | Has the fix? |
+|---|---|
+| Mainline v7.2 (released 2026-08-16) and later | Yes, first tagged in v7.2-rc7. It is in the [7.2 changelog](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.2). |
+| Stable 7.1.9 (2026-08-19) and later 7.1.y | Yes, as stable commit `0b8ff21cbda8` ([7.1.9 changelog](https://cdn.kernel.org/pub/linux/kernel/v7.x/ChangeLog-7.1.9)). |
+| Upstream stable 7.0.y | No. The 7.0 series ended with 7.0.14 on 2026-06-27, before the fix. 7.0.10 through 7.0.14 were checked. |
+| The runners' Ubuntu `7.0.0-1017-azure` | No. It still stalls with `ptreclaim.c`. |
+
+Ubuntu maintains its 7.0 kernels itself, so the fix reaches the runners only
+if Canonical backports it into `linux-azure`. It has not reached
+`7.0.0-1017-azure`. I haven't checked whether a newer Ubuntu `linux-azure`
+build already has it.
 
 **Self-contained reproducer** (`ptreclaim.c` on this branch and in
 `strip/` on `arm64-strip`, about 200 lines of C, no QLever, no `jemalloc`,
@@ -521,7 +548,8 @@ which invalidates only the walk-cache entries used to translate those
 addresses. When no present PTE of the freed table was zapped in the same
 flush, no address of its block is in the range. That is the case when the
 table was already empty (step 2), or when a forced flush reset the range.
-Mainline fixed this in `478a1c3abebf` (2026-08-05): it passes `start`
+Mainline fixed this in `478a1c3abebf` (authored 2026-08-03, in v7.2 and
+stable 7.1.9): it passes `start`
 instead. The commit message describes the same mechanism for x86 with
 `INVPCID` and on AMD, and suspects it behind
 [ripgrep issue #3494](https://github.com/BurntSushi/ripgrep/issues/3494).
