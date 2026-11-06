@@ -1,3 +1,8 @@
+# Round 13: `repro ptzap` (see `repro.c`), which targets a stale page-walk
+# cache after page tables are freed by `MADV_DONTNEED` (round 11 traced the
+# storms to a single address with a valid, present PTE). Each process runs
+# for 60 s, one at a time.
+#
 # Round 12: as round 7 (below), and with a host process that starts processes
 # as fast as possible (`spawn-loop.sh`, many ASID rollovers), with storms
 # detected by `fault-storm-watch.sh` and ASID rollovers logged by
@@ -22,10 +27,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: dontneed-2m-spawn, mode: madvdontneed, kb: 2048, threads: 8, iterations: 1500, spawn: 1, preload: "" }
-          - { name: mixed-jemalloc-spawn, mode: mixed, kb: 1024, threads: 4, iterations: 400, spawn: 1, preload: jemalloc }
-          - { name: mixed-glibc-spawn, mode: mixed, kb: 1024, threads: 4, iterations: 400, spawn: 1, preload: "" }
-          - { name: dontneed-2m-nospawn, mode: madvdontneed, kb: 2048, threads: 8, iterations: 1500, spawn: 0, preload: "" }
+          - { name: ptzap-pinned, mode: ptzap, kb: 2048, threads: 3, iterations: 60, spawn: 0, preload: "", nopin: "" }
+          - { name: ptzap-unpinned, mode: ptzap, kb: 2048, threads: 3, iterations: 60, spawn: 0, preload: "", nopin: "1" }
+          - { name: ptzap-pinned-spawn, mode: ptzap, kb: 2048, threads: 3, iterations: 60, spawn: 1, preload: "" , nopin: "" }
     name: ${{ matrix.name }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 150
@@ -49,11 +53,16 @@ jobs:
           cat "$RUNNER_TEMP/asid.txt"
       - name: Stress
         env:
-          QLEVER_TEST_STALL_SECONDS: 30
+          QLEVER_TEST_STALL_SECONDS: ${{ matrix.mode == 'ptzap' && 120 || 30 }}
           REPRO_CHUNK_KB: ${{ matrix.kb }}
+          STRESS_PARALLEL: ${{ matrix.mode == 'ptzap' && 1 || '' }}
+          STRESS_BATCH: ${{ matrix.mode == 'ptzap' && 1 || 200 }}
+          PTZAP_NO_PIN: ${{ matrix.nopin }}
         run: |
           gcc -O2 -g -o repro repro.c -lzstd -lpthread
-          /usr/bin/time -v ./repro ${{ matrix.mode }} ${{ matrix.threads }} ${{ matrix.iterations }} 2>&1 | grep -E 'Elapsed|faults'
+          [ -n "$PTZAP_NO_PIN" ] || unset PTZAP_NO_PIN
+          [ -n "$STRESS_PARALLEL" ] || unset STRESS_PARALLEL
+          /usr/bin/time -v ./repro ${{ matrix.mode }} ${{ matrix.threads }} 10 2>&1 | grep -E 'Elapsed|faults|STALL|CORRUPTION'
           if [ "${{ matrix.preload }}" = jemalloc ]; then
             export MALLOC_CONF=dirty_decay_ms:0,muzzy_decay_ms:0
             ./stress.sh 7800 env LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libjemalloc.so.2 ./repro ${{ matrix.mode }} ${{ matrix.threads }} ${{ matrix.iterations }}

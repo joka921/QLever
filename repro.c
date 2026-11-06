@@ -16,13 +16,19 @@
 //
 // Usage: repro <memmove|zstd|mixed|pool|madvfree|madvdontneed> <numThreads>
 //              <numIterationsPerThread>
+//        repro ptzap <numTouchers> <seconds>
+// The `ptzap` mode targets a stale page-walk cache after page tables are
+// freed, see `runPtZap`.
 // In the `pool` mode, the copies and compressions run as tasks on a thread
 // pool, see `runPool`. In the `madv...` modes, the threads share a pool of
 // chunks of one big mapping and hand them back to the kernel via `madvise`
 // after each use (like `jemalloc` does with freed memory), see `runMadvise`.
 // Exit status: 0 on success, 3 on a corruption, 2 on a usage error.
 
+#define _GNU_SOURCE
 #include <pthread.h>
+#include <sched.h>
+#include <unistd.h>
 #include <sys/mman.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -274,6 +280,151 @@ static void runMadvise(long numThreads) {
   free(threads);
 }
 
+// The `ptzap` mode. `numTouchers` threads, each pinned to its own CPU, touch
+// (write and read back) one word of their own in each of `PTZAP_CHUNKS`
+// chunks of 2 MiB (each covered by exactly one page table), round robin. One
+// zapper thread, pinned to the last CPU, repeatedly empties a random chunk
+// via `madvise(MADV_DONTNEED)`, which may free its page table, while the
+// touchers keep running on their CPUs (and thus keep their caches of the page
+// table walks). Each chunk has a read-write lock, so that a touch and a zap
+// never overlap. A word must then always read back as written, and before a
+// write, it must contain either 0 (zapped) or the value that this thread
+// wrote last. Anything else is a corruption. A toucher that makes no progress
+// for 5 seconds is a stall (the storms of page faults on the arm64 runners).
+// Exit status: 0 on success, 3 on a corruption, 5 on a stall.
+#define PTZAP_CHUNK ((size_t)2 << 20)
+#define PTZAP_CHUNKS 64
+static unsigned char* ptzapBase = NULL;
+static pthread_rwlock_t ptzapLocks[PTZAP_CHUNKS];
+static volatile long ptzapProgress[64];
+static volatile int ptzapDone = 0;
+
+// Return the word of toucher `t` in chunk `c` (each toucher has its own 4 KiB
+// page in each chunk).
+static volatile uint64_t* ptzapWord(long t, long c) {
+  return (volatile uint64_t*)(ptzapBase + (size_t)c * PTZAP_CHUNK +
+                              ((size_t)t * 4096 + 8 * (size_t)c) %
+                                  PTZAP_CHUNK);
+}
+
+static void pinToCpu(long cpu) {
+  cpu_set_t set;
+  CPU_ZERO(&set);
+  CPU_SET((int)(cpu % sysconf(_SC_NPROCESSORS_ONLN)), &set);
+  pthread_setaffinity_np(pthread_self(), sizeof(set), &set);
+}
+
+static void* ptzapToucher(void* arg) {
+  long t = (long)(uintptr_t)arg;
+  if (getenv("PTZAP_NO_PIN") == NULL) {
+    pinToCpu(t);
+  }
+  uint64_t lastWritten[PTZAP_CHUNKS] = {0};
+  uint64_t counter = (uint64_t)(t + 1) << 48;
+  while (!ptzapDone) {
+    for (long c = 0; c < PTZAP_CHUNKS && !ptzapDone; ++c) {
+      pthread_rwlock_rdlock(&ptzapLocks[c]);
+      volatile uint64_t* word = ptzapWord(t, c);
+      uint64_t before = *word;
+      if (before != 0 && before != lastWritten[c]) {
+        fprintf(stderr,
+                "CORRUPTION: toucher %ld chunk %ld at %p: found %#llx, "
+                "expected 0 or %#llx\n",
+                t, c, (void*)word, (unsigned long long)before,
+                (unsigned long long)lastWritten[c]);
+        exit(3);
+      }
+      uint64_t value = ++counter;
+      *word = value;
+      uint64_t after = *word;
+      if (after != value) {
+        fprintf(stderr,
+                "CORRUPTION: toucher %ld chunk %ld at %p: wrote %#llx, read "
+                "%#llx\n",
+                t, c, (void*)word, (unsigned long long)value,
+                (unsigned long long)after);
+        exit(3);
+      }
+      lastWritten[c] = value;
+      pthread_rwlock_unlock(&ptzapLocks[c]);
+      ptzapProgress[t]++;
+    }
+  }
+  return NULL;
+}
+
+static void* ptzapZapper(void* arg) {
+  long cpu = (long)(uintptr_t)arg;
+  if (getenv("PTZAP_NO_PIN") == NULL) {
+    pinToCpu(cpu);
+  }
+  uint64_t state = (uint64_t)time(NULL) ^ 0x5a5a5aull;
+  while (!ptzapDone) {
+    long c = (long)(nextRandom(&state) % PTZAP_CHUNKS);
+    pthread_rwlock_wrlock(&ptzapLocks[c]);
+    if (madvise(ptzapBase + (size_t)c * PTZAP_CHUNK, PTZAP_CHUNK,
+                MADV_DONTNEED) != 0) {
+      perror("madvise");
+      exit(4);
+    }
+    pthread_rwlock_unlock(&ptzapLocks[c]);
+  }
+  return NULL;
+}
+
+static void runPtZap(long numTouchers, long seconds) {
+  if (numTouchers > 64) {
+    numTouchers = 64;
+  }
+  size_t size = PTZAP_CHUNKS * PTZAP_CHUNK;
+  unsigned char* mapping = mmap(NULL, size + PTZAP_CHUNK, PROT_READ | PROT_WRITE,
+                                MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (mapping == MAP_FAILED) {
+    perror("mmap");
+    exit(4);
+  }
+  ptzapBase = (unsigned char*)(((uintptr_t)mapping + PTZAP_CHUNK - 1) &
+                               ~(uintptr_t)(PTZAP_CHUNK - 1));
+  for (long c = 0; c < PTZAP_CHUNKS; ++c) {
+    pthread_rwlock_init(&ptzapLocks[c], NULL);
+  }
+  pthread_t touchers[64];
+  pthread_t zapper;
+  for (long t = 0; t < numTouchers; ++t) {
+    pthread_create(&touchers[t], NULL, ptzapToucher, (void*)(uintptr_t)t);
+  }
+  pthread_create(&zapper, NULL, ptzapZapper, (void*)(uintptr_t)numTouchers);
+  long lastProgress[64] = {0};
+  long stalledSeconds[64] = {0};
+  for (long second = 0; second < seconds; ++second) {
+    sleep(1);
+    for (long t = 0; t < numTouchers; ++t) {
+      long progress = ptzapProgress[t];
+      stalledSeconds[t] = progress == lastProgress[t] ? stalledSeconds[t] + 1 : 0;
+      lastProgress[t] = progress;
+      if (stalledSeconds[t] >= 5) {
+        fprintf(stderr, "STALL: toucher %ld made no progress for 5 s\n", t);
+        char path[64];
+        snprintf(path, sizeof(path), "/proc/%d/task", getpid());
+        char command[256];
+        snprintf(command, sizeof(command),
+                 "for T in %s/*; do echo \"$T $(cut -d ' ' -f 3,10,14,15,39 "
+                 "$T/stat)\"; done >&2",
+                 path);
+        if (system(command) != 0) {
+          perror("system");
+        }
+        exit(5);
+      }
+    }
+  }
+  ptzapDone = 1;
+  for (long t = 0; t < numTouchers; ++t) {
+    pthread_join(touchers[t], NULL);
+  }
+  pthread_join(zapper, NULL);
+}
+
 int main(int argc, char** argv) {
   if (argc != 4) {
     fprintf(stderr, "Usage: %s <memmove|zstd|mixed|pool|madvfree|madvdontneed> <numThreads> <numIterations>\n",
@@ -291,6 +442,9 @@ int main(int argc, char** argv) {
     useMemmove = 1;
     useZstd = 1;
     runPool(atol(argv[2]), atol(argv[2]) * atol(argv[3]));
+    return 0;
+  } else if (strcmp(argv[1], "ptzap") == 0) {
+    runPtZap(atol(argv[2]), atol(argv[3]));
     return 0;
   } else if (strcmp(argv[1], "madvfree") == 0 ||
              strcmp(argv[1], "madvdontneed") == 0) {
