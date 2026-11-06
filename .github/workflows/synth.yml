@@ -1,0 +1,43 @@
+# Round 7 of the reproducer, see `REPORT.md`: the synthetic workload of
+# `repro.c` with chunks that are returned to the kernel via `madvise` after
+# each use and reused by other threads. In contrast to round 5, the chunks are
+# 2 MiB aligned and whole multiples of 2 MiB, so that `MADV_DONTNEED` empties
+# whole page tables (like `jemalloc` does when it purges large extents).
+name: arm64 stall reproducer (synthetic madvise)
+
+on:
+  push:
+    branches: [ arm64-stall-repro ]
+    paths: [ .github/workflows/synth.yml, repro.c, stress.sh, run-test-with-diagnostics.sh ]
+  workflow_dispatch:
+
+jobs:
+  synth:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: dontneed-2m, mode: madvdontneed, kb: 2048, threads: 8, iterations: 1500 }
+          - { name: dontneed-4m, mode: madvdontneed, kb: 4096, threads: 8, iterations: 600 }
+          - { name: free-2m, mode: madvfree, kb: 2048, threads: 8, iterations: 20000 }
+          - { name: dontneed-2m-16threads, mode: madvdontneed, kb: 2048, threads: 16, iterations: 700 }
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+      - name: Print kernel and CPU information
+        run: |
+          uname -a
+          lscpu | grep -E 'Model name|Stepping'
+          grep -r . /sys/kernel/mm/transparent_hugepage/ 2> /dev/null | grep -E 'enabled|defrag' || true
+      - name: Stress
+        env:
+          QLEVER_TEST_STALL_SECONDS: 15
+          REPRO_CHUNK_KB: ${{ matrix.kb }}
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q gdb libzstd-dev > /dev/null
+          gcc -O2 -g -o repro repro.c -lzstd -lpthread
+          /usr/bin/time -v ./repro ${{ matrix.mode }} ${{ matrix.threads }} ${{ matrix.iterations }} 2>&1 | grep -E 'Elapsed|faults'
+          ./stress.sh 7800 ./repro ${{ matrix.mode }} ${{ matrix.threads }} ${{ matrix.iterations }}
+          grep -E '^(pgfault|thp_fault_alloc|pgmigrate_success) ' /proc/vmstat

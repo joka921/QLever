@@ -189,7 +189,11 @@ static void runPool(long numThreads, long numTasks) {
 // The `madv...` modes: `numChunks` chunks of `CHUNK_SIZE` bytes in one big
 // anonymous mapping, a stack of the currently unused chunks, and the advice
 // with which a chunk is returned to the kernel after each use.
-#define CHUNK_SIZE ((size_t)1 << 20)
+// `CHUNK_SIZE` can be set via the environment variable `REPRO_CHUNK_KB`
+// (default 1024). The chunks are aligned to 2 MiB if their size is a multiple
+// of 2 MiB, so that `madvise` then empties whole page tables (which the kernel
+// may free).
+static size_t CHUNK_SIZE = (size_t)1 << 20;
 static unsigned char* chunkBase = NULL;
 static long* freeChunks = NULL;
 static long numFreeChunks = 0;
@@ -198,7 +202,7 @@ static int madviseAdvice = 0;
 
 // Take an unused chunk, fill a random part of it from a thread-local source
 // buffer via `memmove` (so that it write faults on a page that the kernel may
-// have freed or not), verify it, return the touched pages to the kernel via
+// have freed or not), verify it, return the whole chunk to the kernel via
 // `madvise`, and put the chunk back, so that it is reused by an arbitrary
 // thread (on an arbitrary CPU).
 static void* madviseWorker(void* arg) {
@@ -228,7 +232,7 @@ static void* madviseWorker(void* arg) {
               size, chunk, j);
       exit(3);
     }
-    if (madvise(target, (size + 4095) & ~(size_t)4095, madviseAdvice) != 0) {
+    if (madvise(target, CHUNK_SIZE, madviseAdvice) != 0) {
       perror("madvise");
       exit(4);
     }
@@ -241,13 +245,21 @@ static void* madviseWorker(void* arg) {
 }
 
 static void runMadvise(long numThreads) {
+  const char* chunkKb = getenv("REPRO_CHUNK_KB");
+  if (chunkKb != NULL) {
+    CHUNK_SIZE = (size_t)atol(chunkKb) << 10;
+  }
   long numChunks = 2 * numThreads;
-  chunkBase = mmap(NULL, (size_t)numChunks * CHUNK_SIZE, PROT_READ | PROT_WRITE,
-                   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  if (chunkBase == MAP_FAILED) {
+  size_t alignment = (size_t)2 << 20;
+  unsigned char* mapping =
+      mmap(NULL, (size_t)numChunks * CHUNK_SIZE + alignment,
+           PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  if (mapping == MAP_FAILED) {
     perror("mmap");
     exit(4);
   }
+  chunkBase = (unsigned char*)(((uintptr_t)mapping + alignment - 1) &
+                               ~(uintptr_t)(alignment - 1));
   freeChunks = calloc((size_t)numChunks, sizeof(long));
   for (long c = 0; c < numChunks; ++c) {
     freeChunks[numFreeChunks++] = c;
