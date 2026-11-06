@@ -19,11 +19,10 @@ jobs:
         # `gdb`: run the storm watcher as root with `bpftrace` and attach `gdb`
         # to each storming thread.
         include:
-          - { name: b-default-1, commands: strip/commands-b.txt, env: "" }
-          - { name: b-default-2, commands: strip/commands-b.txt, env: "" }
-          - { name: b-muzzy-oversize-1, commands: strip/commands-b.txt, env: "MALLOC_CONF=muzzy_decay_ms:-1,oversize_threshold:0" }
-          - { name: b-muzzy-oversize-2, commands: strip/commands-b.txt, env: "MALLOC_CONF=muzzy_decay_ms:-1,oversize_threshold:0" }
-          - { name: b-muzzy-only, commands: strip/commands-b.txt, env: "MALLOC_CONF=muzzy_decay_ms:-1" }
+          - { name: b-default, commands: strip/commands-b.txt, env: "" }
+          - { name: b-workaround-1, commands: strip/commands-b.txt, env: "QLEVER_REPRO_WORKAROUND=1" }
+          - { name: b-workaround-2, commands: strip/commands-b.txt, env: "QLEVER_REPRO_WORKAROUND=1" }
+          - { name: b-workaround-3, commands: strip/commands-b.txt, env: "QLEVER_REPRO_WORKAROUND=1" }
     name: ${{ matrix.name }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 180

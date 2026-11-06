@@ -34,6 +34,7 @@
 
 #include "util/File.h"
 #include "util/IndexTestHelpers.h"
+#include "util/KernelBugWorkaround.h"
 
 using namespace ad_utility::testing;
 
@@ -47,6 +48,10 @@ std::string getEnv(const char* name, const std::string& def) {
 
 // _____________________________________________________________________________
 TEST(StripLoop, namedGraphDuplicates) {
+  // The runtime workaround of the QLever binaries, if requested.
+  if (std::getenv("QLEVER_REPRO_WORKAROUND") != nullptr) {
+    ad_utility::kernelBugWorkaround::applyIfNeeded();
+  }
   using Clock = std::chrono::steady_clock;
   const double seconds = std::stod(getEnv("QLEVER_REPRO_SECONDS", "600"));
   const double slowSeconds =
