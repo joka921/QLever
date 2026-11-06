@@ -525,3 +525,26 @@ Mainline fixed this in `478a1c3abebf` (2026-08-05): it passes `start`
 instead. The commit message describes the same mechanism for x86 with
 `INVPCID` and on AMD, and suspects it behind
 [ripgrep issue #3494](https://github.com/BurntSushi/ripgrep/issues/3494).
+
+**Iteration 6: confirming the flush address** (run 42196540801, 10 min each,
+`ptreclaim.c` with modes; blocks now spaced 4 MiB apart, so that the block
+before B is free for mode 3):
+
+| Job | Processes | Stalled | Corruptions |
+|---|---|---|---|
+| mode 0 (as in iteration 5) | 443 | 232 | 0 |
+| mode 2: without repopulating other blocks and without the sleep (VM 1) | 577 | 286 | **1** |
+| mode 2 (VM 2) | 575 | 288 | 0 |
+| mode 3: a present page in the block before B, and the second zap covers both blocks (VM 1) | 1,093 | **0** | 0 |
+| mode 3 (VM 2) | 1,099 | **0** | 0 |
+
+Mode 3 differs from mode 0 only in the TLB flush range of the zap that
+frees B's table. The flush range then starts at the present page in the
+block before B, so it covers B. So the wrong flush address is the cause.
+Mode 2 shows that reusing the freed table is not needed for the stall. Its
+corruption (`CORRUPTION at 0xff991de74040: 0x0 instead of
+0x1234567800001483`) is a write by the pinned thread that it could not read
+back: the write went through the stale walk to another page. This is a
+silent wrong result, like the zeroed values in QLever's POS corruption.
+(With the 4 MiB spacing, about half the processes stall instead of nearly
+all, but the first stall still comes within a few processes.)

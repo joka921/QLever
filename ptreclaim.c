@@ -31,7 +31,14 @@
 // `STALL_SECONDS`, report a STALL with the minor faults of the thread; if a
 // value is wrong, report CORRUPTION.
 //
-// Usage: ptreclaim [<steps> [<skip the first zap: 0 or 1>]]
+// Modes (second argument): 0 (default) as described; 1 (control) without the
+// zap of the single page, so B's table still has a present PTE when it is
+// freed, and the flush covers B; 2 without populating the other blocks (and
+// without the sleep); 3 (control for the flush address) with a present page in
+// the block before B, and the second zap covers that block and B, so the flush
+// range starts in the block before B and covers B, too.
+//
+// Usage: ptreclaim [<steps> [<mode>]]
 
 #define _GNU_SOURCE
 #include <errno.h>
@@ -142,7 +149,7 @@ static int run(int c, char* address, uint64_t value) {
 
 int main(int argc, char** argv) {
   long steps = argc > 1 ? atol(argv[1]) : 200;
-  int skipFirstZap = argc > 2 ? atoi(argv[2]) : 0;
+  int mode = argc > 2 ? atoi(argv[2]) : 0;
   long numCpus = sysconf(_SC_NPROCESSORS_ONLN);
   int touchCpu = numCpus > 1 ? 1 : 0;
   pin(0);
@@ -166,7 +173,8 @@ int main(int argc, char** argv) {
   }
   uint64_t value = 0x1234567800000000ULL ^ (uint64_t)getpid();
   for (long step = 0; step < steps; ++step) {
-    char* block = region + (step % NUM_BLOCKS) * BLOCK;
+    // Every other block, so that the block before B is unused (mode 3).
+    char* block = region + (1 + 2 * (step % (NUM_BLOCKS / 2 - 1))) * BLOCK;
     // An offset in the middle of the block, so that the page is neither the
     // first nor the last one.
     char* address = block + ((step * 7919) % 400 + 50) * PAGE + 64;
@@ -174,21 +182,29 @@ int main(int argc, char** argv) {
     // 1. Touch the page from the pinned CPU (caches the walk).
     run(1, address, value);
     // 2. Zap only that page: B's PTE table becomes empty, last-level flush.
-    if (!skipFirstZap) {
+    if (mode != 1) {
       madvise((void*)((uintptr_t)address & ~(PAGE - 1)), PAGE, MADV_DONTNEED);
     }
-    // 3. Zap all of B: with `PT_RECLAIM`, the empty table is freed.
-    madvise(block, BLOCK, MADV_DONTNEED);
+    // 3. Zap all of B: with `PT_RECLAIM`, the empty table is freed. In mode
+    // 3, first populate a page of the block before B, and zap both blocks.
+    if (mode == 3) {
+      *(volatile uint64_t*)(block - BLOCK + 100 * PAGE) = value;
+      madvise(block - BLOCK, 2 * BLOCK, MADV_DONTNEED);
+    } else {
+      madvise(block, BLOCK, MADV_DONTNEED);
+    }
     // 4. Populate other blocks (one page each, i.e. one new PTE table each),
     // so that the freed table page is reused, then zap them again (which
     // frees their tables, too, but with present PTEs, i.e. a correct flush).
-    for (unsigned long b = 0; b < NUM_OTHER_BLOCKS; ++b) {
+    for (unsigned long b = 0; mode != 2 && b < NUM_OTHER_BLOCKS; ++b) {
       volatile uint64_t* p = (volatile uint64_t*)(other + b * BLOCK + 8 * PAGE);
       *p = value + b;
     }
     // Give RCU time to free the old table (`MMU_GATHER_RCU_TABLE_FREE`).
-    usleep(2000);
-    for (unsigned long b = 0; b < NUM_OTHER_BLOCKS; ++b) {
+    if (mode != 2) {
+      usleep(2000);
+    }
+    for (unsigned long b = 0; mode != 2 && b < NUM_OTHER_BLOCKS; ++b) {
       volatile uint64_t* p = (volatile uint64_t*)(other + b * BLOCK + 8 * PAGE);
       if (*p != value + b) {
         fprintf(stderr, "CORRUPTION in other block %lu: 0x%llx\n", b,
