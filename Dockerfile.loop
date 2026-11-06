@@ -40,6 +40,9 @@ ARG BUILDS_PER_PROCESS=
 # spaces) instead of `IndexBuildLoopTest`, each test in its own process, see
 # `index-loop.sh`.
 ARG REPRO_TESTS=
+# The input of `IndexBuildLoopTest` (empty: its default).
+ARG REPRO_INPUT=
 ARG CACHE_BUST=0
-RUN MALLOC_CONF="$MALLOC_CONF" BUILDS_PER_PROCESS="$BUILDS_PER_PROCESS" \
+RUN if [ -n "$REPRO_INPUT" ]; then export QLEVER_REPRO_INPUT="$REPRO_INPUT"; fi && \
+  MALLOC_CONF="$MALLOC_CONF" BUILDS_PER_PROCESS="$BUILDS_PER_PROCESS" \
   REPRO_TESTS="$REPRO_TESTS" /qlever/misc/index-loop.sh "$DURATION" "$PARALLEL"

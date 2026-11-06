@@ -16,6 +16,9 @@
 # (no `jemalloc` purging, THP `never` on the host). Round 18: some VMs don't
 # reproduce at all (round 15/16), so test the `MALLOC_CONF` mitigation on 3
 # VMs against 2 default VMs, all one test at a time, with more host info.
+# Round 19: `IndexBuildLoopTest` (only the build of a tiny NQuads index) one
+# process at a time (rounds 8 and 12 always ran 4 in parallel, which hides
+# the bug), with the input of the most-stalling test.
 name: arm64 stall reproducer (index build loop)
 
 on:
@@ -33,11 +36,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: p1-default-a, parallel: 1, builds: "", spawn: 0, thp: "", malloc_conf: "", tests: "TransitivePathTest:*raph*EmptyPath* JoinTest:*joinTwoScansWithDifferentGraphs*" }
-          - { name: p1-default-b, parallel: 1, builds: "", spawn: 0, thp: "", malloc_conf: "", tests: "TransitivePathTest:*raph*EmptyPath* JoinTest:*joinTwoScansWithDifferentGraphs*" }
-          - { name: p1-nopurge-a, parallel: 1, builds: "", spawn: 0, thp: "", malloc_conf: "dirty_decay_ms:-1,muzzy_decay_ms:-1", tests: "TransitivePathTest:*raph*EmptyPath* JoinTest:*joinTwoScansWithDifferentGraphs*" }
-          - { name: p1-nopurge-b, parallel: 1, builds: "", spawn: 0, thp: "", malloc_conf: "dirty_decay_ms:-1,muzzy_decay_ms:-1", tests: "TransitivePathTest:*raph*EmptyPath* JoinTest:*joinTwoScansWithDifferentGraphs*" }
-          - { name: p1-nopurge-c, parallel: 1, builds: "", spawn: 0, thp: "", malloc_conf: "dirty_decay_ms:-1,muzzy_decay_ms:-1", tests: "TransitivePathTest:*raph*EmptyPath* JoinTest:*joinTwoScansWithDifferentGraphs*" }
+          - { name: ibl-p1-tpinput, parallel: 1, builds: 1, spawn: 0, thp: "", malloc_conf: "", tests: "", input: "<a> <b> <c> <a> . <a> <b> <c> <c> ." }
+          - { name: ibl-p1-defaultinput, parallel: 1, builds: 1, spawn: 0, thp: "", malloc_conf: "", tests: "", input: "" }
+          - { name: ibl-p1-tpinput-10, parallel: 1, builds: 10, spawn: 0, thp: "", malloc_conf: "", tests: "", input: "<a> <b> <c> <a> . <a> <b> <c> <c> ." }
+          - { name: tests-graph-p1-control, parallel: 1, builds: "", spawn: 0, thp: "", malloc_conf: "", tests: "TransitivePathTest:*raph*EmptyPath* JoinTest:*joinTwoScansWithDifferentGraphs*", input: "" }
     name: ${{ matrix.name }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 180
@@ -95,10 +97,11 @@ jobs:
         run: |
           docker buildx build --progress=plain --target loop \
             --cache-from type=gha,scope=index-loop \
-            --build-arg DURATION=1800 --build-arg PARALLEL=${{ matrix.parallel }} \
+            --build-arg DURATION=2700 --build-arg PARALLEL=${{ matrix.parallel }} \
             --build-arg "MALLOC_CONF=${{ matrix.malloc_conf }}" \
             --build-arg "BUILDS_PER_PROCESS=${{ matrix.builds }}" \
             --build-arg "REPRO_TESTS=${{ matrix.tests }}" \
+            --build-arg "REPRO_INPUT=${{ matrix.input }}" \
             --build-arg CACHE_BUST=${{ github.run_id }} \
             -f ../repro/Dockerfile.loop .
       - name: Print the ASID rollovers
