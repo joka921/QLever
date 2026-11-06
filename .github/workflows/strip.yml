@@ -19,12 +19,12 @@ jobs:
         # `gdb`: run the storm watcher as root with `bpftrace` and attach `gdb`
         # to each storming thread.
         include:
-          - { name: b-stackcache-big, commands: strip/commands-b.txt, env: "GLIBC_TUNABLES=glibc.pthread.stack_cache_size=4294967296" }
-          - { name: b-stackcache-0, commands: strip/commands-b.txt, env: "GLIBC_TUNABLES=glibc.pthread.stack_cache_size=0" }
-          - { name: b-dirty-only, commands: strip/commands-b.txt, env: "MALLOC_CONF=dirty_decay_ms:-1" }
-          - { name: churn16-1, commands: strip/commands-churn16.txt, env: "" }
-          - { name: churn16-2, commands: strip/commands-churn16.txt, env: "" }
-          - { name: churn16-glibc, commands: strip/commands-churn16-glibc.txt, env: "" }
+          - { name: sorter-1, commands: strip/commands-sorter.txt, env: "" }
+          - { name: sorter-2, commands: strip/commands-sorter.txt, env: "" }
+          - { name: churn-huge-1, commands: strip/commands-churn-huge.txt, env: "" }
+          - { name: churn-huge-2, commands: strip/commands-churn-huge.txt, env: "" }
+          - { name: b-nopatterns-2, commands: strip/commands-b.txt, env: "QLEVER_REPRO_PATTERNS=0 QLEVER_REPRO_ALL_PERMUTATIONS=0" }
+          - { name: b-patterns-only, commands: strip/commands-b.txt, env: "QLEVER_REPRO_ALL_PERMUTATIONS=0" }
     name: ${{ matrix.name }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 180
@@ -39,6 +39,8 @@ jobs:
           uname -a
           lscpu | grep -E 'Model name|Stepping|^CPU\(s\)'
           free -m
+          # The kernel options that are relevant for the bug (see `REPORT.md`).
+          grep -E 'PT_RECLAIM|MMU_GATHER|ARM64_SVE|HYPERV|TRANSPARENT_HUGEPAGE=|PER_VMA_LOCK|ARM64_HW_AFDBM|ARM64_TLB_RANGE|ARM64_ERRATUM|LRU_GEN=' /boot/config-$(uname -r) || true
       - name: Install dependencies
         run: |
           sudo apt-get update -q > /dev/null
@@ -68,7 +70,7 @@ jobs:
           ccache -s | head -n 20
       # Only one job saves the cache (they all build the same).
       - name: Save ccache
-        if: always() && matrix.name == 'b-stackcache-big'
+        if: always() && matrix.name == 'b-nopatterns-2'
         uses: actions/cache/save@v4
         with:
           path: .ccache

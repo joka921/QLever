@@ -15,7 +15,13 @@
 // via `malloc` (run with `jemalloc` via `LD_PRELOAD`, so that freed memory
 // is purged with `madvise(MADV_DONTNEED)`).
 //
-// Usage: churn <rounds> <threads per round> <max block KiB>
+// With a fourth argument `<huge MiB>`, each thread also allocates a block of
+// that size, of which it only uses the first 64 KiB (like the first block of a
+// `CompressedExternalIdTableSorter` with a memory limit of 4 GB, which is
+// reserved but hardly used by a tiny index), and frees it again (`jemalloc`
+// returns such huge blocks to the kernel immediately via `madvise`).
+//
+// Usage: churn <rounds> <threads per round> <max block KiB> [<huge MiB>]
 // Exit status 3 and `CORRUPTION` on stderr if a check fails.
 
 #include <pthread.h>
@@ -25,6 +31,7 @@
 #include <string.h>
 
 static size_t maxBlockBytes;
+static size_t hugeBytes = 0;
 static volatile int corrupted = 0;
 
 // A simple deterministic pseudo-random generator (xorshift).
@@ -90,18 +97,35 @@ static void* work(void* arg) {
     check(blocks[i], sizes[i], seeds[i], "block");
     free(blocks[i]);
   }
+  if (hugeBytes > 0) {
+    enum { HUGE_USED_WORDS = 64 * 1024 / 8 };
+    uint64_t seed = next(&state);
+    uint64_t* huge = malloc(hugeBytes);
+    // Copy into it (like `pushBlock`), then check it.
+    uint64_t* source = malloc(HUGE_USED_WORDS * 8);
+    fill(source, HUGE_USED_WORDS, seed);
+    memcpy(huge, source, HUGE_USED_WORDS * 8);
+    free(source);
+    check(huge, HUGE_USED_WORDS, seed, "huge");
+    free(huge);
+  }
   return NULL;
 }
 
 int main(int argc, char** argv) {
-  if (argc != 4) {
-    fprintf(stderr, "Usage: %s <rounds> <threads per round> <max block KiB>\n",
+  if (argc != 4 && argc != 5) {
+    fprintf(stderr,
+            "Usage: %s <rounds> <threads per round> <max block KiB> "
+            "[<huge MiB>]\n",
             argv[0]);
     return 1;
   }
   int rounds = atoi(argv[1]);
   int threadsPerRound = atoi(argv[2]);
   maxBlockBytes = (size_t)atoi(argv[3]) * 1024;
+  if (argc == 5) {
+    hugeBytes = (size_t)atoi(argv[4]) * 1024 * 1024;
+  }
   uintptr_t id = 0;
   for (int r = 0; r < rounds; ++r) {
     pthread_t threads[256];

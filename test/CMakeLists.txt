@@ -692,3 +692,4 @@ addLinkAndDiscoverTest(InstrumentedExecutorTest metrics)
 
 addLinkAndDiscoverTest(ResourceMonitorTest qlever_util)
 addLinkAndDiscoverTest(StripLoopTest engine)
+addLinkAndDiscoverTest(SorterLoopTest engine)
