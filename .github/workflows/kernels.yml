@@ -35,13 +35,13 @@ jobs:
           run() {
             local mode=$1 n=$2 stalls=0 bad=0
             for i in $(seq "$n"); do
-              ./ptreclaim 200 "$mode" 2>err.txt; rc=$?
+              rc=0; ./ptreclaim 200 "$mode" 2>err.txt || rc=$?
               [ $rc -eq 4 ] && stalls=$((stalls + 1))
               [ $rc -eq 3 ] && bad=$((bad + 1))
               [ $rc -ne 0 ] && head -1 err.txt
             done
             echo "RESULT kernel=$(uname -r) mode=$mode processes=$n stalls=$stalls corruptions=$bad"
           }
-          run 0 100
-          run 2 100
-          run 1 50
+          run 0 300
+          run 2 300
+          run 1 100
