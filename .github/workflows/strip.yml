@@ -19,12 +19,9 @@ jobs:
         # `gdb`: run the storm watcher as root with `bpftrace` and attach `gdb`
         # to each storming thread.
         include:
-          - { name: sorter-1, commands: strip/commands-sorter.txt, env: "" }
-          - { name: sorter-2, commands: strip/commands-sorter.txt, env: "" }
           - { name: churn-huge-1, commands: strip/commands-churn-huge.txt, env: "" }
           - { name: churn-huge-2, commands: strip/commands-churn-huge.txt, env: "" }
-          - { name: b-nopatterns-2, commands: strip/commands-b.txt, env: "QLEVER_REPRO_PATTERNS=0 QLEVER_REPRO_ALL_PERMUTATIONS=0" }
-          - { name: b-patterns-only, commands: strip/commands-b.txt, env: "QLEVER_REPRO_ALL_PERMUTATIONS=0" }
+          - { name: churn16, commands: strip/commands-churn16.txt, env: "" }
     name: ${{ matrix.name }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 180
@@ -70,7 +67,7 @@ jobs:
           ccache -s | head -n 20
       # Only one job saves the cache (they all build the same).
       - name: Save ccache
-        if: always() && matrix.name == 'b-nopatterns-2'
+        if: always() && matrix.name == 'never'
         uses: actions/cache/save@v4
         with:
           path: .ccache
@@ -86,10 +83,10 @@ jobs:
             # Let `gdb` attach to the tests.
             sudo sysctl -w kernel.yama.ptrace_scope=0
           fi
-          # The commands refer to `build/test/...` relative to the checkout. A
+          # The commands refer to `build/...` relative to the checkout. A
           # line `@<binary> <gtest filter>` stands for all matching tests of the
           # binary, one per line.
-          sed "s#build/test/#$PWD/build/test/#g" ${{ matrix.commands }} |
+          sed "s#build/#$PWD/build/#g" ${{ matrix.commands }} |
             while read -r LINE; do
               if [[ "$LINE" == @* ]]; then
                 read -r BINARY FILTER <<< "${LINE#@}"
