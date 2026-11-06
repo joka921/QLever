@@ -83,6 +83,7 @@ trace_faults() {
       END=$((16#${END%% *}))
       if [ "$ADDRESS" -ge "$START" ] && [ "$ADDRESS" -lt "$END" ]; then
         echo "--- mapping: $LINE"
+        break
       fi
     done < "/proc/$PID/maps"
     local ENTRY
@@ -199,7 +200,9 @@ while true; do
     if [ "${HOT_SECONDS[$TID]}" -ge 2 ]; then
       PID="${TASK#/proc/}"
       PID="${PID%%/*}"
-      probe "$PID" "$TASK"
+      # In a subshell, so that an error in a probe (e.g. the process exited
+      # meanwhile) doesn't end the watcher.
+      ( probe "$PID" "$TASK" )
       HOT_SECONDS[$TID]=0
       LAST_FAULTS[$TID]=$(minor_faults "$TASK")
     fi
