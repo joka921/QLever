@@ -17,7 +17,9 @@
 // Environment variables: `QLEVER_REPRO_SECONDS` (how long to loop, default
 // 600), `QLEVER_REPRO_INPUT` (the NQuads, default as in
 // `GroupByOptimizations.computeGroupByForSingleIndexScanWithNamedGraphDuplicates`),
-// `QLEVER_REPRO_SLOW_SECONDS` (report builds that take longer, default 1).
+// `QLEVER_REPRO_SLOW_SECONDS` (report builds that take longer, default 1),
+// `QLEVER_REPRO_BUILDS` (the maximal number of builds, default unlimited; 1
+// mimics a single unit test in a fresh process, like `ctest` runs them).
 
 #include <gtest/gtest.h>
 #include <unistd.h>
@@ -47,6 +49,8 @@ TEST(IndexBuildLoop, namedGraphDuplicates) {
       std::stod(getEnv("QLEVER_REPRO_SECONDS", "600"));
   const double slowSeconds =
       std::stod(getEnv("QLEVER_REPRO_SLOW_SECONDS", "1"));
+  const size_t maxBuilds =
+      std::stoul(getEnv("QLEVER_REPRO_BUILDS", "1000000000"));
   const std::string input = getEnv(
       "QLEVER_REPRO_INPUT",
       "<s> <p> <o> <g1> . <s> <p> <o> <g2> . <s> <p> <o> <g3> .");
@@ -56,7 +60,7 @@ TEST(IndexBuildLoop, namedGraphDuplicates) {
   const auto start = Clock::now();
   size_t numSlow = 0;
   size_t i = 0;
-  for (; elapsed(start) < seconds; ++i) {
+  for (; i < maxBuilds && elapsed(start) < seconds; ++i) {
     std::string basename =
         "indexBuildLoop_" + std::to_string(getpid()) + "_" + std::to_string(i);
     const auto buildStart = Clock::now();
@@ -81,6 +85,8 @@ TEST(IndexBuildLoop, namedGraphDuplicates) {
       return;
     }
   }
-  std::cerr << "Built " << i << " indexes in " << elapsed(start) << " s, "
-            << numSlow << " slow" << std::endl;
+  if (maxBuilds > 1) {
+    std::cerr << "Built " << i << " indexes in " << elapsed(start) << " s, "
+              << numSlow << " slow" << std::endl;
+  }
 }

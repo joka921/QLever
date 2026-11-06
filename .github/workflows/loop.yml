@@ -1,13 +1,16 @@
-# Round 6 of the reproducer, see `REPORT.md`: build only `IndexBuildLoopTest`
-# (which builds the tiny named-graph test index of the failing tests over and
-# over and checks it) at a fixed commit of QLever, cache that build, and run
-# several instances of it in parallel, with different `jemalloc` settings.
+# Rounds 6 and 8 of the reproducer, see `REPORT.md`: build only
+# `IndexBuildLoopTest` (which builds the tiny named-graph test index of the
+# failing tests over and over and checks it) at a fixed commit of QLever, cache
+# that build, and run several instances of it in parallel, with different
+# `jemalloc` settings. Round 6 (one long-running process per instance) found
+# nothing in 31,574 builds; round 8 starts a new process for each build (or
+# every 10 builds), like `ctest` does for each unit test.
 name: arm64 stall reproducer (index build loop)
 
 on:
   push:
     branches: [ arm64-stall-repro ]
-    paths: [ .github/workflows/loop.yml, Dockerfile.loop, index-loop.sh, IndexBuildLoopTest.cpp ]
+    paths: [ .github/workflows/loop.yml, Dockerfile.loop, index-loop.sh, IndexBuildLoopTest.cpp, fault-storm-watch.sh ]
   workflow_dispatch:
 
 env:
@@ -19,10 +22,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: loop-default, parallel: 4, malloc_conf: "" }
-          - { name: loop-purge0, parallel: 4, malloc_conf: "dirty_decay_ms:0,muzzy_decay_ms:0" }
-          - { name: loop-nopurge, parallel: 4, malloc_conf: "dirty_decay_ms:-1,muzzy_decay_ms:-1" }
-          - { name: loop-default-p1, parallel: 1, malloc_conf: "" }
+          - { name: fresh-1, parallel: 4, builds: 1, malloc_conf: "" }
+          - { name: fresh-1-purge0, parallel: 4, builds: 1, malloc_conf: "dirty_decay_ms:0,muzzy_decay_ms:0" }
+          - { name: fresh-1-nopurge, parallel: 4, builds: 1, malloc_conf: "dirty_decay_ms:-1,muzzy_decay_ms:-1" }
+          - { name: fresh-10, parallel: 4, builds: 10, malloc_conf: "" }
     name: ${{ matrix.name }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 180
@@ -64,5 +67,6 @@ jobs:
             --cache-from type=gha,scope=index-loop \
             --build-arg DURATION=3600 --build-arg PARALLEL=${{ matrix.parallel }} \
             --build-arg "MALLOC_CONF=${{ matrix.malloc_conf }}" \
+            --build-arg "BUILDS_PER_PROCESS=${{ matrix.builds }}" \
             --build-arg CACHE_BUST=${{ github.run_id }} \
             -f ../repro/Dockerfile.loop .

@@ -32,5 +32,9 @@ ARG PARALLEL=4
 # The runtime configuration of `jemalloc`, e.g. how fast it returns freed
 # memory to the kernel via `madvise`.
 ARG MALLOC_CONF=
+# Start a new process for every `BUILDS_PER_PROCESS` index builds (empty: one
+# process per instance), see `index-loop.sh`.
+ARG BUILDS_PER_PROCESS=
 ARG CACHE_BUST=0
-RUN MALLOC_CONF="$MALLOC_CONF" /qlever/misc/index-loop.sh "$DURATION" "$PARALLEL"
+RUN MALLOC_CONF="$MALLOC_CONF" BUILDS_PER_PROCESS="$BUILDS_PER_PROCESS" \
+  /qlever/misc/index-loop.sh "$DURATION" "$PARALLEL"
