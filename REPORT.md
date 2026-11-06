@@ -1,6 +1,6 @@
 # Spurious stalls and corruptions of the QLever tests on the arm64 runners
 
-Status: 2026-11-06, 01:15 UTC. Related: ad-freiburg/qlever PR #3892 (diagnostics
+Status: 2026-11-06, 01:45 UTC. Related: ad-freiburg/qlever PR #3892 (diagnostics
 launcher), this branch (`arm64-stall-repro` on `joka921/QLever`) for the
 reproducers.
 
@@ -76,9 +76,13 @@ reproducers.
    completing the stuck write in the wrong place. Round 9 caught a storm
    live: reading any `/proc/<pid>` file (even its memory) leaves the 4
    million faults/s unchanged, `SIGSTOP` + `SIGCONT` ends it at once, and
-   the test then fails with the corruption. Round 10 checks whether merely
-   moving the thread to another CPU ends it (which would point to a stale
-   TLB entry local to one CPU).
+   the test then fails with the corruption. **Round 10: merely moving the
+   thread to another CPU (via its affinity) ends every storm at once, while
+   pinning it to its current CPU doesn't.** So the page table is fine (the
+   other CPU uses it without faulting), but one CPU keeps faulting on it:
+   state local to that CPU (most likely a stale TLB entry) that the
+   kernel's spurious-fault handling (a local TLB invalidation) doesn't
+   remove. This is a kernel or hypervisor bug, not a bug of QLever.
 
 ## Mitigations
 
@@ -177,7 +181,8 @@ Workflow `.github/workflows/repro.yml`, all on `ubuntu-24.04-arm` with
 | 6 `loop-*` (42127430005)            | `IndexBuildLoopTest`: only the build of the 3-triple NQuads test index in a loop **in long-running processes**, 4 or 1 instances, `jemalloc` default / immediate / no purging | **nothing**: about 96,000 builds in 4 jobs × 1 h, 0 corruptions, no fault storms (a few ~1 s builds, simultaneously in all instances and also without purging, i.e. machine hiccups) |
 | 8 `fresh-*` (42138234910)           | as round 6, but **a new process for each build** (or every 10 builds), like `ctest` | running |
 | 9 `qlever-watch-*` (42138288151)    | the QLever tests (as round 3) with `fault-storm-watch.sh` | `qlever-watch-1`: **storm caught live** in iteration 2 (details below), then the corruption in exactly that test. `qlever-watch-2`: 5 storms (3.6 to 4.0 M faults/s) in 17 iterations, **all 5 unaffected by reading `/proc` and ended by `SIGSTOP`/`SIGCONT`**; corruption in iteration 17 in `CompressedRelationReader.getFirstAndLastTripleIgnoringGraph` (1.49 s, no storm detected, i.e. corruption also happens without a long storm) |
-| 10 `qlever-cpu-*` (42141114522)     | as round 9, with probes that pin the thread to its CPU and then move it to another CPU | running |
+| 10 `qlever-cpu-*` (42141114522)     | as round 9, with probes that pin the thread to its CPU and then move it to another CPU | **every storm that lasted until the CPU probes (≈ 12 in 2 jobs) continued at 3.6 to 4.0 M faults/s when pinned to its CPU and ended immediately when moved to another CPU** (a few storms ended by themselves earlier); corruption in both jobs |
+| 11 `qlever-trace-*` (42144842511)   | as round 10, but the watcher runs as root on the host: kernel stack of the stormy thread, `bpftrace` of `handle_mm_fault` (address, flags, return value) and of the fault-path functions, `pagemap` entry of the faulting address | running |
 | 4 `synth-compact-mixed`/`-pool`     | `repro.c` + `vm.compact_memory` every second               | nothing in 110 minutes (cancelled) |
 
 Details of round 3:
