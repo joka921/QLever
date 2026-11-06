@@ -22,8 +22,11 @@ mkdir -p "$QLEVER_TEST_DIAGNOSTICS_DIR"
 
 # Detect storms of page faults directly, and probe what ends them (the names
 # of the test binaries are truncated to 15 characters).
-"$(dirname "$0")/fault-storm-watch.sh" 'Test|TransitivePath|CompressedRelat|OptionalJoin' 2>&1 |
-  sed -u 's/^/[storm] /' &
+# Skipped if `NO_STORM_WATCH` is set (e.g. because it runs on the host).
+if [ -z "${NO_STORM_WATCH:-}" ]; then
+  "$(dirname "$0")/fault-storm-watch.sh" 'Test|TransitivePath|CompressedRelat|OptionalJoin' 2>&1 |
+    sed -u 's/^/[storm] /' &
+fi
 
 END=$((SECONDS + DURATION))
 ITERATION=0

@@ -42,6 +42,60 @@ fault_rate() {
   fi
 }
 
+# If `bpftrace` is available and this runs as root (on the host), trace the
+# page faults of the given thread for 0.5 s: the faulting addresses and flags
+# that `handle_mm_fault` gets, its return values, and which functions of the
+# fault path are called (only those that exist and aren't inlined). Then print
+# the mapping and the `pagemap` entry of the most frequent address.
+trace_faults() {
+  local PID="$1" TID="$2"
+  command -v bpftrace > /dev/null && [ "$(id -u)" = 0 ] || return
+  local FUNCTIONS=/sys/kernel/tracing/available_filter_functions
+  [ -r "$FUNCTIONS" ] || FUNCTIONS=/sys/kernel/debug/tracing/available_filter_functions
+  local PROBES="" FUNCTION
+  for FUNCTION in handle_pte_fault do_wp_page wp_page_reuse wp_page_copy \
+    do_anonymous_page do_numa_page ptep_set_access_flags \
+    __ptep_set_access_flags flush_tlb_fix_spurious_fault \
+    __flush_tlb_page_nosync do_page_fault do_translation_fault \
+    do_bad_area __do_page_fault lock_vma_under_rcu; do
+    if grep -qx "$FUNCTION" "$FUNCTIONS" 2> /dev/null; then
+      PROBES+="kprobe:$FUNCTION /tid == $TID/ { @calls[func] = count(); } "
+    fi
+  done
+  echo "--- bpftrace of thread $TID for 0.5 s:"
+  timeout 20 bpftrace -q -e "
+    kprobe:handle_mm_fault /tid == $TID/ {
+      @faults[arg1, arg2] = count(); @calls[func] = count(); }
+    kretprobe:handle_mm_fault /tid == $TID/ { @ret[retval] = count(); }
+    $PROBES
+    interval:ms:500 { exit(); }" 2>&1 | head -n 60 | tee "/tmp/bpftrace-$TID.txt"
+  # The most frequent faulting address (`bpftrace` prints the entries of a map
+  # sorted by their value, but sort anyway).
+  local ADDRESS
+  ADDRESS=$(grep -E '^@faults\[' "/tmp/bpftrace-$TID.txt" | sort -t : -k 2 -n |
+    tail -n 1 | grep -oE '^@faults\[[0-9]+' | grep -oE '[0-9]+$')
+  if [ -n "$ADDRESS" ]; then
+    printf -- '--- address 0x%x\n' "$ADDRESS"
+    local LINE START END
+    while read -r LINE; do
+      START=$((16#${LINE%%-*}))
+      END=${LINE#*-}
+      END=$((16#${END%% *}))
+      if [ "$ADDRESS" -ge "$START" ] && [ "$ADDRESS" -lt "$END" ]; then
+        echo "--- mapping: $LINE"
+      fi
+    done < "/proc/$PID/maps"
+    local ENTRY
+    ENTRY=$(dd if="/proc/$PID/pagemap" bs=8 count=1 skip=$((ADDRESS / 4096)) 2> /dev/null | od -An -tx8 | tr -d ' ')
+    if [ -n "$ENTRY" ]; then
+      local VALUE=$((16#$ENTRY))
+      echo "--- pagemap entry: 0x$ENTRY (present $(((VALUE >> 63) & 1))," \
+        "swapped $(((VALUE >> 62) & 1)), exclusive $(((VALUE >> 56) & 1))," \
+        "soft-dirty $(((VALUE >> 55) & 1)), pfn $((VALUE & ((1 << 55) - 1))))"
+    fi
+  fi
+}
+
 # Print the state of the thread and probe what ends its storm (see above).
 probe() {
   local PID="$1" TASK="$2"
@@ -56,6 +110,7 @@ probe() {
     "wchan $(cat "$TASK/wchan" 2> /dev/null)," \
     "syscall $(cat "$TASK/syscall" 2> /dev/null)"
   sed 's/^/    /' "$TASK/stack" 2> /dev/null
+  trace_faults "$PID" "$(basename "$TASK")"
   echo "vmstat: $(grep -E '^(pgfault|pgmajfault|pgmigrate_success|thp_fault_alloc|nr_tlb_remote_flush|nr_tlb_local_flush_all|nr_tlb_local_flush_one) ' /proc/vmstat | tr '\n' ' ')"
   local STEP RATE NOW="${STAT##*) }"
   local CPU OTHER_CPU

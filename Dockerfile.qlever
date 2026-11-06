@@ -32,4 +32,5 @@ ARG DURATION=9000
 # The runtime configuration of `jemalloc`, e.g. how fast it returns freed
 # memory to the kernel via `madvise`.
 ARG MALLOC_CONF=
-RUN MALLOC_CONF="$MALLOC_CONF" /qlever/misc/ctest-loop.sh "$DURATION"
+ARG NO_STORM_WATCH=
+RUN MALLOC_CONF="$MALLOC_CONF" NO_STORM_WATCH="$NO_STORM_WATCH" /qlever/misc/ctest-loop.sh "$DURATION"
