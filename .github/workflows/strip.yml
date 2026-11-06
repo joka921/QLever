@@ -19,9 +19,11 @@ jobs:
         # `gdb`: run the storm watcher as root with `bpftrace` and attach `gdb`
         # to each storming thread.
         include:
-          - { name: churn-huge-1, commands: strip/commands-churn-huge.txt, env: "" }
-          - { name: churn-huge-2, commands: strip/commands-churn-huge.txt, env: "" }
-          - { name: churn16, commands: strip/commands-churn16.txt, env: "" }
+          - { name: ptreclaim-1, commands: strip/commands-ptreclaim.txt, env: "" }
+          - { name: ptreclaim-2, commands: strip/commands-ptreclaim.txt, env: "" }
+          - { name: ptreclaim-3, commands: strip/commands-ptreclaim.txt, env: "" }
+          - { name: ptreclaim-control-1, commands: strip/commands-ptreclaim-control.txt, env: "" }
+          - { name: ptreclaim-control-2, commands: strip/commands-ptreclaim-control.txt, env: "" }
     name: ${{ matrix.name }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 180
@@ -64,6 +66,7 @@ jobs:
             time cmake --build build -j 4 --target $TARGETS > build.log 2>&1 || { tail -n 100 build.log; exit 1; }
           fi
           gcc -O2 -Wall -o build/churn strip/churn.c -lpthread
+          gcc -O2 -Wall -o build/ptreclaim strip/ptreclaim.c -lpthread
           ccache -s | head -n 20
       # Only one job saves the cache (they all build the same).
       - name: Save ccache
@@ -74,7 +77,7 @@ jobs:
           key: ccache-strip-${{ github.sha }}
       - name: Loop
         env:
-          WATCH_REGEX: "Test|TransitivePath|churn"
+          WATCH_REGEX: "Test|TransitivePath|churn|ptreclaim"
           DURATION: 900
         run: |
           for VAR in ${{ matrix.env }}; do export "$VAR"; done
