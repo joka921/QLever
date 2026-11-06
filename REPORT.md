@@ -344,5 +344,19 @@ same as in CI:
 - the `unreachable` in `Datatype.h`;
 - `Assertion firstCol0Id == first[0] failed` in the permutation writer.
 
-The Docker-based loop of the same build (round 14) was much weaker. So
-Docker, overlayfs or the container's cgroup make storms rarer.
+Docker doesn't matter: in round 19 (Docker, one process at a time), the
+same index build was just as strong (see below). Its weak results in round
+14 came from running 4 processes in parallel.
+
+**Round 19** (`arm64-stall-repro`, Docker, `IndexBuildLoopTest`, one process
+at a time, 45 min each, run 42179707513):
+
+| Job | Processes | Failed processes | Storms (ended by moving the thread) |
+|---|---|---|---|
+| default input of `IndexBuildLoopTest`, 1 build per process | 8,385 | 37 | 193 (150) |
+| 2-quad input of `graphVariableEmptyPathWithRestrictedGraphs`, 1 build per process | 8,457 | 41 | 173 (132) |
+| same, 10 builds per process | 1,045 | 46 | 206 (121) |
+| 30 graph tests (control) | 33,248 | 37 | 264 (207) |
+
+So 10 builds per process is no weaker than 1. "Many short-lived processes"
+(round 6 vs. 8) was really about how busy the CPUs were.
