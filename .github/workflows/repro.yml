@@ -21,7 +21,9 @@ name: arm64 stall reproducer
 # `REPORT.md`). Round 9: reading `/proc` doesn't, `SIGSTOP`/`SIGCONT` does.
 # Round 10: moving the thread to another CPU ends it, pinning it to its CPU
 # doesn't. Round 11: run the watcher as root on the host, where it can also
-# read the kernel stack and trace the faults with `bpftrace`.
+# read the kernel stack and trace the faults with `bpftrace`. Round 15: the
+# QLever tests built without `io_uring` (`-DUSE_IO_URING=OFF`), which QLever
+# uses to read vocabularies and which the synthetic workloads never used.
 on:
   push:
     branches: [ arm64-stall-repro ]
@@ -34,8 +36,8 @@ jobs:
       fail-fast: false
       matrix:
         kind:
-          - qlever-trace-1
-          - qlever-trace-2
+          - qlever-nouring-1
+          - qlever-nouring-2
     name: ${{ matrix.kind }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 240
@@ -96,6 +98,7 @@ jobs:
             qlever-nojemalloc) ARGS="--build-arg NO_JEMALLOC=1" ;;
           esac
           if [[ "${{ matrix.kind }}" == qlever-trace* ]]; then ARGS="--build-arg NO_STORM_WATCH=1"; fi
+          if [[ "${{ matrix.kind }}" == qlever-nouring* ]]; then ARGS="--build-arg CMAKE_EXTRA=-DUSE_IO_URING=OFF"; fi
           docker buildx build --progress=plain --build-arg DURATION=5400 $ARGS \
             -f ../repro/Dockerfile.qlever .
       - name: Print the storms that the watcher on the host found
