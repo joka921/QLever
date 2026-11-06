@@ -10,7 +10,10 @@
 # even the long-running processes of round 6 fail? `asid-monitor.sh` logs the
 # ASID rollovers on the host. Round 14: instead of `IndexBuildLoopTest`, only
 # the stalling tests of `TransitivePathTest` and `JoinTest` (graph variables,
-# named graphs), each in its own process, 4 (or 1) at a time.
+# named graphs), each in its own process, 4 (or 1) at a time. Round 16: the
+# same with a separate working directory per instance (in round 14, parallel
+# instances overwrote each other's index files), and the two mitigations
+# (no `jemalloc` purging, THP `never` on the host).
 name: arm64 stall reproducer (index build loop)
 
 on:
@@ -28,9 +31,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: tests-graph, parallel: 4, builds: "", spawn: 0, malloc_conf: "", tests: "TransitivePathTest:*raph*EmptyPath* JoinTest:*joinTwoScansWithDifferentGraphs*" }
-          - { name: tests-graph-nopurge, parallel: 4, builds: "", spawn: 0, malloc_conf: "dirty_decay_ms:-1,muzzy_decay_ms:-1", tests: "TransitivePathTest:*raph*EmptyPath* JoinTest:*joinTwoScansWithDifferentGraphs*" }
-          - { name: tests-graph-p1, parallel: 1, builds: "", spawn: 0, malloc_conf: "", tests: "TransitivePathTest:*raph*EmptyPath* JoinTest:*joinTwoScansWithDifferentGraphs*" }
+          - { name: tests-graph-p4, parallel: 4, builds: "", spawn: 0, thp: "", malloc_conf: "", tests: "TransitivePathTest:*raph*EmptyPath* JoinTest:*joinTwoScansWithDifferentGraphs*" }
+          - { name: tests-graph-p4-nopurge, parallel: 4, builds: "", spawn: 0, thp: "", malloc_conf: "dirty_decay_ms:-1,muzzy_decay_ms:-1", tests: "TransitivePathTest:*raph*EmptyPath* JoinTest:*joinTwoScansWithDifferentGraphs*" }
+          - { name: tests-graph-p1-thpnever, parallel: 1, builds: "", spawn: 0, thp: never, malloc_conf: "", tests: "TransitivePathTest:*raph*EmptyPath* JoinTest:*joinTwoScansWithDifferentGraphs*" }
+          - { name: tests-graph-p1, parallel: 1, builds: "", spawn: 0, thp: "", malloc_conf: "", tests: "TransitivePathTest:*raph*EmptyPath* JoinTest:*joinTwoScansWithDifferentGraphs*" }
     name: ${{ matrix.name }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 180
@@ -72,6 +76,11 @@ jobs:
           if [ "${{ matrix.spawn }}" = 1 ]; then
             nohup repro/spawn-loop.sh 1 > /dev/null 2>&1 &
           fi
+          if [ "${{ matrix.thp }}" = never ]; then
+            echo never | sudo tee /sys/kernel/mm/transparent_hugepage/enabled
+            echo never | sudo tee /sys/kernel/mm/transparent_hugepage/defrag
+            echo 0 | sudo tee /sys/kernel/mm/transparent_hugepage/khugepaged/defrag
+          fi
           sleep 15
           cat "$RUNNER_TEMP/asid.txt"
       - name: Loop
@@ -79,7 +88,7 @@ jobs:
         run: |
           docker buildx build --progress=plain --target loop \
             --cache-from type=gha,scope=index-loop \
-            --build-arg DURATION=3600 --build-arg PARALLEL=${{ matrix.parallel }} \
+            --build-arg DURATION=2700 --build-arg PARALLEL=${{ matrix.parallel }} \
             --build-arg "MALLOC_CONF=${{ matrix.malloc_conf }}" \
             --build-arg "BUILDS_PER_PROCESS=${{ matrix.builds }}" \
             --build-arg "REPRO_TESTS=${{ matrix.tests }}" \

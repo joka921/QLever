@@ -60,35 +60,37 @@ END=$((SECONDS + DURATION))
 PIDS=()
 for ((P = 1; P <= PARALLEL; ++P)); do
   (
-    cd logs || exit 1
+    # Each instance in its own directory, because the tests derive the names
+    # of their index files from the test name.
+    mkdir -p "logs/$P" && cd "logs/$P" || exit 1
     NUM_PROCESSES=0
     while :; do
       if [ -n "$REPRO_TESTS" ]; then
         # The tests in a different order in each instance.
         COMMAND=${TEST_COMMANDS[$(((NUM_PROCESSES * 7 + P * 13) % ${#TEST_COMMANDS[@]}))]}
         # shellcheck disable=SC2086
-        /qlever/misc/run-test-with-diagnostics.sh $COMMAND > "last-$P.txt" 2>&1
+        /qlever/misc/run-test-with-diagnostics.sh $COMMAND > "../last-$P.txt" 2>&1
         STATUS=$?
-        if [ "$STATUS" -ne 0 ] || grep -q 'STALL DIAGNOSTICS' "last-$P.txt"; then
-          cat "last-$P.txt" >> "out-$P.txt"
+        if [ "$STATUS" -ne 0 ] || grep -q 'STALL DIAGNOSTICS' "../last-$P.txt"; then
+          cat "../last-$P.txt" >> "../out-$P.txt"
         fi
       else
         /qlever/misc/run-test-with-diagnostics.sh \
-          /qlever/build/test/IndexBuildLoopTest >> "out-$P.txt" 2>&1
+          /qlever/build/test/IndexBuildLoopTest >> "../out-$P.txt" 2>&1
         STATUS=$?
       fi
       NUM_PROCESSES=$((NUM_PROCESSES + 1))
       if [ "$STATUS" -ne 0 ]; then
-        echo "instance $P: process $NUM_PROCESSES exited with status $STATUS" >> "out-$P.txt"
+        echo "instance $P: process $NUM_PROCESSES exited with status $STATUS" >> "../out-$P.txt"
       fi
       if [ -z "$BUILDS_PER_PROCESS" ] || [ "$SECONDS" -ge "$END" ]; then
         break
       fi
       if ((NUM_PROCESSES % 1000 == 0)); then
-        echo "instance $P: $NUM_PROCESSES processes" >> "out-$P.txt"
+        echo "instance $P: $NUM_PROCESSES processes" >> "../out-$P.txt"
       fi
     done
-    echo "instance $P exited after $NUM_PROCESSES processes" >> "out-$P.txt"
+    echo "instance $P exited after $NUM_PROCESSES processes" >> "../out-$P.txt"
   ) &
   PIDS+=($!)
 done
