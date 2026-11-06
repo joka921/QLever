@@ -16,8 +16,12 @@
 # - `synth-jemalloc`: the `mixed` workload with `jemalloc` (immediate purging).
 name: arm64 stall reproducer
 
-# Since round 6 (see `loop.yml`), only run on demand.
+# Round 9: the QLever tests with default settings and `fault-storm-watch.sh`,
+# to find out what ends a storm of page faults (see `REPORT.md`).
 on:
+  push:
+    branches: [ arm64-stall-repro ]
+    paths: [ .github/workflows/repro.yml ]
   workflow_dispatch:
 
 jobs:
@@ -26,12 +30,8 @@ jobs:
       fail-fast: false
       matrix:
         kind:
-          - qlever-nopurge
-          - qlever-purge0
-          - qlever-nojemalloc
-          - synth-madvfree
-          - synth-madvdontneed
-          - synth-jemalloc
+          - qlever-watch-1
+          - qlever-watch-2
     name: ${{ matrix.kind }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 240
