@@ -10,12 +10,31 @@
 # corruptions as they happen, and a summary at the end. Exit with 1 if any
 # build was slow or corrupt. Must be run in the build directory.
 #
+# If `REPRO_TESTS` is set (`<binary>:<gtest filter>` pairs, separated by
+# spaces), each instance instead runs the matching tests of these binaries
+# (in `/qlever/build/test`) over and over, each test in its own process (like
+# `ctest`), and a failed test counts as a corruption.
+#
 # Usage: index-loop.sh <seconds> <parallel>
 
 set -u
 DURATION="$1"
 PARALLEL="$2"
 BUILDS_PER_PROCESS="${BUILDS_PER_PROCESS:-}"
+REPRO_TESTS="${REPRO_TESTS:-}"
+# The list of commands (one test each) for `REPRO_TESTS`.
+TEST_COMMANDS=()
+for PAIR in $REPRO_TESTS; do
+  BINARY="/qlever/build/test/${PAIR%%:*}"
+  while read -r TEST; do
+    TEST_COMMANDS+=("$BINARY --gtest_filter=$TEST")
+  done < <("$BINARY" --gtest_list_tests --gtest_filter="${PAIR#*:}" |
+    awk '/^[^ ]/ {suite = $1} /^  / {print suite $1}')
+done
+if [ -n "$REPRO_TESTS" ]; then
+  echo "${#TEST_COMMANDS[@]} tests: ${TEST_COMMANDS[*]}" | cut -c 1-2000
+  BUILDS_PER_PROCESS=1
+fi
 export QLEVER_TEST_DIAGNOSTICS_DIR="$PWD/test-diagnostics"
 if [ -n "$BUILDS_PER_PROCESS" ]; then
   export QLEVER_REPRO_BUILDS="$BUILDS_PER_PROCESS"
@@ -31,7 +50,7 @@ echo "Kernel: $(uname -r), CPUs: $(nproc), parallel: $PARALLEL," \
   "MALLOC_CONF: ${MALLOC_CONF:-}"
 for ((P = 1; P <= PARALLEL; ++P)); do : > "logs/out-$P.txt"; done
 # Detect storms of page faults directly, and probe what ends them.
-/qlever/misc/fault-storm-watch.sh '^IndexBuildLoop' > >(sed -u 's/^/[storm] /') 2>&1 &
+/qlever/misc/fault-storm-watch.sh '^(IndexBuildLoop|TransitivePath|JoinTest)' > >(sed -u 's/^/[storm] /') 2>&1 &
 WATCH_PID=$!
 # Print the slow builds and corruptions as they happen.
 tail -q -n +1 -F logs/out-*.txt 2> /dev/null |
@@ -44,9 +63,20 @@ for ((P = 1; P <= PARALLEL; ++P)); do
     cd logs || exit 1
     NUM_PROCESSES=0
     while :; do
-      /qlever/misc/run-test-with-diagnostics.sh \
-        /qlever/build/test/IndexBuildLoopTest >> "out-$P.txt" 2>&1
-      STATUS=$?
+      if [ -n "$REPRO_TESTS" ]; then
+        # The tests in a different order in each instance.
+        COMMAND=${TEST_COMMANDS[$(((NUM_PROCESSES * 7 + P * 13) % ${#TEST_COMMANDS[@]}))]}
+        # shellcheck disable=SC2086
+        /qlever/misc/run-test-with-diagnostics.sh $COMMAND > "last-$P.txt" 2>&1
+        STATUS=$?
+        if [ "$STATUS" -ne 0 ] || grep -q 'STALL DIAGNOSTICS' "last-$P.txt"; then
+          cat "last-$P.txt" >> "out-$P.txt"
+        fi
+      else
+        /qlever/misc/run-test-with-diagnostics.sh \
+          /qlever/build/test/IndexBuildLoopTest >> "out-$P.txt" 2>&1
+        STATUS=$?
+      fi
       NUM_PROCESSES=$((NUM_PROCESSES + 1))
       if [ "$STATUS" -ne 0 ]; then
         echo "instance $P: process $NUM_PROCESSES exited with status $STATUS" >> "out-$P.txt"

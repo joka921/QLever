@@ -8,7 +8,9 @@
 # storms and a corruption. Round 12: does a host process that starts
 # processes as fast as possible (`spawn-loop.sh`, many ASID rollovers) make
 # even the long-running processes of round 6 fail? `asid-monitor.sh` logs the
-# ASID rollovers on the host.
+# ASID rollovers on the host. Round 14: instead of `IndexBuildLoopTest`, only
+# the stalling tests of `TransitivePathTest` and `JoinTest` (graph variables,
+# named graphs), each in its own process, 4 (or 1) at a time.
 name: arm64 stall reproducer (index build loop)
 
 on:
@@ -26,9 +28,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: longrun-spawn, parallel: 4, builds: "", spawn: 1, malloc_conf: "" }
-          - { name: fresh-1-spawn, parallel: 4, builds: 1, spawn: 1, malloc_conf: "" }
-          - { name: fresh-1-nospawn, parallel: 4, builds: 1, spawn: 0, malloc_conf: "" }
+          - { name: tests-graph, parallel: 4, builds: "", spawn: 0, malloc_conf: "", tests: "TransitivePathTest:*raph*EmptyPath* JoinTest:*joinTwoScansWithDifferentGraphs*" }
+          - { name: tests-graph-nopurge, parallel: 4, builds: "", spawn: 0, malloc_conf: "dirty_decay_ms:-1,muzzy_decay_ms:-1", tests: "TransitivePathTest:*raph*EmptyPath* JoinTest:*joinTwoScansWithDifferentGraphs*" }
+          - { name: tests-graph-p1, parallel: 1, builds: "", spawn: 0, malloc_conf: "", tests: "TransitivePathTest:*raph*EmptyPath* JoinTest:*joinTwoScansWithDifferentGraphs*" }
     name: ${{ matrix.name }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 180
@@ -80,6 +82,7 @@ jobs:
             --build-arg DURATION=3600 --build-arg PARALLEL=${{ matrix.parallel }} \
             --build-arg "MALLOC_CONF=${{ matrix.malloc_conf }}" \
             --build-arg "BUILDS_PER_PROCESS=${{ matrix.builds }}" \
+            --build-arg "REPRO_TESTS=${{ matrix.tests }}" \
             --build-arg CACHE_BUST=${{ github.run_id }} \
             -f ../repro/Dockerfile.loop .
       - name: Print the ASID rollovers

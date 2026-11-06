@@ -23,7 +23,8 @@ COPY repro/IndexBuildLoopTest.cpp /qlever/test/
 RUN echo 'addLinkAndDiscoverTest(IndexBuildLoopTest engine)' >> /qlever/test/CMakeLists.txt
 WORKDIR /qlever/build/
 RUN cmake -DCMAKE_BUILD_TYPE=Release -DLOGLEVEL=INFO -D_NO_TIMING_TESTS=ON -DCOMPILER_SUPPORTS_MARCH_NATIVE=FALSE -DCMAKE_EXE_LINKER_FLAGS="-fuse-ld=mold" -DCMAKE_SHARED_LINKER_FLAGS="-fuse-ld=mold" -DCMAKE_CXX_FLAGS="-Wno-psabi" -GNinja ..
-RUN cmake --build . -j 4 --target IndexBuildLoopTest
+ARG TARGETS="IndexBuildLoopTest TransitivePathTest JoinTest"
+RUN cmake --build . -j 4 --target $TARGETS
 
 FROM build AS loop
 COPY repro/run-test-with-diagnostics.sh repro/index-loop.sh repro/fault-storm-watch.sh /qlever/misc/
@@ -35,6 +36,10 @@ ARG MALLOC_CONF=
 # Start a new process for every `BUILDS_PER_PROCESS` index builds (empty: one
 # process per instance), see `index-loop.sh`.
 ARG BUILDS_PER_PROCESS=
+# If set, run the tests of these `<binary>:<gtest filter>` pairs (separated by
+# spaces) instead of `IndexBuildLoopTest`, each test in its own process, see
+# `index-loop.sh`.
+ARG REPRO_TESTS=
 ARG CACHE_BUST=0
 RUN MALLOC_CONF="$MALLOC_CONF" BUILDS_PER_PROCESS="$BUILDS_PER_PROCESS" \
-  /qlever/misc/index-loop.sh "$DURATION" "$PARALLEL"
+  REPRO_TESTS="$REPRO_TESTS" /qlever/misc/index-loop.sh "$DURATION" "$PARALLEL"
