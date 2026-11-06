@@ -1,3 +1,8 @@
+# Round 12: as round 7 (below), and with a host process that starts processes
+# as fast as possible (`spawn-loop.sh`, many ASID rollovers), with storms
+# detected by `fault-storm-watch.sh` and ASID rollovers logged by
+# `asid-monitor.sh` (both on the host).
+#
 # Round 7 of the reproducer, see `REPORT.md`: the synthetic workload of
 # `repro.c` with chunks that are returned to the kernel via `madvise` after
 # each use and reused by other threads. In contrast to round 5, the chunks are
@@ -8,7 +13,7 @@ name: arm64 stall reproducer (synthetic madvise)
 on:
   push:
     branches: [ arm64-stall-repro ]
-    paths: [ .github/workflows/synth.yml, repro.c, stress.sh, run-test-with-diagnostics.sh ]
+    paths: [ .github/workflows/synth.yml, repro.c, stress.sh, run-test-with-diagnostics.sh, spawn-loop.sh, asid-monitor.sh ]
   workflow_dispatch:
 
 jobs:
@@ -17,10 +22,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: dontneed-2m, mode: madvdontneed, kb: 2048, threads: 8, iterations: 1500 }
-          - { name: dontneed-4m, mode: madvdontneed, kb: 4096, threads: 8, iterations: 600 }
-          - { name: free-2m, mode: madvfree, kb: 2048, threads: 8, iterations: 20000 }
-          - { name: dontneed-2m-16threads, mode: madvdontneed, kb: 2048, threads: 16, iterations: 700 }
+          - { name: dontneed-2m-spawn, mode: madvdontneed, kb: 2048, threads: 8, iterations: 1500, spawn: 1, preload: "" }
+          - { name: mixed-jemalloc-spawn, mode: mixed, kb: 1024, threads: 4, iterations: 400, spawn: 1, preload: jemalloc }
+          - { name: mixed-glibc-spawn, mode: mixed, kb: 1024, threads: 4, iterations: 400, spawn: 1, preload: "" }
+          - { name: dontneed-2m-nospawn, mode: madvdontneed, kb: 2048, threads: 8, iterations: 1500, spawn: 0, preload: "" }
     name: ${{ matrix.name }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 150
@@ -31,13 +36,33 @@ jobs:
           uname -a
           lscpu | grep -E 'Model name|Stepping'
           grep -r . /sys/kernel/mm/transparent_hugepage/ 2> /dev/null | grep -E 'enabled|defrag' || true
+      - name: Start the ASID monitor, the storm watcher, and the spawner
+        run: |
+          sudo apt-get update -q > /dev/null
+          sudo apt-get install -y -q gdb libzstd-dev libjemalloc2 bpftrace > /dev/null
+          sudo nohup ./asid-monitor.sh 5 > "$RUNNER_TEMP/asid.txt" 2>&1 &
+          sudo nohup ./fault-storm-watch.sh '^repro$' > "$RUNNER_TEMP/storms.txt" 2>&1 &
+          if [ "${{ matrix.spawn }}" = 1 ]; then
+            nohup ./spawn-loop.sh 1 > /dev/null 2>&1 &
+          fi
+          sleep 15
+          cat "$RUNNER_TEMP/asid.txt"
       - name: Stress
         env:
-          QLEVER_TEST_STALL_SECONDS: 15
+          QLEVER_TEST_STALL_SECONDS: 30
           REPRO_CHUNK_KB: ${{ matrix.kb }}
         run: |
-          sudo apt-get update -q && sudo apt-get install -y -q gdb libzstd-dev > /dev/null
           gcc -O2 -g -o repro repro.c -lzstd -lpthread
           /usr/bin/time -v ./repro ${{ matrix.mode }} ${{ matrix.threads }} ${{ matrix.iterations }} 2>&1 | grep -E 'Elapsed|faults'
-          ./stress.sh 7800 ./repro ${{ matrix.mode }} ${{ matrix.threads }} ${{ matrix.iterations }}
+          if [ "${{ matrix.preload }}" = jemalloc ]; then
+            export MALLOC_CONF=dirty_decay_ms:0,muzzy_decay_ms:0
+            ./stress.sh 7800 env LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libjemalloc.so.2 ./repro ${{ matrix.mode }} ${{ matrix.threads }} ${{ matrix.iterations }}
+          else
+            ./stress.sh 7800 ./repro ${{ matrix.mode }} ${{ matrix.threads }} ${{ matrix.iterations }}
+          fi
           grep -E '^(pgfault|thp_fault_alloc|pgmigrate_success) ' /proc/vmstat
+      - name: Print the storms and ASID rollovers
+        if: always()
+        run: |
+          cat "$RUNNER_TEMP/storms.txt" || true
+          cat "$RUNNER_TEMP/asid.txt" || true

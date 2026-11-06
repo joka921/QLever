@@ -72,6 +72,11 @@ done
 NUM_SLOW=$(cat logs/out-*.txt | grep -c SLOW)
 NUM_CORRUPT=$(cat logs/out-*.txt | grep -c CORRUPTION)
 NUM_STALLS=$(cat logs/out-*.txt | grep -c 'STALL DIAGNOSTICS')
-echo "=== Summary: $NUM_SLOW slow builds, $NUM_STALLS stalls, $NUM_CORRUPT corruptions"
+# A failed check in `makeTestIndex` may also throw, then there is no
+# `CORRUPTION` line, but the process exits with a nonzero status.
+NUM_FAILED=$(cat logs/out-*.txt | grep -cE 'exited with status [1-9]')
+echo "=== Summary: $NUM_SLOW slow builds, $NUM_STALLS stalls, $NUM_CORRUPT corruptions," \
+  "$NUM_FAILED failed processes"
 grep -h -E 'Built|exited after' logs/out-*.txt
-[ "$NUM_SLOW" -eq 0 ] && [ "$NUM_CORRUPT" -eq 0 ] && [ "$NUM_STALLS" -eq 0 ]
+[ "$NUM_SLOW" -eq 0 ] && [ "$NUM_CORRUPT" -eq 0 ] && [ "$NUM_STALLS" -eq 0 ] &&
+  [ "$NUM_FAILED" -eq 0 ]
