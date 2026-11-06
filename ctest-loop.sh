@@ -4,7 +4,7 @@
 # stalled or failed on the arm64 runners) via `ctest` over and over, until the
 # given number of seconds has passed, until a test fails, or until
 # `MAX_STALLS` (default 10) tests have stalled (taken longer than
-# `QLEVER_TEST_STALL_SECONDS`, default 3, see `run-test-with-diagnostics.sh`,
+# `QLEVER_TEST_STALL_SECONDS`, default 20, so that `fault-storm-watch.sh` sees the stall first, see `run-test-with-diagnostics.sh`,
 # which must be the `CMAKE_TEST_LAUNCHER`). The diagnostics of each stall are
 # printed when it is found. Exit with 1 if any test failed or stalled. Must be
 # run in the build directory.
@@ -14,11 +14,16 @@
 set -u
 DURATION="$1"
 LABELS="${2:-^(TransitivePathTest|JoinTest|CompressedRelationsTest|GroupByTest|OptionalJoinTest)$}"
-export QLEVER_TEST_STALL_SECONDS="${QLEVER_TEST_STALL_SECONDS:-3}"
+export QLEVER_TEST_STALL_SECONDS="${QLEVER_TEST_STALL_SECONDS:-20}"
 MAX_STALLS="${MAX_STALLS:-30}"
 export QLEVER_TEST_DIAGNOSTICS_DIR="$PWD/test-diagnostics"
 rm -rf "$QLEVER_TEST_DIAGNOSTICS_DIR"
 mkdir -p "$QLEVER_TEST_DIAGNOSTICS_DIR"
+
+# Detect storms of page faults directly, and probe what ends them (the names
+# of the test binaries are truncated to 15 characters).
+"$(dirname "$0")/fault-storm-watch.sh" 'Test|TransitivePath|CompressedRelat|OptionalJoin' 2>&1 |
+  sed -u 's/^/[storm] /' &
 
 END=$((SECONDS + DURATION))
 ITERATION=0

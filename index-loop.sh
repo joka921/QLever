@@ -19,6 +19,8 @@ mkdir -p "$QLEVER_TEST_DIAGNOSTICS_DIR" logs
 echo "Kernel: $(uname -r), CPUs: $(nproc), parallel: $PARALLEL," \
   "duration: ${DURATION}s, MALLOC_CONF: ${MALLOC_CONF:-}"
 for ((P = 1; P <= PARALLEL; ++P)); do : > "logs/out-$P.txt"; done
+# Detect storms of page faults directly, and probe what ends them.
+/qlever/misc/fault-storm-watch.sh '^IndexBuildLoop' 2>&1 | sed -u 's/^/[storm] /' &
 # Print the slow builds and corruptions as they happen.
 tail -q -n +1 -F logs/out-*.txt 2> /dev/null |
   grep --line-buffered -E 'SLOW|CORRUPTION|Failure|Built|exited|Which is|IndexTestHelpers' |
@@ -33,6 +35,7 @@ done
 wait "${PIDS[@]}"
 sleep 2
 pkill -x tail
+pkill -f fault-storm-watc[h]
 for FILE in "$QLEVER_TEST_DIAGNOSTICS_DIR"/*; do
   [ -f "$FILE" ] && echo "=== Diagnostics in $FILE:" && cat "$FILE"
 done

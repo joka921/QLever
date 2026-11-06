@@ -78,7 +78,7 @@ jobs:
         if: startsWith(matrix.kind, 'qlever-')
         working-directory: qlever
         run: |
-          mkdir repro && cp ../repro/{run-test-with-diagnostics.sh,ctest-loop.sh} repro/
+          mkdir repro && cp ../repro/{run-test-with-diagnostics.sh,ctest-loop.sh,fault-storm-watch.sh} repro/
           echo '!repro/' >> .dockerignore
           case "${{ matrix.kind }}" in
             qlever-nopurge) ARGS="--build-arg MALLOC_CONF=dirty_decay_ms:-1,muzzy_decay_ms:-1" ;;

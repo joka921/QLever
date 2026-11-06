@@ -51,7 +51,7 @@ jobs:
       - name: Build IndexBuildLoopTest
         working-directory: qlever
         run: |
-          mkdir repro && cp ../repro/{run-test-with-diagnostics.sh,index-loop.sh,IndexBuildLoopTest.cpp} repro/
+          mkdir repro && cp ../repro/{run-test-with-diagnostics.sh,index-loop.sh,IndexBuildLoopTest.cpp,fault-storm-watch.sh} repro/
           echo '!repro/' >> .dockerignore
           docker buildx build --progress=plain --target build \
             --cache-from type=gha,scope=index-loop \
