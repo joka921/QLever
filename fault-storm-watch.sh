@@ -7,8 +7,10 @@
 # the state of the thread, and then find out what ends it: the stalls so far
 # always ended exactly when `run-test-with-diagnostics.sh` started to look at
 # the stalled process. So do one probe after the other (first nothing, then
-# reading more and more intrusive files of `/proc/<pid>`, then `SIGSTOP` and
-# `SIGCONT`) and measure the fault rate after each, until the storm ends.
+# reading more and more intrusive files of `/proc/<pid>`, then pinning the
+# thread to its CPU and moving it to another CPU, then `SIGSTOP` and `SIGCONT`)
+# and measure the fault rate after each, until the storm ends. (In round 9,
+# reading `/proc` didn't end a storm, but `SIGSTOP`/`SIGCONT` did.)
 #
 # Usage: fault-storm-watch.sh <process name regex>
 
@@ -55,9 +57,11 @@ probe() {
     "syscall $(cat "$TASK/syscall" 2> /dev/null)"
   sed 's/^/    /' "$TASK/stack" 2> /dev/null
   echo "vmstat: $(grep -E '^(pgfault|pgmajfault|pgmigrate_success|thp_fault_alloc|nr_tlb_remote_flush|nr_tlb_local_flush_all|nr_tlb_local_flush_one) ' /proc/vmstat | tr '\n' ' ')"
-  local STEP RATE
+  local STEP RATE NOW="${STAT##*) }"
+  local CPU OTHER_CPU
   for STEP in nothing nothing-again stat status maps smaps_rollup numa_maps \
-    cmdline environ mem-read sigstop-sigcont; do
+    cmdline environ mem-read affinity-same-cpu affinity-other-cpu \
+    sigstop-sigcont; do
     case "$STEP" in
       nothing*) ;;
       stat | status | maps | smaps_rollup | numa_maps | cmdline | environ)
@@ -69,18 +73,32 @@ probe() {
         START=$(grep -m 1 '\[stack\]' "/proc/$PID/maps" 2> /dev/null | cut -d - -f 1)
         [ -n "$START" ] && dd if="/proc/$PID/mem" bs=1 count=1 skip=$((16#$START)) \
           iflag=skip_bytes of=/dev/null 2> /dev/null ;;
+      # Restrict the thread to the CPU that it is running on (which changes
+      # nothing, as a control), and then move it to another CPU. If the
+      # storm ends then, it is caused by state of the first CPU (e.g. a stale
+      # TLB entry that a local invalidation doesn't remove).
+      affinity-same-cpu)
+        CPU=$(cut -d ' ' -f 37 <<< "$NOW")
+        OTHER_CPU=$(((CPU + 1) % $(nproc)))
+        taskset -p -c "$CPU" "$(basename "$TASK")" > /dev/null 2>&1 ;;
+      affinity-other-cpu)
+        taskset -p -c "$OTHER_CPU" "$(basename "$TASK")" > /dev/null 2>&1 ;;
       sigstop-sigcont)
         kill -STOP "$PID" 2> /dev/null
         sleep 0.1
         kill -CONT "$PID" 2> /dev/null ;;
     esac
     RATE=$(fault_rate "$TASK")
-    echo "    after $STEP: $RATE minor faults/s"
+    NOW=$(cat "$TASK/stat" 2> /dev/null)
+    NOW="${NOW##*) }"
+    echo "    after $STEP: $RATE minor faults/s, on CPU $(echo "$NOW" | cut -d ' ' -f 37)"
     if [ "$RATE" -lt "$((THRESHOLD / 10))" ]; then
       echo "=== STORM ENDED after $STEP"
+      taskset -p -c "0-$(($(nproc) - 1))" "$(basename "$TASK")" > /dev/null 2>&1
       return
     fi
   done
+  taskset -p -c "0-$(($(nproc) - 1))" "$(basename "$TASK")" > /dev/null 2>&1
   echo "=== STORM DID NOT END after all probes"
 }
 

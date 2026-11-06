@@ -16,8 +16,10 @@
 # - `synth-jemalloc`: the `mixed` workload with `jemalloc` (immediate purging).
 name: arm64 stall reproducer
 
-# Round 9: the QLever tests with default settings and `fault-storm-watch.sh`,
-# to find out what ends a storm of page faults (see `REPORT.md`).
+# Rounds 9 and 10: the QLever tests with default settings and
+# `fault-storm-watch.sh`, to find out what ends a storm of page faults (see
+# `REPORT.md`). Round 9: reading `/proc` doesn't, `SIGSTOP`/`SIGCONT` does.
+# Round 10: does moving the thread to another CPU end it?
 on:
   push:
     branches: [ arm64-stall-repro ]
@@ -30,8 +32,8 @@ jobs:
       fail-fast: false
       matrix:
         kind:
-          - qlever-watch-1
-          - qlever-watch-2
+          - qlever-cpu-1
+          - qlever-cpu-2
     name: ${{ matrix.kind }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 240
