@@ -1,0 +1,47 @@
+# Survey the kernels of the arm64 GitHub runner images and run the reproducer
+# `strip/ptreclaim.c` of the `PT_RECLAIM` flush-address bug (see `REPORT.md`
+# on the `arm64-stall-repro` branch) on each of them.
+name: arm64 kernels
+
+on:
+  push:
+    branches: [ arm64-kernels ]
+
+jobs:
+  kernel:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ ubuntu-22.04-arm, ubuntu-24.04-arm, ubuntu-26.04-arm ]
+        instance: [ 1, 2 ]
+    name: ${{ matrix.runner }}-${{ matrix.instance }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Kernel and image
+        run: |
+          uname -a
+          cat /etc/os-release | head -4
+          echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+          grep -E "PT_RECLAIM|MMU_GATHER_RCU" /boot/config-$(uname -r) || echo "no config"
+          nproc
+          docker version --format '{{.Server.Version}}' || true
+          # The kernel the container sees is the host kernel.
+          docker run --rm ubuntu:26.04 uname -r || true
+      - name: Reproducer
+        run: |
+          gcc -O2 -pthread -o ptreclaim strip/ptreclaim.c
+          run() {
+            local mode=$1 n=$2 stalls=0 bad=0
+            for i in $(seq "$n"); do
+              ./ptreclaim 200 "$mode" 2>err.txt; rc=$?
+              [ $rc -eq 4 ] && stalls=$((stalls + 1))
+              [ $rc -eq 3 ] && bad=$((bad + 1))
+              [ $rc -ne 0 ] && head -1 err.txt
+            done
+            echo "RESULT kernel=$(uname -r) mode=$mode processes=$n stalls=$stalls corruptions=$bad"
+          }
+          run 0 100
+          run 2 100
+          run 1 50
