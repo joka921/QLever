@@ -1,6 +1,6 @@
 # Spurious stalls and corruptions of the QLever tests on the arm64 runners
 
-Status: 2026-11-06, 05:10 UTC. Related: ad-freiburg/qlever PR #3892 (diagnostics
+Status: 2026-11-06, 06:15 UTC. Related: ad-freiburg/qlever PR #3892 (diagnostics
 launcher), this branch (`arm64-stall-repro` on `joka921/QLever`) for the
 reproducers.
 
@@ -16,7 +16,11 @@ corruption. It needs `jemalloc` returning memory to the kernel via
 188 iterations of the reproducer, vs. a corruption within 1 to 27 iterations
 in every job with the defaults). **Fastest reproducer so far:** build
 `TransitivePathTest` and `JoinTest`, run their 30 graph tests one process at a
-time (round 14): first failure after 4 minutes, a failure every ~100 s.
+time (rounds 14 and 16): first failure after 22 s to 4 minutes, a failure
+every ~60 to 100 s. **It needs idle CPUs:** the same tests with 4 instances
+in parallel (all CPUs busy) never failed (round 16, 188,477 processes), which
+explains why all synthetic stress tests (which ran `nproc` processes in
+parallel) found nothing.
 
 1. **The trigger is the runner kernel, not a QLever change.** All failures
    (POS corruption, Bus error, `unreachable` in `Datatype.h`) and all long
@@ -56,6 +60,10 @@ time (round 14): first failure after 4 minutes, a failure every ~100 s.
    never failed (round 6, 96,000 builds), with a fresh process per build
    they did (round 8). Transparent huge pages set to `never` (none are used,
    the default is `madvise`) also almost makes it disappear (rounds 3 and 4).
+   And **idle CPUs**: one test at a time fails every ~60 s, 4 tests in
+   parallel (all 4 CPUs busy) never (round 16). Busy CPUs mean frequent
+   context switches and migrations (which end storms, see 2.), and an idle
+   vCPU of a Hyper-V guest may handle TLB invalidations differently.
 6. **What doesn't trigger it:** swap (round 3), memory compaction / page
    migration (round 4, even 30 million forced migrations), `io_uring`
    (round 15), ASID rollovers (round 12: 226 per hour with a process spawner
@@ -84,7 +92,8 @@ time (round 14): first failure after 4 minutes, a failure every ~100 s.
 | `vm.compaction_proactiveness=0` on the host | **does not help** (round 4) |
 | **Disable THP on the host** (`echo never > /sys/kernel/mm/transparent_hugepage/enabled`, `.../defrag`, `.../khugepaged/defrag` = 0) before the Docker build | **promising**: 1 stall, 0 corruptions in 341 iterations (2 jobs); costs nothing for QLever's tests, since no THP were used anyway |
 | Build the arm64 test binaries without `jemalloc` (e.g. `apt-get remove libjemalloc-dev` before `cmake` in the Docker build, only for the tests) | **works** in round 5 (0 stalls in 202 iterations), but then the tests don't use the allocator of the release binaries |
-| **`MALLOC_CONF=dirty_decay_ms:-1,muzzy_decay_ms:-1` for the test step of the Docker build** (`jemalloc` never returns memory to the kernel; the tests are short-lived, so the memory cost is irrelevant) | **works** in round 5 (0 stalls in 188 iterations); **recommended**: one environment variable, keeps `jemalloc`, no host changes |
+| **`MALLOC_CONF=dirty_decay_ms:-1,muzzy_decay_ms:-1` for the test step of the Docker build** (`jemalloc` never returns memory to the kernel; the tests are short-lived, so the memory cost is irrelevant) | **works**: round 5 (0 stalls in 188 iterations of the five-test loop), round 16 (0 storms, 0 failures in 205,860 processes of the fastest reproducer); **recommended**: one environment variable, keeps `jemalloc`, no host changes |
+| Run the tests with `ctest -j <nproc>` (all CPUs busy) | in round 16, 4 parallel instances never failed (188,477 processes), but this hides the bug rather than avoiding it, and the full test suite may not be safe to run in parallel |
 | Run the arm64 tests outside the Docker build or on amd64 only | avoids the symptom only if the trigger is specific to the build; not tested |
 
 ### Suggested change for the Docker build (not applied yet)
@@ -113,8 +122,8 @@ no corruption in 341 iterations) but affects the whole runner.
 
 ## Next steps
 
-- Apply the `MALLOC_CONF` mitigation to the arm64 Docker build (round 16
-  re-checks it against the fastest reproducer).
+- Apply the `MALLOC_CONF` mitigation to the arm64 Docker build (confirmed
+  against the fastest reproducer in round 16).
 - Report upstream (Ubuntu `linux-azure` on Launchpad, and GitHub's
   `actions/runner-images`) with the evidence of appendix D, rounds 10 and 11,
   and the round-14 reproducer (two QLever test binaries, ~25 minutes
@@ -206,7 +215,8 @@ Workflow `.github/workflows/repro.yml`, all on `ubuntu-24.04-arm` with
 | 12 synthetic `*-spawn` (42147934730) | `repro.c` `mixed` (glibc / `jemalloc` with immediate purging) and `madvdontneed` with 2 MiB chunks, with and without the spawner | **nothing** in 3,800 to 6,000 processes each, no storms |
 | 15 `qlever-nouring-*` (42162005315)  | the five-test `ctest` loop, built with `-DUSE_IO_URING=OFF` (QLever reads vocabularies via `io_uring`, which no synthetic workload did) | `qlever-nouring-2`: 4 storms (3 ended only by moving the thread to another CPU) and **corruption in iteration 18**: `io_uring` is not the trigger |
 | 14 `tests-graph*` (42157071431)     | only the stalling tests (`TransitivePathTest` `*raph*EmptyPath*`, `JoinTest` `*joinTwoScansWithDifferentGraphs*`, 30 tests), each in its own process, 4 or 1 at a time | **`tests-graph-p1` reproduces everything**: in 1 h, 49,318 processes, 36 failed (POS pattern check 26+, QLever assertions 6, SIGBUS 1, SIGSEGV 1), first failure after 4 minutes, and ~290 storms, 267 of them ended by moving the thread to another CPU. The parallel jobs were invalid (the instances shared a directory and overwrote each other's index files) |
-| 16 `tests-graph-p4*`, `-p1*` (42165619238) | round 14 with a directory per instance; with no purging; with THP `never`; and p1 again | running |
+| 16 `tests-graph-*` (42165619238)    | round 14 with a directory per instance, 45 min each | **`tests-graph-p1` (default, 1 at a time): 43 failed of 33,273 processes, 215 storms ended by moving the thread, first failure after 22 s. `tests-graph-p4` (default, 4 in parallel, all CPUs busy): nothing in 188,477 processes. `tests-graph-p4-nopurge` (`MALLOC_CONF=dirty_decay_ms:-1,muzzy_decay_ms:-1`): nothing in 205,860 processes.** `tests-graph-p1-thpnever`: running |
+| 17 `serial-*` (42172669983)         | the synthetic workloads (`jemalloc` `mixed`/`pool`, `madvdontneed` 2 MiB, `ptzap`) **one process at a time**, so that CPUs are idle | running |
 | 13 `ptzap-*` (42148661716)          | `repro ptzap`: touchers pinned to their CPUs keep writing/reading words in 2 MiB chunks, a zapper on another CPU empties whole chunks via `MADV_DONTNEED` (frees page tables); stall and corruption detection built in | **nothing**: 130 processes × 60 s per job (pinned, unpinned, pinned + spawner), no stall, no corruption (the watcher's hundreds of "storms" are `ptzap`'s legitimate fault load: none ended by moving the thread to another CPU, except one ambiguous case) |
 | 12 `longrun-spawn`, `fresh-1-(no)spawn` (42147934519), synthetic `*-spawn` (42147934730) | a host process that starts `/bin/true` as fast as possible (many ASID rollovers) next to the long-running index loop (nothing in round 6) and next to the synthetic workloads; ASID generation logged on the host | running |
 | 9 `qlever-watch-*` (42138288151)    | the QLever tests (as round 3) with `fault-storm-watch.sh` | `qlever-watch-1`: **storm caught live** in iteration 2 (details below), then the corruption in exactly that test. `qlever-watch-2`: 5 storms (3.6 to 4.0 M faults/s) in 17 iterations, **all 5 unaffected by reading `/proc` and ended by `SIGSTOP`/`SIGCONT`**; corruption in iteration 17 in `CompressedRelationReader.getFirstAndLastTripleIgnoringGraph` (1.49 s, no storm detected, i.e. corruption also happens without a long storm) |
