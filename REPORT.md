@@ -363,3 +363,60 @@ process (round 6, thousands of builds in 1 h, also with 1 instance) never
 failed. So the bug needs the first builds of a process, i.e. a young address
 space (new page tables, `jemalloc` arenas that are still growing and
 purging), and idle CPUs.
+
+**Iteration 2** (run 42187072540, `StripLoopTest`, 15 min each, one process
+at a time):
+
+| Job | Processes | Failures | Storms |
+|---|---|---|---|
+| plain (another VM) | 5,289 | 11 | 131 |
+| `QLEVER_REPRO_THREADS=1` (index build with 1 thread) | 5,353 | 10 | 125 |
+| `QLEVER_REPRO_PARALLEL_PARSE=0` | 5,803 | 21 | 113 |
+| `MALLOC_CONF=dirty_decay_ms:-1,muzzy_decay_ms:-1` | 32,469 | **0** | **0** |
+| no patterns, only PSO/POS | 37,372 | **0** | **0** (to be replicated) |
+| gdb at each storm (2 VMs) | 5,681 / 3,610 | 7 / 5 | 61 / 3 (watcher died after 3 storms, fixed) |
+
+**Where the storming thread is** (gdb attached at detection time). The
+faulting instruction is retried after each fault, so the PC is the faulting
+access. Of the 60 storms:
+- 34 are SVE stores `st1b {z0.b}, p0, [x0]` in glibc's `__memmove_sve`;
+- 6 are SVE loads `ld1b` in the same function;
+- 7 are plain `ldr`/`str` in QLever's block sort;
+- the rest are elsewhere.
+
+So the bug is not specific to SVE. The callers are almost all the
+`CompressedExternalIdTable` sorters of the permutation writer:
+- 32 storms in `CompressedExternalIdTableBase::pushBlock`, which copies into
+  the sorter's current block, called from `finishConcurrentPushes` and
+  `PermutationWriter::finishRelation`;
+- 8 in `AsyncIdTablePusher::pushNextChunk`;
+- 7 in `blockSort::sortOnExecutor`/`sortInCallingThread`.
+
+`bpftrace` gives the same picture as round 11:
+- write faults (0x1255) or read faults (0x1254) at exactly the store address,
+  about 780,000 per 0.5 s;
+- the PTE is present and exclusive, and `handle_mm_fault` returns 0;
+- the address lies in a 6 GiB anonymous mapping.
+
+**Why these buffers:** the permutation writer's twin sorter is constructed
+with a memory limit of 4 GB (`CompressedRelationPermutationWriterImpl.h`,
+`twinRelationSorter_{..., 4_GB, ...}`). Its first block reserves
+`blocksizeForMemory(4 GB)` rows, i.e. gigabytes of virtual memory, of which a
+tiny index touches only the first pages. `strace` of one process confirms
+this:
+- 48 `madvise(MADV_DONTNEED)` of 512 MiB each and 24 of 320 MiB:
+  `jemalloc` purges huge extents immediately on `free`, then reuses their
+  addresses;
+- 152 thread stacks of 8 MiB, 128 of them unmapped again;
+- 16 `io_uring` rings.
+
+**Kernel suspect added:** `CONFIG_PT_RECLAIM` frees empty PTE page tables on
+`MADV_DONTNEED`. Qi Zheng's series "enable PT_RECLAIM on more 64-bit
+architectures" (v4, January 2026, rebased on 6.19-rc7) makes it depend on
+`MMU_GATHER_RCU_TABLE_FREE && !HAVE_ARCH_TLB_REMOVE_TABLE` instead of x86
+only, so it may be new on arm64 in 7.0. It would fit all observations: a
+CPU that keeps a stale page-walk-cache entry for a freed PTE table faults
+forever on a valid PTE, because the spurious-fault fixup only invalidates the
+last level locally. Another CPU walks the tables afresh. Writes through the
+stale table land on whatever page the freed table's memory now holds. Not
+confirmed yet: iteration 4 prints the runner's kernel config.
