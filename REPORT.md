@@ -1,6 +1,6 @@
 # Spurious stalls and corruptions of the QLever tests on the arm64 runners
 
-Status: 2026-11-06, 00:45 UTC. Related: ad-freiburg/qlever PR #3892 (diagnostics
+Status: 2026-11-06, 01:00 UTC. Related: ad-freiburg/qlever PR #3892 (diagnostics
 launcher), this branch (`arm64-stall-repro` on `joka921/QLever`) for the
 reproducers.
 
@@ -170,8 +170,10 @@ Workflow `.github/workflows/repro.yml`, all on `ubuntu-24.04-arm` with
 | 5 `qlever-nopurge`                  | `MALLOC_CONF=dirty_decay_ms:-1,muzzy_decay_ms:-1` (never returns memory) | **0 stalls in 188 iterations (90 min), no corruption** |
 | 5 `qlever-nojemalloc`               | built without `jemalloc`                                   | **0 stalls in 202 iterations (90 min), no corruption** |
 | 5 `synth-madvfree`/`-madvdontneed`/`-jemalloc` | `repro.c` with chunks returned via `madvise` and reused by other threads / with `jemalloc` | running |
-| 7 `dontneed-2m`/`-4m`/`free-2m`/`dontneed-2m-16threads` (42134538876) | `repro.c` `madv...` modes with 2 MiB aligned chunks of 2 or 4 MiB, so that `MADV_DONTNEED` empties whole page tables | running |
-| 6 `loop-*` (42127430005)            | `IndexBuildLoopTest`: only the build of the 3-triple NQuads test index in a loop, 4 or 1 instances, `jemalloc` default / immediate / no purging | running |
+| 7 `dontneed-2m`/`-4m`/`free-2m`/`dontneed-2m-16threads` (42134538876) | `repro.c` `madv...` modes with 2 MiB aligned chunks of 2 or 4 MiB, so that `MADV_DONTNEED` empties whole page tables | `free-2m`: only false positives (processes too long for the 15 s threshold, user time, ~1k faults); the others running |
+| 6 `loop-*` (42127430005)            | `IndexBuildLoopTest`: only the build of the 3-triple NQuads test index in a loop **in long-running processes**, 4 or 1 instances, `jemalloc` default / immediate / no purging | **nothing**: about 96,000 builds in 4 jobs × 1 h, 0 corruptions, no fault storms (a few ~1 s builds, simultaneously in all instances and also without purging, i.e. machine hiccups) |
+| 8 `fresh-*` (42138234910)           | as round 6, but **a new process for each build** (or every 10 builds), like `ctest` | running |
+| 9 `qlever-watch-*` (42138288151)    | the QLever tests (as round 3) with `fault-storm-watch.sh` | running |
 | 4 `synth-compact-mixed`/`-pool`     | `repro.c` + `vm.compact_memory` every second               | nothing in 110 minutes (cancelled) |
 
 Details of round 3:
