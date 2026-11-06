@@ -358,5 +358,8 @@ at a time, 45 min each, run 42179707513):
 | same, 10 builds per process | 1,045 | 46 | 206 (121) |
 | 30 graph tests (control) | 33,248 | 37 | 264 (207) |
 
-So 10 builds per process is no weaker than 1. This suggests that "many short-lived processes"
-(rounds 6 and 8 ran 4 loops in parallel) matters less than idle CPUs.
+So 10 builds per process is no weaker than 1, but a single long-running
+process (round 6, thousands of builds in 1 h, also with 1 instance) never
+failed. So the bug needs the first builds of a process, i.e. a young address
+space (new page tables, `jemalloc` arenas that are still growing and
+purging), and idle CPUs.
