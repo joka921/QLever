@@ -1,6 +1,6 @@
 # Spurious stalls and corruptions of the QLever tests on the arm64 runners
 
-Status: 2026-11-06, 00:20 UTC. Related: ad-freiburg/qlever PR #3892 (diagnostics
+Status: 2026-11-06, 00:40 UTC. Related: ad-freiburg/qlever PR #3892 (diagnostics
 launcher), this branch (`arm64-stall-repro` on `joka921/QLever`) for the
 reproducers.
 
@@ -57,11 +57,23 @@ reproducers.
    page tables after `madvise(MADV_DONTNEED)`, where a stale entry in the
    page-walk cache would explain both symptoms. Which of the three THP
    settings matters is still to be checked.
-9. **`jemalloc`'s purging (`madvise`) matters:** with immediate purging
-   (`MALLOC_CONF=dirty_decay_ms:0,muzzy_decay_ms:0`), corruption came in
-   iteration 3. Jobs with no purging and without `jemalloc` are still
-   running (no failure after 60+ minutes, which is already well above the
-   default time to failure).
+9. **`jemalloc` is needed:** QLever built without `jemalloc` (glibc
+   `malloc`) had 0 stalls in 202 iterations (90 min) and no corruption. With
+   immediate purging (`MALLOC_CONF=dirty_decay_ms:0,muzzy_decay_ms:0`),
+   corruption came in iteration 3. (`jemalloc` is not at fault: it only uses
+   legal system calls, mostly `madvise`; but its pattern of returning memory
+   and reusing it from other threads is what triggers the kernel bug.)
+10. **A stall doesn't end by itself.** The stalls of all failing tests ended
+   exactly when `run-test-with-diagnostics.sh` started its diagnostics: 3002
+   ms and 3045 ms with a threshold of 3 s, 10004 ms with 10 s (PR #3892 run
+   42101074942 attempt 4, `Datatype.h:115` unreachable in
+   `GroupByOptimizations...NamedGraphDuplicates`), and in CI without the
+   launcher, stalls lasted up to 9844 s. The corruption shows up right after
+   the stall ends. So something the launcher does from outside (reading
+   `/proc/<pid>/...`, `ps`, `SIGSTOP`) ends the fault loop, possibly by
+   completing the stuck write in the wrong place. `fault-storm-watch.sh`
+   now detects storms from the fault counters and probes which action ends
+   them.
 
 ## Mitigations
 
@@ -71,7 +83,8 @@ reproducers.
 | Wait for a fixed `linux-azure` kernel / runner image (the 6.17 image was fine) | not under our control; report upstream (Ubuntu `linux-azure` Launchpad, GitHub `runner-images`) once a small reproducer exists |
 | `vm.compaction_proactiveness=0` on the host | **does not help** (round 4) |
 | **Disable THP on the host** (`echo never > /sys/kernel/mm/transparent_hugepage/enabled`, `.../defrag`, `.../khugepaged/defrag` = 0) before the Docker build | **promising**: 1 stall, 0 corruptions in 341 iterations (2 jobs); costs nothing for QLever's tests, since no THP were used anyway |
-| Change `jemalloc`'s purging via `MALLOC_CONF` in the Docker build (e.g. `dirty_decay_ms:-1,muzzy_decay_ms:-1`, never return memory) | unclear, round 5 `qlever-nopurge` |
+| Build the arm64 test binaries without `jemalloc` (e.g. `apt-get remove libjemalloc-dev` before `cmake` in the Docker build, only for the tests) | **works** in round 5 (0 stalls in 202 iterations), but then the tests don't use the allocator of the release binaries |
+| Change `jemalloc`'s purging via `MALLOC_CONF` for the tests (e.g. `dirty_decay_ms:-1,muzzy_decay_ms:-1`, never return memory) | unclear, round 5 `qlever-nopurge` |
 | Run the arm64 tests outside the Docker build or on amd64 only | avoids the symptom only if the trigger is specific to the build; not tested |
 
 ## Next steps
@@ -153,7 +166,7 @@ Workflow `.github/workflows/repro.yml`, all on `ubuntu-24.04-arm` with
 | 4 `qlever-forcecompact`             | `vm.compact_memory` every second                           | 5 stalls in 9 iterations, **corruption in iteration 9** despite 30 million page migrations, i.e. about the default rate |
 | 5 `qlever-purge0` (42123152400)     | `MALLOC_CONF=dirty_decay_ms:0,muzzy_decay_ms:0` (`jemalloc` returns freed memory immediately) | 9 slow tests in 3 iterations (some only slowdowns by the `madvise` calls, e.g. `CompressedRelationWriter.MixedSizes`), **corruption in iteration 3** |
 | 5 `qlever-nopurge`                  | `MALLOC_CONF=dirty_decay_ms:-1,muzzy_decay_ms:-1` (never returns memory) | running |
-| 5 `qlever-nojemalloc`               | built without `jemalloc`                                   | running |
+| 5 `qlever-nojemalloc`               | built without `jemalloc`                                   | **0 stalls in 202 iterations (90 min), no corruption** |
 | 5 `synth-madvfree`/`-madvdontneed`/`-jemalloc` | `repro.c` with chunks returned via `madvise` and reused by other threads / with `jemalloc` | running |
 | 7 `dontneed-2m`/`-4m`/`free-2m`/`dontneed-2m-16threads` (42134538876) | `repro.c` `madv...` modes with 2 MiB aligned chunks of 2 or 4 MiB, so that `MADV_DONTNEED` empties whole page tables | running |
 | 6 `loop-*` (42127430005)            | `IndexBuildLoopTest`: only the build of the 3-triple NQuads test index in a loop, 4 or 1 instances, `jemalloc` default / immediate / no purging | running |
