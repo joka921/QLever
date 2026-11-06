@@ -15,9 +15,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # `env`: extra environment variables of the loop (`KEY=VALUE ...`),
+        # `gdb`: run the storm watcher as root with `bpftrace` and attach `gdb`
+        # to each storming thread.
         include:
-          - { name: commands-a, commands: strip/commands-a.txt, malloc_conf: "" }
-          - { name: commands-b, commands: strip/commands-b.txt, malloc_conf: "" }
+          - { name: b-plain, commands: strip/commands-b.txt, env: "" }
+          - { name: b-gdb-1, commands: strip/commands-b.txt, env: "", gdb: true }
+          - { name: b-gdb-2, commands: strip/commands-b.txt, env: "", gdb: true }
+          - { name: b-threads1, commands: strip/commands-b.txt, env: "QLEVER_REPRO_THREADS=1" }
+          - { name: b-nopatterns, commands: strip/commands-b.txt, env: "QLEVER_REPRO_PATTERNS=0 QLEVER_REPRO_ALL_PERMUTATIONS=0" }
+          - { name: b-serialparse, commands: strip/commands-b.txt, env: "QLEVER_REPRO_PARALLEL_PARSE=0" }
+          - { name: b-nopurge, commands: strip/commands-b.txt, env: "MALLOC_CONF=dirty_decay_ms:-1,muzzy_decay_ms:-1" }
     name: ${{ matrix.name }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 180
@@ -35,15 +43,14 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -q > /dev/null
-          sudo apt-get install -y -q build-essential libicu-dev pkg-config uuid-dev libjemalloc-dev ninja-build libzstd-dev libssl-dev mold liburing-dev libboost1.83-dev libboost-program-options1.83-dev libboost-iostreams1.83-dev libboost-url1.83-dev libboost-container1.83-dev ccache gdb > /dev/null
+          sudo apt-get install -y -q build-essential libicu-dev pkg-config uuid-dev libjemalloc-dev ninja-build libzstd-dev libssl-dev mold liburing-dev libboost1.83-dev libboost-program-options1.83-dev libboost-iostreams1.83-dev libboost-url1.83-dev libboost-container1.83-dev ccache gdb bpftrace > /dev/null
           cmake --version | head -n 1
       - name: Restore ccache
         uses: actions/cache/restore@v4
         with:
           path: .ccache
-          key: ccache-strip-${{ matrix.name }}-${{ github.sha }}
+          key: ccache-strip-${{ github.sha }}
           restore-keys: |
-            ccache-strip-${{ matrix.name }}-
             ccache-strip-
       - name: Build
         run: |
@@ -57,18 +64,24 @@ jobs:
           echo "Targets: $TARGETS"
           time cmake --build build -j 4 --target $TARGETS > build.log 2>&1 || { tail -n 100 build.log; exit 1; }
           ccache -s | head -n 20
+      # Only one job saves the cache (they all build the same).
       - name: Save ccache
-        if: always()
+        if: always() && matrix.name == 'b-plain'
         uses: actions/cache/save@v4
         with:
           path: .ccache
-          key: ccache-strip-${{ matrix.name }}-${{ github.sha }}
+          key: ccache-strip-${{ github.sha }}
       - name: Loop
         env:
-          MALLOC_CONF: ${{ matrix.malloc_conf }}
           WATCH_REGEX: "Test|TransitivePath"
+          DURATION: 900
         run: |
-          [ -n "$MALLOC_CONF" ] || unset MALLOC_CONF
+          for VAR in ${{ matrix.env }}; do export "$VAR"; done
+          if [ "${{ matrix.gdb }}" = true ]; then
+            export WATCH_SUDO=1 STORM_GDB=1
+            # Let `gdb` attach to the tests.
+            sudo sysctl -w kernel.yama.ptrace_scope=0
+          fi
           # The commands refer to `build/test/...` relative to the checkout. A
           # line `@<binary> <gtest filter>` stands for all matching tests of the
           # binary, one per line.
@@ -83,8 +96,9 @@ jobs:
               fi
             done > commands.txt
           wc -l commands.txt
-          strip/loop.sh 2400 1 commands.txt | tee loop.log
+          strip/loop.sh "$DURATION" 1 commands.txt | tee loop.log
           echo "=== Summary: $(grep -c '=== FAILURE' loop.log) failures," \
             "$(grep -c 'FAULT STORM' loop.log) storms," \
-            "$(grep -c 'ENDED after affinity-other-cpu' loop.log) ended by moving the thread"
+            "$(grep -c 'ENDED after affinity-other-cpu' loop.log) ended by moving the thread," \
+            "$(grep -c 'ENDED after gdb' loop.log) ended by gdb"
           grep -E '=== instance' loop.log

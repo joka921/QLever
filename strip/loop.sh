@@ -27,7 +27,8 @@ echo "Kernel: $(uname -r), CPUs: $(nproc), parallel: $PARALLEL," \
   "duration: ${DURATION}s, MALLOC_CONF: ${MALLOC_CONF:-}," \
   "${#COMMANDS[@]} commands, e.g. ${COMMANDS[0]}"
 
-"$DIR/fault-storm-watch.sh" "${WATCH_REGEX:-Test}" > >(sed -u 's/^/[storm] /') 2>&1 &
+# With `WATCH_SUDO`, run the watcher as root (for `bpftrace` and `gdb`).
+${WATCH_SUDO:+sudo -E} "$DIR/fault-storm-watch.sh" "${WATCH_REGEX:-Test}" > >(sed -u 's/^/[storm] /') 2>&1 &
 WATCH_PID=$!
 
 END=$((SECONDS + DURATION))
@@ -59,5 +60,5 @@ for ((P = 1; P <= PARALLEL; ++P)); do
   PIDS+=($!)
 done
 wait "${PIDS[@]}"
-kill "$WATCH_PID" 2> /dev/null
+${WATCH_SUDO:+sudo} kill "$WATCH_PID" 2> /dev/null
 sleep 1

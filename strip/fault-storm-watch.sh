@@ -96,6 +96,22 @@ trace_faults() {
   fi
 }
 
+# If `STORM_GDB` is set, attach `gdb` to the process and print the backtrace,
+# the current instruction, and the registers of the storming thread. The
+# faulting instruction is retried after each fault, so the PC is exactly the
+# access that faults. (Attaching stops the thread, which ends the storm.)
+gdb_probe() {
+  local PID="$1" TID="$2"
+  [ -n "${STORM_GDB:-}" ] || return 1
+  echo "--- gdb of thread $TID:"
+  timeout 60 gdb -p "$PID" -batch -nx -q \
+    -ex "python [t.switch() for t in gdb.selected_inferior().threads() if t.ptid[1] == $TID]" \
+    -ex "info thread" -ex "bt 20" -ex 'x/4i $pc' -ex "info registers" 2>&1 |
+    grep -vE '^\[New LWP|^\[Thread debugging|^Using host libthread|^warning: .*(debug|separate)' |
+    head -n 120 | sed 's/^/    /'
+  return 0
+}
+
 # Print the state of the thread and probe what ends its storm (see above).
 probe() {
   local PID="$1" TASK="$2"
@@ -114,6 +130,11 @@ probe() {
   echo "vmstat: $(grep -E '^(pgfault|pgmajfault|pgmigrate_success|thp_fault_alloc|nr_tlb_remote_flush|nr_tlb_local_flush_all|nr_tlb_local_flush_one) ' /proc/vmstat | tr '\n' ' ')"
   local STEP RATE NOW="${STAT##*) }"
   local CPU OTHER_CPU
+  if gdb_probe "$PID" "$(basename "$TASK")"; then
+    echo "    after gdb: $(fault_rate "$TASK") minor faults/s"
+    echo "=== STORM ENDED after gdb"
+    return
+  fi
   for STEP in nothing nothing-again stat status maps smaps_rollup numa_maps \
     cmdline environ mem-read affinity-same-cpu affinity-other-cpu \
     sigstop-sigcont; do

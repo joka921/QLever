@@ -19,7 +19,10 @@
 // `GroupByOptimizations.computeGroupByForSingleIndexScanWithNamedGraphDuplicates`),
 // `QLEVER_REPRO_SLOW_SECONDS` (report builds that take longer, default 1),
 // `QLEVER_REPRO_BUILDS` (the maximal number of builds, default 1, which
-// mimics a single unit test in a fresh process, like `ctest` runs them).
+// mimics a single unit test in a fresh process, like `ctest` runs them),
+// `QLEVER_REPRO_THREADS` (the number of threads of the index build, default
+// all), `QLEVER_REPRO_PATTERNS` and `QLEVER_REPRO_ALL_PERMUTATIONS` (0 or 1,
+// default 1), `QLEVER_REPRO_PARALLEL_PARSE` (0 or 1, default as in the tests).
 
 #include <gtest/gtest.h>
 #include <unistd.h>
@@ -65,6 +68,16 @@ TEST(StripLoop, namedGraphDuplicates) {
       TestIndexConfig config;
       config.indexType = qlever::Filetype::NQuad;
       config.turtleInput = input;
+      if (auto threads = getEnv("QLEVER_REPRO_THREADS", ""); !threads.empty()) {
+        config.numThreads = std::stoul(threads);
+      }
+      config.usePatterns = getEnv("QLEVER_REPRO_PATTERNS", "1") == "1";
+      config.loadAllPermutations =
+          getEnv("QLEVER_REPRO_ALL_PERMUTATIONS", "1") == "1";
+      if (auto parse = getEnv("QLEVER_REPRO_PARALLEL_PARSE", "");
+          !parse.empty()) {
+        config.parseInParallel = parse == "1";
+      }
       [[maybe_unused]] Index index = makeTestIndex(basename, config);
     }
     for (const std::string& filename : getAllIndexFilenames(basename)) {
