@@ -313,3 +313,36 @@ Next variants (planned, before round 4):
    CPU while another CPU writes to recycled pages (this is where local vs.
    broadcast TLBI matters), and `fork` (CoW, as in the "page reused in write
    fault" change).
+
+## Appendix E: Stripping QLever (branch `arm64-strip`)
+
+The branch `arm64-strip` of `joka921/QLever` starts from the pinned QLever
+commit (7f8b3be50), deletes all upstream workflows, and adds
+`.github/workflows/strip.yml`. That workflow builds natively on
+`ubuntu-24.04-arm`, without Docker, with `ccache` in the Actions cache, so
+small changes rebuild in minutes. It then runs the commands of
+`strip/commands-*.txt` with `strip/loop.sh`: a fresh process per command,
+one at a time, each via the diagnostics launcher (stall threshold 20 s), with
+`fault-storm-watch.sh` running. `test/StripLoopTest.cpp` builds the 2-quad
+NQuads index of the most-stalling test (`<a> <b> <c> <a> . <a> <b> <c> <c> .`)
+once per process via `makeTestIndex`. That function also checks the patterns
+of the permutations.
+
+**Iteration 1** (run 42180004143, 40 min each, one process at a time):
+
+| Job | Processes | Failures | Storms (ended by moving the thread) |
+|---|---|---|---|
+| 30 graph tests of `TransitivePathTest` + `JoinTest` (control) | 15,641 | 44 | 313 (262) |
+| `StripLoopTest` (only the index build, no queries) | 13,630 | 30 | 314 (279) |
+
+Natively, the index build alone stalls as often as the graph tests. The
+first storm came 10 s into the loop, and then about one storm every 7 s,
+in the main thread and in worker threads of the build. The failures are the
+same as in CI:
+- POS pattern mismatches (`patternIdx` 0 instead of `NoPattern`, with
+  garbage IDs like `G:POINT(179.98 -0.31)`);
+- the `unreachable` in `Datatype.h`;
+- `Assertion firstCol0Id == first[0] failed` in the permutation writer.
+
+The Docker-based loop of the same build (round 14) was much weaker. So
+Docker, overlayfs or the container's cgroup make storms rarer.
