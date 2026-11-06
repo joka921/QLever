@@ -1,6 +1,6 @@
 # Spurious stalls and corruptions of the QLever tests on the arm64 runners
 
-Status: 2026-11-06, 01:00 UTC. Related: ad-freiburg/qlever PR #3892 (diagnostics
+Status: 2026-11-06, 01:10 UTC. Related: ad-freiburg/qlever PR #3892 (diagnostics
 launcher), this branch (`arm64-stall-repro` on `joka921/QLever`) for the
 reproducers.
 
@@ -65,7 +65,7 @@ reproducers.
    corruption came in iteration 3. (`jemalloc` is not at fault: it only uses
    legal system calls, mostly `madvise`; but its pattern of returning memory
    and reusing it from other threads is what triggers the kernel bug.)
-10. **A stall doesn't end by itself.** The stalls of all failing tests ended
+10. **A stall doesn't end by itself, and `SIGSTOP`/`SIGCONT` ends it.** The stalls of all failing tests ended
    exactly when `run-test-with-diagnostics.sh` started its diagnostics: 3002
    ms and 3045 ms with a threshold of 3 s, 10004 ms with 10 s (PR #3892 run
    42101074942 attempt 4, `Datatype.h:115` unreachable in
@@ -73,9 +73,12 @@ reproducers.
    launcher, stalls lasted up to 9844 s. The corruption shows up right after
    the stall ends. So something the launcher does from outside (reading
    `/proc/<pid>/...`, `ps`, `SIGSTOP`) ends the fault loop, possibly by
-   completing the stuck write in the wrong place. `fault-storm-watch.sh`
-   now detects storms from the fault counters and probes which action ends
-   them.
+   completing the stuck write in the wrong place. Round 9 caught a storm
+   live: reading any `/proc/<pid>` file (even its memory) leaves the 4
+   million faults/s unchanged, `SIGSTOP` + `SIGCONT` ends it at once, and
+   the test then fails with the corruption. Round 10 checks whether merely
+   moving the thread to another CPU ends it (which would point to a stale
+   TLB entry local to one CPU).
 
 ## Mitigations
 
@@ -173,7 +176,8 @@ Workflow `.github/workflows/repro.yml`, all on `ubuntu-24.04-arm` with
 | 7 `dontneed-2m`/`-4m`/`free-2m`/`dontneed-2m-16threads` (42134538876) | `repro.c` `madv...` modes with 2 MiB aligned chunks of 2 or 4 MiB, so that `MADV_DONTNEED` empties whole page tables | `free-2m`: only false positives (processes too long for the 15 s threshold, user time, ~1k faults); the others running |
 | 6 `loop-*` (42127430005)            | `IndexBuildLoopTest`: only the build of the 3-triple NQuads test index in a loop **in long-running processes**, 4 or 1 instances, `jemalloc` default / immediate / no purging | **nothing**: about 96,000 builds in 4 jobs × 1 h, 0 corruptions, no fault storms (a few ~1 s builds, simultaneously in all instances and also without purging, i.e. machine hiccups) |
 | 8 `fresh-*` (42138234910)           | as round 6, but **a new process for each build** (or every 10 builds), like `ctest` | running |
-| 9 `qlever-watch-*` (42138288151)    | the QLever tests (as round 3) with `fault-storm-watch.sh` | running |
+| 9 `qlever-watch-*` (42138288151)    | the QLever tests (as round 3) with `fault-storm-watch.sh` | `qlever-watch-1`: **storm caught live** in iteration 2 (details below), then the corruption in exactly that test |
+| 10 `qlever-cpu-*` (42141114522)     | as round 9, with probes that pin the thread to its CPU and then move it to another CPU | running |
 | 4 `synth-compact-mixed`/`-pool`     | `repro.c` + `vm.compact_memory` every second               | nothing in 110 minutes (cancelled) |
 
 Details of round 3:
@@ -202,6 +206,19 @@ Details of round 3:
   synthetic ones is the QLever index-building code itself (many short-lived
   asio pool tasks that allocate, fill, compress, and free blocks, with
   `memmove` into freshly reused heap memory), not the machine state.
+
+Round 9 `qlever-watch-1`, the first storm caught live (`fault-storm-watch.sh`):
+`TransitivePathTest.unboundGraphVariableEmptyPath/TransitivePathHashMapLazy`,
+one thread in state R on CPU 1 with 10.5 million minor faults, 231 system vs.
+38 user ticks. Fault rate after each probe: nothing 3.96 M/s, again 3.96 M/s,
+reading `/proc/<pid>/stat`, `status`, `maps` 3.95 M/s, `smaps_rollup`,
+`numa_maps`, `cmdline`, `environ`, reading one byte of its memory via
+`/proc/<pid>/mem` 3.64 M/s, **`SIGSTOP` + `SIGCONT`: storm ended** (the test
+then finished). The test then failed with the POS corruption (5.93 s:
+`row V:2 S:81176270803333129 I:0 I:2147483647`, garbage in the subject
+column). So the stuck write is the corrupting one, and something about
+being descheduled (or the signal delivery) ends the loop; reading `/proc`
+(including `access_remote_vm`) doesn't.
 
 Round 4 `qlever-proactiveness0` corruption:
 `GroupByOptimizations.computeGroupByForSingleIndexScanWithNamedGraphDuplicates`
