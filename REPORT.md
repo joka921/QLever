@@ -358,5 +358,5 @@ at a time, 45 min each, run 42179707513):
 | same, 10 builds per process | 1,045 | 46 | 206 (121) |
 | 30 graph tests (control) | 33,248 | 37 | 264 (207) |
 
-So 10 builds per process is no weaker than 1. "Many short-lived processes"
-(round 6 vs. 8) was really about how busy the CPUs were.
+So 10 builds per process is no weaker than 1. This suggests that "many short-lived processes"
+(rounds 6 and 8 ran 4 loops in parallel) matters less than idle CPUs.
