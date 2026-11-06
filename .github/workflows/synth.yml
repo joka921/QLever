@@ -1,3 +1,8 @@
+# Round 17: the synthetic workloads one process at a time (`STRESS_PARALLEL=1`),
+# so that CPUs are idle: in round 16, the 30 graph tests failed every ~60 s
+# one at a time, but never with 4 instances in parallel (all CPUs busy), and
+# all synthetic workloads so far ran `nproc` processes in parallel.
+#
 # Round 13: `repro ptzap` (see `repro.c`), which targets a stale page-walk
 # cache after page tables are freed by `MADV_DONTNEED` (round 11 traced the
 # storms to a single address with a valid, present PTE). Each process runs
@@ -27,9 +32,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: ptzap-pinned, mode: ptzap, kb: 2048, threads: 3, iterations: 60, spawn: 0, preload: "", nopin: "" }
-          - { name: ptzap-unpinned, mode: ptzap, kb: 2048, threads: 3, iterations: 60, spawn: 0, preload: "", nopin: "1" }
-          - { name: ptzap-pinned-spawn, mode: ptzap, kb: 2048, threads: 3, iterations: 60, spawn: 1, preload: "" , nopin: "" }
+          - { name: serial-mixed-jemalloc, mode: mixed, kb: 1024, threads: 4, iterations: 400, spawn: 0, preload: jemalloc, nopin: "", parallel: 1, batch: 50 }
+          - { name: serial-pool-jemalloc, mode: pool, kb: 1024, threads: 8, iterations: 200, spawn: 0, preload: jemalloc, nopin: "", parallel: 1, batch: 50 }
+          - { name: serial-dontneed-2m, mode: madvdontneed, kb: 2048, threads: 4, iterations: 1500, spawn: 0, preload: "", nopin: "", parallel: 1, batch: 50 }
+          - { name: serial-ptzap-unpinned, mode: ptzap, kb: 2048, threads: 2, iterations: 20, spawn: 0, preload: "", nopin: "1", parallel: 1, batch: 1 }
     name: ${{ matrix.name }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 150
@@ -55,8 +61,8 @@ jobs:
         env:
           QLEVER_TEST_STALL_SECONDS: ${{ matrix.mode == 'ptzap' && 120 || 30 }}
           REPRO_CHUNK_KB: ${{ matrix.kb }}
-          STRESS_PARALLEL: ${{ matrix.mode == 'ptzap' && 1 || '' }}
-          STRESS_BATCH: ${{ matrix.mode == 'ptzap' && 1 || 200 }}
+          STRESS_PARALLEL: ${{ matrix.parallel }}
+          STRESS_BATCH: ${{ matrix.batch }}
           PTZAP_NO_PIN: ${{ matrix.nopin }}
         run: |
           gcc -O2 -g -o repro repro.c -lzstd -lpthread
@@ -65,9 +71,9 @@ jobs:
           /usr/bin/time -v ./repro ${{ matrix.mode }} ${{ matrix.threads }} 10 2>&1 | grep -E 'Elapsed|faults|STALL|CORRUPTION'
           if [ "${{ matrix.preload }}" = jemalloc ]; then
             export MALLOC_CONF=dirty_decay_ms:0,muzzy_decay_ms:0
-            ./stress.sh 7800 env LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libjemalloc.so.2 ./repro ${{ matrix.mode }} ${{ matrix.threads }} ${{ matrix.iterations }}
+            ./stress.sh 3000 env LD_PRELOAD=/usr/lib/aarch64-linux-gnu/libjemalloc.so.2 ./repro ${{ matrix.mode }} ${{ matrix.threads }} ${{ matrix.iterations }}
           else
-            ./stress.sh 7800 ./repro ${{ matrix.mode }} ${{ matrix.threads }} ${{ matrix.iterations }}
+            ./stress.sh 3000 ./repro ${{ matrix.mode }} ${{ matrix.threads }} ${{ matrix.iterations }}
           fi
           grep -E '^(pgfault|thp_fault_alloc|pgmigrate_success) ' /proc/vmstat
       - name: Print the storms and ASID rollovers
