@@ -19,11 +19,11 @@ jobs:
         # `gdb`: run the storm watcher as root with `bpftrace` and attach `gdb`
         # to each storming thread.
         include:
-          - { name: ptreclaim-mode0, commands: strip/commands-ptreclaim.txt, env: "" }
-          - { name: ptreclaim-mode2-1, commands: strip/commands-ptreclaim-mode2.txt, env: "" }
-          - { name: ptreclaim-mode2-2, commands: strip/commands-ptreclaim-mode2.txt, env: "" }
-          - { name: ptreclaim-mode3-1, commands: strip/commands-ptreclaim-mode3.txt, env: "" }
-          - { name: ptreclaim-mode3-2, commands: strip/commands-ptreclaim-mode3.txt, env: "" }
+          - { name: b-default-1, commands: strip/commands-b.txt, env: "" }
+          - { name: b-default-2, commands: strip/commands-b.txt, env: "" }
+          - { name: b-muzzy-oversize-1, commands: strip/commands-b.txt, env: "MALLOC_CONF=muzzy_decay_ms:-1,oversize_threshold:0" }
+          - { name: b-muzzy-oversize-2, commands: strip/commands-b.txt, env: "MALLOC_CONF=muzzy_decay_ms:-1,oversize_threshold:0" }
+          - { name: b-muzzy-only, commands: strip/commands-b.txt, env: "MALLOC_CONF=muzzy_decay_ms:-1" }
     name: ${{ matrix.name }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 180
