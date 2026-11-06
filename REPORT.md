@@ -52,9 +52,26 @@ github.com/torvalds/linux).
 | The runners' Ubuntu `7.0.0-1017-azure` | No. It still stalls with `ptreclaim.c`. |
 
 Ubuntu maintains its 7.0 kernels itself, so the fix reaches the runners only
-if Canonical backports it into `linux-azure`. It has not reached
-`7.0.0-1017-azure`. I haven't checked whether a newer Ubuntu `linux-azure`
-build already has it.
+through Canonical's `linux-azure` packages. Canonical already backported it
+(changelogs.ubuntu.com):
+- Ubuntu 26.04's `linux-azure` has it since `7.0.0-1018.18`, as part of
+  "upstream stable patchset 2026-09-01" (LP: #2166029).
+- Ubuntu 24.04's HWE kernel `linux-azure-7.0` has it in
+  `7.0.0-1020.21~24.04.1`. As of 2026-11-06 that build is only in
+  `noble-proposed` (published there 2026-10-30), not yet in `noble-updates`.
+
+**Kernel survey of the arm64 runner images** (2026-11-06, run 42246170722
+on branch `arm64-kernels`, 2 VMs per image, `ptreclaim.c`):
+
+| Runner label | Image | Kernel | Mode 0 (stalls) | Mode 2 | Control |
+|---|---|---|---|---|---|
+| `ubuntu-22.04-arm` | 20261101.179.1 | `6.8.0-1070-azure` (no `PT_RECLAIM`) | 0/600 | 0/600 | 0/200 |
+| `ubuntu-24.04-arm` | 20261101.172.1 | `7.0.0-1017-azure` | **285/600** | **299/600** | 0/200 |
+| `ubuntu-26.04-arm` | 20261101.174.1 | `7.0.0-1019-azure` (`PT_RECLAIM=y`, fixed) | 0/600 | 0/600 | 0/200 |
+
+So switching the arm64 Docker job from `ubuntu-24.04-arm` to
+`ubuntu-26.04-arm` (or `ubuntu-22.04-arm`) avoids the bug today. The base
+image inside the `Dockerfile` doesn't matter: containers use the host kernel.
 
 **Self-contained reproducer** (`ptreclaim.c` on this branch and in
 `strip/` on `arm64-strip`, about 200 lines of C, no QLever, no `jemalloc`,
@@ -149,7 +166,8 @@ The findings below came first and are all consistent with this root cause.
 
 | Mitigation | Status |
 |---|---|
-| **A kernel with the upstream fix `478a1c3abebf`** (or without `CONFIG_PT_RECLAIM`) | the real fix; not under our control, needs a new runner image; `ptreclaim.c` checks a kernel in seconds |
+| **A kernel with the upstream fix `478a1c3abebf`** (or without `CONFIG_PT_RECLAIM`) | the real fix; `ptreclaim.c` checks a kernel in seconds |
+| **Run the arm64 Docker job on `ubuntu-26.04-arm`** (kernel `7.0.0-1019-azure`, has the fix) or `ubuntu-22.04-arm` (`6.8.0-1070-azure`) | **works**: 0 stalls in 2,800 `ptreclaim.c` processes on 4 VMs, vs. 584/1,200 on `ubuntu-24.04-arm` (kernel survey above); a one-line change of `runs-on` |
 | `MALLOC_CONF=dirty_decay_ms:-1` alone | **works**: 0 storms in 27,689 processes of `StripLoopTest` (appendix E, iteration 3) |
 | Rerun failed arm64 jobs; classify via the launcher of #3892 (minor faults/s, system time) | works, but costs time and leaves a small chance of silently corrupt test results |
 | Wait for a fixed `linux-azure` kernel / runner image (the 6.17 image was fine) | not under our control; report upstream (Ubuntu `linux-azure` Launchpad, GitHub `runner-images`) once a small reproducer exists |
