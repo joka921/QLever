@@ -1,6 +1,6 @@
 # Spurious stalls and corruptions of the QLever tests on the arm64 runners
 
-Status: 2026-11-06, 02:15 UTC. Related: ad-freiburg/qlever PR #3892 (diagnostics
+Status: 2026-11-06, 02:30 UTC. Related: ad-freiburg/qlever PR #3892 (diagnostics
 launcher), this branch (`arm64-stall-repro` on `joka921/QLever`) for the
 reproducers.
 
@@ -83,6 +83,11 @@ reproducers.
    state local to that CPU (most likely a stale TLB entry) that the
    kernel's spurious-fault handling (a local TLB invalidation) doesn't
    remove. This is a kernel or hypervisor bug, not a bug of QLever.
+   **Round 11 traced two storms**: all faults at one address of the
+   `jemalloc` heap, read or write faults, with a present PTE, and
+   `handle_mm_fault` returning 0 each time (details in appendix D). A stale
+   page-walk cache entry after page tables were freed by `MADV_DONTNEED` is
+   the best candidate explanation.
 11. **Short-lived processes are needed** (round 8 vs. round 6): building the
    3-triple index over and over in long-running processes never stalled or
    corrupted (96,000 builds), the same with a fresh process per build did
@@ -188,7 +193,8 @@ Workflow `.github/workflows/repro.yml`, all on `ubuntu-24.04-arm` with
 | 7 `dontneed-2m`/`-4m`/`free-2m`/`dontneed-2m-16threads` (42134538876) | `repro.c` `madv...` modes with 2 MiB aligned chunks of 2 or 4 MiB, so that `MADV_DONTNEED` empties whole page tables | `free-2m`: only false positives (processes too long for the 15 s threshold, user time, ~1k faults); the others running |
 | 6 `loop-*` (42127430005)            | `IndexBuildLoopTest`: only the build of the 3-triple NQuads test index in a loop **in long-running processes**, 4 or 1 instances, `jemalloc` default / immediate / no purging | **nothing**: about 96,000 builds in 4 jobs × 1 h, 0 corruptions, no fault storms (a few ~1 s builds, simultaneously in all instances and also without purging, i.e. machine hiccups) |
 | 8 `fresh-*` (42138234910)           | as round 6, but **a new process for each build** (or every 10 builds), like `ctest` | **reproduces**: `fresh-10` 8 fault storms (0.7 to 2.5 M faults, stime ≈ 5 × utime) in 3,170 processes / 1 h; `fresh-1-purge0` **the POS corruption of the 3-triple index** (`row V:7 V:792637804536924896 I:0 I:2147483647`) in 1 of 24,841 processes. `fresh-1` (default) and `fresh-1-nopurge`: nothing in about 24,800 processes each. So the stripped QLever reproducer works, but only weakly; the five-test `ctest` loop is much faster (storm every ~2 min, corruption in 10 to 20 min) |
-| 11 `qlever-trace-*` (42144842511)   | as round 10, but the watcher runs as root on the host: kernel stack, `bpftrace` of `handle_mm_fault`, `pagemap` | attaching the `bpftrace` kprobes **ended the storm** before anything was traced (kprobe insertion briefly stops all CPUs); the kernel stack of a running thread is not available |
+| 11 `qlever-trace-*` (42144842511)   | as round 10, but the watcher runs as root on the host: kernel stack, `bpftrace` of `handle_mm_fault`, `pagemap` | in some storms, attaching the kprobes ended the storm; **two storms were traced** (see below): a single address faults ~1.5 million times per second with a present, valid PTE |
+| 13 `ptzap-*` (42148661716)          | `repro ptzap`: touchers pinned to their CPUs keep writing/reading words in 2 MiB chunks, a zapper on another CPU empties whole chunks via `MADV_DONTNEED` (frees page tables); stall and corruption detection built in | running |
 | 12 `longrun-spawn`, `fresh-1-(no)spawn` (42147934519), synthetic `*-spawn` (42147934730) | a host process that starts `/bin/true` as fast as possible (many ASID rollovers) next to the long-running index loop (nothing in round 6) and next to the synthetic workloads; ASID generation logged on the host | running |
 | 9 `qlever-watch-*` (42138288151)    | the QLever tests (as round 3) with `fault-storm-watch.sh` | `qlever-watch-1`: **storm caught live** in iteration 2 (details below), then the corruption in exactly that test. `qlever-watch-2`: 5 storms (3.6 to 4.0 M faults/s) in 17 iterations, **all 5 unaffected by reading `/proc` and ended by `SIGSTOP`/`SIGCONT`**; corruption in iteration 17 in `CompressedRelationReader.getFirstAndLastTripleIgnoringGraph` (1.49 s, no storm detected, i.e. corruption also happens without a long storm) |
 | 10 `qlever-cpu-*` (42141114522)     | as round 9, with probes that pin the thread to its CPU and then move it to another CPU | **every storm that lasted until the CPU probes (≈ 12 in 2 jobs) continued at 3.6 to 4.0 M faults/s when pinned to its CPU and ended immediately when moved to another CPU** (a few storms ended by themselves earlier); corruption in both jobs |
@@ -233,6 +239,35 @@ then finished). The test then failed with the POS corruption (5.93 s:
 column). So the stuck write is the corrupting one, and something about
 being descheduled (or the signal delivery) ends the loop; reading `/proc`
 (including `access_remote_vm`) doesn't.
+
+Round 11 `qlever-trace-1`, two storms traced with `bpftrace` (0.5 s each):
+
+| | storm 1 | storm 2 |
+|---|---|---|
+| test | `TransitivePathTest.graphVariableEmptyPathWithValueNotInIndex/...` | `JoinTestParametrized.joinTwoScansWithDifferentGraphs/1` |
+| calls of `handle_mm_fault` | 779,066, **all at one address** | 715,993, **all at one address** |
+| address | `0xff6543e17d81` (unaligned, a load) | `0xff23e9e1f300` |
+| fault flags | `0x1254` = `VMA_LOCK, INTERRUPTIBLE, USER, KILLABLE, ALLOW_RETRY` (a **read** fault) | `0x1255` = the same plus `WRITE` |
+| other calls | `handle_pte_fault` 735,732, `__ptep_set_access_flags` 533,874, `lock_vma_under_rcu` 471,774 | 681,215 / 507,667 / 455,699 |
+| return value of `handle_mm_fault` | 0 (450,173 times) | 0 (436,818 times) |
+| mapping | `ff6407e00000-ff6588000000 rw-p` (anonymous, the `jemalloc` heap) | `ff22ade00000-ff242e000000 rw-p` |
+| `pagemap` | present, exclusive, pfn 2425133 | present, exclusive, pfn 4369731 |
+
+So the kernel finds a present, valid PTE (the access flags are already set,
+so `__ptep_set_access_flags` changes nothing) and returns successfully, but
+the CPU faults again on the same access, about a million times per second,
+until the thread runs on another CPU. For a write fault, the generic code
+then does a local TLB invalidation of the last level only
+(`flush_tlb_fix_spurious_fault`), for a read fault nothing. A stale entry in
+the **page-walk cache** of that CPU (which caches the upper levels of the
+page table, e.g. a pointer to a PTE table that has been freed by
+`MADV_DONTNEED` and possibly reused) would be removed by neither, and would
+explain all observations: a valid PTE that the CPU doesn't see, faults on a
+single CPU only, the end when the thread moves to another CPU, the need for
+`jemalloc`'s purging (`MADV_DONTNEED` of whole ranges can free page tables),
+and corruption by data from unrelated memory (if the freed page-table page
+was reused, the walker interprets arbitrary data as PTEs). This is a
+hypothesis for the kernel developers; it is not proven.
 
 Round 4 `qlever-proactiveness0` corruption:
 `GroupByOptimizations.computeGroupByForSingleIndexScanWithNamedGraphDuplicates`
