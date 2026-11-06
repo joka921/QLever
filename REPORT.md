@@ -1,6 +1,6 @@
 # Spurious stalls and corruptions of the QLever tests on the arm64 runners
 
-Status: 2026-11-06, 03:40 UTC. Related: ad-freiburg/qlever PR #3892 (diagnostics
+Status: 2026-11-06, 04:30 UTC. Related: ad-freiburg/qlever PR #3892 (diagnostics
 launcher), this branch (`arm64-stall-repro` on `joka921/QLever`) for the
 reproducers.
 
@@ -221,6 +221,8 @@ Workflow `.github/workflows/repro.yml`, all on `ubuntu-24.04-arm` with
 | 8 `fresh-*` (42138234910)           | as round 6, but **a new process for each build** (or every 10 builds), like `ctest` | **reproduces**: `fresh-10` 8 fault storms (0.7 to 2.5 M faults, stime ≈ 5 × utime) in 3,170 processes / 1 h; `fresh-1-purge0` **the POS corruption of the 3-triple index** (`row V:7 V:792637804536924896 I:0 I:2147483647`) in 1 of 24,841 processes. `fresh-1` (default) and `fresh-1-nopurge`: nothing in about 24,800 processes each. So the stripped QLever reproducer works, but only weakly; the five-test `ctest` loop is much faster (storm every ~2 min, corruption in 10 to 20 min) |
 | 11 `qlever-trace-*` (42144842511)   | as round 10, but the watcher runs as root on the host: kernel stack, `bpftrace` of `handle_mm_fault`, `pagemap` | in some storms, attaching the kprobes ended the storm; **two storms were traced** (see below): a single address faults ~1.5 million times per second with a present, valid PTE |
 | 12 `fresh-1-spawn`                  | round 8 `fresh-1` plus the spawner: **226 ASID rollovers in 1 h** (16-bit ASIDs, generation 65536 → 14,876,672) | **nothing** in 22,015 processes: frequent ASID rollovers alone don't trigger the bug. Controls: `fresh-1-nospawn` (10 rollovers/h) nothing in about 24,800 processes; `longrun-spawn` (226 rollovers/h, long-running processes) nothing in 28,200 builds (only slow builds from the CPU contention) |
+| 12 synthetic `*-spawn` (42147934730) | `repro.c` `mixed` (glibc / `jemalloc` with immediate purging) and `madvdontneed` with 2 MiB chunks, with and without the spawner | **nothing** in 3,800 to 6,000 processes each, no storms |
+| 15 `qlever-nouring-*` (42162005315)  | the five-test `ctest` loop, built with `-DUSE_IO_URING=OFF` (QLever reads vocabularies via `io_uring`, which no synthetic workload did) | running |
 | 14 `tests-graph*` (42157071431)     | only the stalling tests (`TransitivePathTest` `*raph*EmptyPath*`, `JoinTest` `*joinTwoScansWithDifferentGraphs*`), each in its own process, 4 or 1 at a time, default or no purging | running |
 | 13 `ptzap-*` (42148661716)          | `repro ptzap`: touchers pinned to their CPUs keep writing/reading words in 2 MiB chunks, a zapper on another CPU empties whole chunks via `MADV_DONTNEED` (frees page tables); stall and corruption detection built in | running |
 | 12 `longrun-spawn`, `fresh-1-(no)spawn` (42147934519), synthetic `*-spawn` (42147934730) | a host process that starts `/bin/true` as fast as possible (many ASID rollovers) next to the long-running index loop (nothing in round 6) and next to the synthetic workloads; ASID generation logged on the host | running |
