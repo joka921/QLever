@@ -1,6 +1,6 @@
 # Spurious stalls and corruptions of the QLever tests on the arm64 runners
 
-Status: 2026-11-06, 00:40 UTC. Related: ad-freiburg/qlever PR #3892 (diagnostics
+Status: 2026-11-06, 00:45 UTC. Related: ad-freiburg/qlever PR #3892 (diagnostics
 launcher), this branch (`arm64-stall-repro` on `joka921/QLever`) for the
 reproducers.
 
@@ -57,8 +57,10 @@ reproducers.
    page tables after `madvise(MADV_DONTNEED)`, where a stale entry in the
    page-walk cache would explain both symptoms. Which of the three THP
    settings matters is still to be checked.
-9. **`jemalloc` is needed:** QLever built without `jemalloc` (glibc
-   `malloc`) had 0 stalls in 202 iterations (90 min) and no corruption. With
+9. **`jemalloc`'s purging (returning memory via `madvise`) is the trigger:**
+   with `MALLOC_CONF=dirty_decay_ms:-1,muzzy_decay_ms:-1` (never purge),
+   0 stalls in 188 iterations (90 min) and no corruption; QLever built
+   without `jemalloc` (glibc `malloc`): 0 stalls in 202 iterations. With
    immediate purging (`MALLOC_CONF=dirty_decay_ms:0,muzzy_decay_ms:0`),
    corruption came in iteration 3. (`jemalloc` is not at fault: it only uses
    legal system calls, mostly `madvise`; but its pattern of returning memory
@@ -84,7 +86,7 @@ reproducers.
 | `vm.compaction_proactiveness=0` on the host | **does not help** (round 4) |
 | **Disable THP on the host** (`echo never > /sys/kernel/mm/transparent_hugepage/enabled`, `.../defrag`, `.../khugepaged/defrag` = 0) before the Docker build | **promising**: 1 stall, 0 corruptions in 341 iterations (2 jobs); costs nothing for QLever's tests, since no THP were used anyway |
 | Build the arm64 test binaries without `jemalloc` (e.g. `apt-get remove libjemalloc-dev` before `cmake` in the Docker build, only for the tests) | **works** in round 5 (0 stalls in 202 iterations), but then the tests don't use the allocator of the release binaries |
-| Change `jemalloc`'s purging via `MALLOC_CONF` for the tests (e.g. `dirty_decay_ms:-1,muzzy_decay_ms:-1`, never return memory) | unclear, round 5 `qlever-nopurge` |
+| **`MALLOC_CONF=dirty_decay_ms:-1,muzzy_decay_ms:-1` for the test step of the Docker build** (`jemalloc` never returns memory to the kernel; the tests are short-lived, so the memory cost is irrelevant) | **works** in round 5 (0 stalls in 188 iterations); **recommended**: one environment variable, keeps `jemalloc`, no host changes |
 | Run the arm64 tests outside the Docker build or on amd64 only | avoids the symptom only if the trigger is specific to the build; not tested |
 
 ## Next steps
@@ -165,7 +167,7 @@ Workflow `.github/workflows/repro.yml`, all on `ubuntu-24.04-arm` with
 | 4 `qlever-thp-never`                | only THP and its defragmentation off                       | **1 stall in 172 iterations (90 min), no corruption** |
 | 4 `qlever-forcecompact`             | `vm.compact_memory` every second                           | 5 stalls in 9 iterations, **corruption in iteration 9** despite 30 million page migrations, i.e. about the default rate |
 | 5 `qlever-purge0` (42123152400)     | `MALLOC_CONF=dirty_decay_ms:0,muzzy_decay_ms:0` (`jemalloc` returns freed memory immediately) | 9 slow tests in 3 iterations (some only slowdowns by the `madvise` calls, e.g. `CompressedRelationWriter.MixedSizes`), **corruption in iteration 3** |
-| 5 `qlever-nopurge`                  | `MALLOC_CONF=dirty_decay_ms:-1,muzzy_decay_ms:-1` (never returns memory) | running |
+| 5 `qlever-nopurge`                  | `MALLOC_CONF=dirty_decay_ms:-1,muzzy_decay_ms:-1` (never returns memory) | **0 stalls in 188 iterations (90 min), no corruption** |
 | 5 `qlever-nojemalloc`               | built without `jemalloc`                                   | **0 stalls in 202 iterations (90 min), no corruption** |
 | 5 `synth-madvfree`/`-madvdontneed`/`-jemalloc` | `repro.c` with chunks returned via `madvise` and reused by other threads / with `jemalloc` | running |
 | 7 `dontneed-2m`/`-4m`/`free-2m`/`dontneed-2m-16threads` (42134538876) | `repro.c` `madv...` modes with 2 MiB aligned chunks of 2 or 4 MiB, so that `MADV_DONTNEED` empties whole page tables | running |
