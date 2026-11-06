@@ -1,26 +1,58 @@
 # Spurious stalls and corruptions of the QLever tests on the arm64 runners
 
-Status: 2026-11-06, 07:30 UTC. Related: ad-freiburg/qlever PR #3892 (diagnostics
-launcher), this branch (`arm64-stall-repro` on `joka921/QLever`) for the
-reproducers.
+Status: 2026-11-06, 10:00 UTC. Related: ad-freiburg/qlever PR #3892
+(diagnostics launcher and mitigation), this branch (`arm64-stall-repro` on
+`joka921/QLever`) for the report and the reproducers, and the branch
+`arm64-strip` for the stripping runs (appendix E).
 
 ## Summary
 
-**TL;DR:** The stalls and corruptions are caused by the kernel of the arm64
-runners (`7.0.0-1017-azure`, a Hyper-V guest), not by QLever. One CPU keeps
-taking the same page fault on a valid page-table entry (about 4 million
-times per second); the stuck write is the one that later shows up as
-corruption. It needs `jemalloc` returning memory to the kernel via
-`madvise`, and many short-lived processes. **Mitigation:** run the tests with
-`MALLOC_CONF=dirty_decay_ms:-1,muzzy_decay_ms:-1`: **0 failures in 158,859
-test processes on 3 VMs, vs. 61 failures in 44,049 processes on 2 VMs with the
-defaults** (round 18). Applied to the Docker build in PR #3892 (da5807221). **Fastest reproducer so far:** build
-`TransitivePathTest` and `JoinTest`, run their 30 graph tests one process at a
-time (rounds 14 and 16): first failure after 22 s to 4 minutes, a failure
-every ~60 to 100 s. **It needs idle CPUs:** the same tests with 4 instances
-in parallel (all CPUs busy) never failed (round 16, 188,477 processes), which
-explains why all synthetic stress tests (which ran `nproc` processes in
-parallel) found nothing.
+**TL;DR: root cause found, it's a kernel bug that upstream already fixed.**
+The arm64 runners' kernel (`7.0.0-1017-azure`) has `CONFIG_PT_RECLAIM=y`,
+which frees empty PTE page tables on `madvise(MADV_DONTNEED)`. In
+`zap_pte_range`, that code calls `pte_free_tlb(tlb, ..., addr)` with
+`addr == end`, so the TLB flush for the freed table covers the first page
+of the next 2 MiB block instead of the block itself. On arm64, `TLBI` by VA
+only invalidates the walk-cache entries for that VA. So a CPU that cached
+the PMD entry of the block keeps walking the freed, maybe reused, PTE page.
+
+The symptoms follow from that:
+- a fault storm: the kernel sees a valid PTE in the new table, and the
+  spurious-fault path only invalidates the last level locally;
+- moving the thread to another CPU ends the storm;
+- accesses through a reused page hit the wrong physical page, which is the
+  corruption.
+
+Upstream fix: commit `478a1c3abebf` "mm: fix incorrect flush address in
+direct page table reclaim" (Andy Lutomirski, 2026-08-05, `Cc: stable`,
+`Fixes: 4c640eb4181c`). It passes `start` instead of `addr`. It isn't in the
+runners' kernel yet. `PT_RECLAIM` was x86-only before Qi Zheng's series
+enabled it on more architectures in 7.0, so 6.17 was fine.
+
+**Self-contained reproducer** (`ptreclaim.c` on this branch and in
+`strip/` on `arm64-strip`, about 200 lines of C, no QLever, no `jemalloc`,
+under 1 s per process):
+1. a thread pinned to CPU 1 touches a page of a 2 MiB block;
+2. the main thread `MADV_DONTNEED`s that page (the table is now empty);
+3. then the whole block (`PT_RECLAIM` frees the table, with the wrong
+   flush address);
+4. then it populates other blocks;
+5. then the pinned thread touches the block again.
+
+On the runners, **1,252 of 1,253 processes stalled** (3 VMs, 2 to 3.5
+million minor faults/s). The control without step 2 (the zapped table still
+had a present PTE, so the flush covers the block) had **0 of 3,303**. On x86
+it runs cleanly.
+
+**Mitigation in QLever's CI** (unchanged, PR #3892):
+`MALLOC_CONF=dirty_decay_ms:-1,muzzy_decay_ms:-1` for the tests, 0 failures
+in 158,859 processes (round 18). `dirty_decay_ms:-1` alone also suffices (0
+storms in 27,689 processes of the stripped reproducer). `jemalloc` then
+never purges dirty pages in small pieces, so no PTE table becomes empty
+before a big purge frees it. Long-term: the runners need a kernel with the
+upstream fix.
+
+The findings below came first and are all consistent with this root cause.
 
 1. **The trigger is the runner kernel, not a QLever change.** All failures
    (POS corruption, Bus error, `unreachable` in `Datatype.h`) and all long
@@ -90,6 +122,8 @@ parallel) found nothing.
 
 | Mitigation | Status |
 |---|---|
+| **A kernel with the upstream fix `478a1c3abebf`** (or without `CONFIG_PT_RECLAIM`) | the real fix; not under our control, needs a new runner image; `ptreclaim.c` checks a kernel in seconds |
+| `MALLOC_CONF=dirty_decay_ms:-1` alone | **works**: 0 storms in 27,689 processes of `StripLoopTest` (appendix E, iteration 3) |
 | Rerun failed arm64 jobs; classify via the launcher of #3892 (minor faults/s, system time) | works, but costs time and leaves a small chance of silently corrupt test results |
 | Wait for a fixed `linux-azure` kernel / runner image (the 6.17 image was fine) | not under our control; report upstream (Ubuntu `linux-azure` Launchpad, GitHub `runner-images`) once a small reproducer exists |
 | `vm.compaction_proactiveness=0` on the host | **does not help** (round 4) |
@@ -123,16 +157,15 @@ the host, which looked like an alternative, does not help, see round 16.)
 ## Next steps
 
 - ~~Apply the `MALLOC_CONF` mitigation~~ (done in PR #3892).
-- Strip QLever down to a minimal program that still stalls reliably (from
-  2026-11-06 on, over the weekend).
-- Report upstream (Ubuntu `linux-azure` on Launchpad, and GitHub's
-  `actions/runner-images`) with the evidence of appendix D, rounds 10 and 11,
-  and the round-14 reproducer (two QLever test binaries, ~25 minutes
-  including the build). A self-contained C reproducer would be better, but
-  none of the synthetic workloads triggered the bug yet.
-- To get there: record the system calls of a failing test (`strace -f -e
-  trace=memory` for `madvise`/`mmap`/`munmap`/`mprotect`) and replay that
-  pattern synthetically.
+- ~~Strip QLever down to a minimal program~~ (done: `ptreclaim.c`, see
+  appendix E).
+- Report to GitHub `actions/runner-images` and Ubuntu `linux-azure`
+  (Launchpad): the arm64 runner kernel `7.0.0-1017-azure` lacks the
+  upstream fix `478a1c3abebf` (`Cc: stable`). Attach `ptreclaim.c` and the
+  numbers of iteration 5.
+- Once the runners have a fixed kernel, the `MALLOC_CONF` setting in the
+  `Dockerfile` can be removed again; `ptreclaim.c` tells whether a kernel
+  is fixed.
 
 ---
 
@@ -420,3 +453,75 @@ forever on a valid PTE, because the spurious-fault fixup only invalidates the
 last level locally. Another CPU walks the tables afresh. Writes through the
 stale table land on whatever page the freed table's memory now holds. Not
 confirmed yet: iteration 4 prints the runner's kernel config.
+
+**Iteration 3** (run 42188290459, `StripLoopTest`, 15 min each):
+
+| Job | Processes | Failures | Storms |
+|---|---|---|---|
+| `GLIBC_TUNABLES=glibc.pthread.stack_cache_size=4294967296` (thread stacks never unmapped) | 6,267 | 9 | 112 |
+| `GLIBC_TUNABLES=glibc.pthread.stack_cache_size=0` (all thread stacks unmapped) | 5,458 | 12 | 120 |
+| `MALLOC_CONF=dirty_decay_ms:-1` (muzzy default) | 27,689 | **0** | **0** |
+
+The churn of threads and stacks doesn't matter. Disabling dirty purging is
+enough.
+
+**Iteration 4** (runs 42191451855 and 42192107447):
+
+| Job | Processes | Failures | Storms |
+|---|---|---|---|
+| `SorterLoopTest`: only the 4 GB sorters, 12 per process (2 VMs) | 40,661 / 37,696 | 0 / 0 | 0 / 0 |
+| `StripLoopTest` without patterns, only PSO/POS (replicate) | 31,390 | 0 | 0 |
+| `churn.c`, 16 short-lived threads per round, `jemalloc` (thread churn only) | 4,955 | 0 | 0 |
+| `churn.c` with a 4 GiB block per thread, of which 64 KiB are used, `jemalloc` (2 VMs) | 43,199 / 41,697 | 0 / 0 | 0 / 0 |
+
+So neither the huge sorter blocks nor the thread churn are enough by
+themselves. The index build needs to empty a PTE table first (`jemalloc`'s
+decay-based purge of dirty pages) and free it later with a big purge.
+Without patterns the build is smaller (37k vs. 5k processes in 15 min) and
+apparently never creates that sequence. In `SorterLoopTest` and `churn.c`,
+the huge blocks still have present pages when they are purged, so the flush
+covers their tables.
+
+The runner kernel's config (printed by `strip.yml`) has
+`CONFIG_PT_RECLAIM=y`, `CONFIG_MMU_GATHER_RCU_TABLE_FREE=y`,
+`CONFIG_ARM64_HW_AFDBM=y`, `CONFIG_ARM64_TLB_RANGE=y`, `CONFIG_PER_VMA_LOCK=y`
+and `CONFIG_TRANSPARENT_HUGEPAGE=y`.
+
+**Iteration 5: the self-contained reproducer** (run 42194035193, 15 min each,
+`ptreclaim.c`, see the summary):
+
+| Job | Processes | Stalled (> 2 s on one access) | Corruptions |
+|---|---|---|---|
+| `ptreclaim 200` (VM 1) | 416 | 416 | 0 |
+| `ptreclaim 200` (VM 2) | 416 | 416 | 0 |
+| `ptreclaim 200` (VM 3) | 421 | 420 | 0 |
+| `ptreclaim 200 1`, control without step 2 (VM 4) | 1,674 | 0 | 0 |
+| `ptreclaim 200 1`, control without step 2 (VM 5) | 1,629 | 0 | 0 |
+
+Each stall ran at 2 to 3.5 million minor faults per second on the pinned
+thread. That is the same signature as the QLever storms, and the program
+exits after 2 s by itself. Also clean on x86 (local, 7.0.0-38-generic).
+
+**The kernel code** (v7.0, `mm/memory.c`, `zap_pte_range`): after the loop
+over the PTEs, `addr == end`, and
+
+```c
+if (can_reclaim_pt) {
+    if (direct_reclaim || zap_pte_table_if_empty(mm, pmd, start, &pmdval)) {
+        pte_free_tlb(tlb, pmd_pgtable(pmdval), addr);   // `addr` == `end`
+        mm_dec_nr_ptes(mm);
+    }
+}
+```
+
+`pte_free_tlb` adds `[addr, addr + PAGE_SIZE)` to the flush range and sets
+`freed_tables`. arm64's `tlb_flush` then does `__flush_tlb_range(start, end,
+..., last_level = false)`, i.e. `TLBI VAE1IS` for the addresses in the range,
+which invalidates only the walk-cache entries used to translate those
+addresses. When no present PTE of the freed table was zapped in the same
+flush, no address of its block is in the range. That is the case when the
+table was already empty (step 2), or when a forced flush reset the range.
+Mainline fixed this in `478a1c3abebf` (2026-08-05): it passes `start`
+instead. The commit message describes the same mechanism for x86 with
+`INVPCID` and on AMD, and suspects it behind
+[ripgrep issue #3494](https://github.com/BurntSushi/ripgrep/issues/3494).
