@@ -19,11 +19,11 @@ jobs:
         # `gdb`: run the storm watcher as root with `bpftrace` and attach `gdb`
         # to each storming thread.
         include:
-          - { name: ptreclaim-1, commands: strip/commands-ptreclaim.txt, env: "" }
-          - { name: ptreclaim-2, commands: strip/commands-ptreclaim.txt, env: "" }
-          - { name: ptreclaim-3, commands: strip/commands-ptreclaim.txt, env: "" }
-          - { name: ptreclaim-control-1, commands: strip/commands-ptreclaim-control.txt, env: "" }
-          - { name: ptreclaim-control-2, commands: strip/commands-ptreclaim-control.txt, env: "" }
+          - { name: ptreclaim-mode0, commands: strip/commands-ptreclaim.txt, env: "" }
+          - { name: ptreclaim-mode2-1, commands: strip/commands-ptreclaim-mode2.txt, env: "" }
+          - { name: ptreclaim-mode2-2, commands: strip/commands-ptreclaim-mode2.txt, env: "" }
+          - { name: ptreclaim-mode3-1, commands: strip/commands-ptreclaim-mode3.txt, env: "" }
+          - { name: ptreclaim-mode3-2, commands: strip/commands-ptreclaim-mode3.txt, env: "" }
     name: ${{ matrix.name }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 180
@@ -78,7 +78,7 @@ jobs:
       - name: Loop
         env:
           WATCH_REGEX: "Test|TransitivePath|churn|ptreclaim"
-          DURATION: 900
+          DURATION: 600
         run: |
           for VAR in ${{ matrix.env }}; do export "$VAR"; done
           if [ "${{ matrix.gdb }}" = true ]; then
