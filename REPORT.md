@@ -1,10 +1,22 @@
 # Spurious stalls and corruptions of the QLever tests on the arm64 runners
 
-Status: 2026-11-06, 05:00 UTC. Related: ad-freiburg/qlever PR #3892 (diagnostics
+Status: 2026-11-06, 05:10 UTC. Related: ad-freiburg/qlever PR #3892 (diagnostics
 launcher), this branch (`arm64-stall-repro` on `joka921/QLever`) for the
 reproducers.
 
 ## Summary
+
+**TL;DR:** The stalls and corruptions are caused by the kernel of the arm64
+runners (`7.0.0-1017-azure`, a Hyper-V guest), not by QLever. One CPU keeps
+taking the same page fault on a valid page-table entry (about 4 million
+times per second); the stuck write is the one that later shows up as
+corruption. It needs `jemalloc` returning memory to the kernel via
+`madvise`, and many short-lived processes. **Mitigation:** run the tests with
+`MALLOC_CONF=dirty_decay_ms:-1,muzzy_decay_ms:-1` (0 stalls, 0 corruptions in
+188 iterations of the reproducer, vs. a corruption within 1 to 27 iterations
+in every job with the defaults). **Fastest reproducer so far:** build
+`TransitivePathTest` and `JoinTest`, run their 30 graph tests one process at a
+time (round 14): first failure after 4 minutes, a failure every ~100 s.
 
 1. **The trigger is the runner kernel, not a QLever change.** All failures
    (POS corruption, Bus error, `unreachable` in `Datatype.h`) and all long
@@ -12,92 +24,56 @@ reproducers.
    `6.17.0-1022-azure`, 0 of 148 master builds had any test taking more than
    10 s; on `7.0.0-1017-azure`, 17 of 48 did. For the same code (master
    2026-10-19 to 10-28): 0/56 vs. 6/16, Fisher p ≈ 3e-12.
-2. **A stall is a storm of spurious page faults.** One thread runs a plain
-   `memmove` (`__memmove_sve`) or `ZSTD_compress` and takes about 4 million
-   minor page faults per second. 85 % of its CPU time is system time, its RSS
-   doesn't change, and the stall ends as soon as gdb attaches. The kernel
-   apparently "handles" the same fault over and over without making progress,
-   which on arm64 means a stale TLB entry that the spurious-fault fixup
-   doesn't remove.
-3. **Stalls and corruptions have the same cause.** Both happen in the same
-   tests, in the same code path (feeding the POS permutation via the external
-   sorter and `CompressedRelationWriter`), in the same jobs, and one of the
-   corruptions below occurred during a stall of the same test. The corrupt
-   values are leftover heap bytes or zeros in exactly one column, i.e. writes
-   that went to the wrong physical page (stale TLB entry), not a logic error.
-4. **Undefined behavior in QLever is very unlikely.** A `memmove` with bad
-   arguments crashes or copies garbage, but it can't produce millions of page
-   faults on a flat RSS; unrelated code (`ZSTD_compress`) stalls the same way;
-   the copies are small; and the same code never stalls on 6.17.
-5. **Prime suspect:** Huang Ying, "arm64, tlbflush: don't TLBI broadcast if
-   page reused in write fault" (arm64 tree November 2025, so in 7.0, not in
-   6.17). It replaces broadcast TLB invalidations by local ones plus a fixup
-   in the spurious-fault path, which is exactly the path that loops, possibly
-   in combination with Hyper-V (the runners are Hyper-V guests). Second
-   candidate: the TLBI level-hint commit `752a0d1d483e9` (known to cause
-   spurious-fault loops, fixed March 2026, but for huge pages, which aren't
-   used here). Neither is confirmed.
-6. **Reproducer:** building only five QLever test binaries (about 20 minutes)
-   and looping them via `ctest` reproduces both the stalls (about one per two
-   minutes) and the **corruption (after 0.5 to 12 minutes of testing)**.
-   Purely synthetic workloads with glibc `malloc` (about 274,000 processes of
-   `memmove`/`zstd` stress, thread pools, memory pressure) reproduced nothing.
-7. **What the trigger is not:** swap (round 3, no swap, still corrupt) and
-   memory compaction / page migration (round 4: with
-   `vm.compaction_proactiveness=0` and only 1k page migrations, stall plus
-   corruption in the first iteration; with forced compaction and 30 million
-   migrations, about the default rate).
-8. **Transparent huge pages (THP) matter, although none are used.** With
-   THP set to `never` (instead of the runners' default `madvise`) and its
-   defragmentation off, two jobs had 1 stall in 341 iterations (3 hours) and
-   no corruption, whereas with the default settings, every job had a stall
-   about every 4 iterations and a corruption after 1 to 27 iterations.
-   `thp_fault_alloc` and `thp_collapse_alloc` stay 0 in all jobs, so the
-   setting must change some other kernel path. A guess: the freeing of empty
-   page tables after `madvise(MADV_DONTNEED)`, where a stale entry in the
-   page-walk cache would explain both symptoms. Which of the three THP
-   settings matters is still to be checked.
-9. **`jemalloc`'s purging (returning memory via `madvise`) is the trigger:**
-   with `MALLOC_CONF=dirty_decay_ms:-1,muzzy_decay_ms:-1` (never purge),
-   0 stalls in 188 iterations (90 min) and no corruption; QLever built
-   without `jemalloc` (glibc `malloc`): 0 stalls in 202 iterations. With
-   immediate purging (`MALLOC_CONF=dirty_decay_ms:0,muzzy_decay_ms:0`),
-   corruption came in iteration 3. (`jemalloc` is not at fault: it only uses
-   legal system calls, mostly `madvise`; but its pattern of returning memory
-   and reusing it from other threads is what triggers the kernel bug.)
-10. **A stall doesn't end by itself, and `SIGSTOP`/`SIGCONT` ends it.** The stalls of all failing tests ended
-   exactly when `run-test-with-diagnostics.sh` started its diagnostics: 3002
-   ms and 3045 ms with a threshold of 3 s, 10004 ms with 10 s (PR #3892 run
-   42101074942 attempt 4, `Datatype.h:115` unreachable in
-   `GroupByOptimizations...NamedGraphDuplicates`), and in CI without the
-   launcher, stalls lasted up to 9844 s. The corruption shows up right after
-   the stall ends. So something the launcher does from outside (reading
-   `/proc/<pid>/...`, `ps`, `SIGSTOP`) ends the fault loop, possibly by
-   completing the stuck write in the wrong place. Round 9 caught a storm
-   live: reading any `/proc/<pid>` file (even its memory) leaves the 4
-   million faults/s unchanged, `SIGSTOP` + `SIGCONT` ends it at once, and
-   the test then fails with the corruption. **Round 10: merely moving the
-   thread to another CPU (via its affinity) ends every storm at once, while
-   pinning it to its current CPU doesn't.** So the page table is fine (the
-   other CPU uses it without faulting), but one CPU keeps faulting on it:
-   state local to that CPU (most likely a stale TLB entry) that the
-   kernel's spurious-fault handling (a local TLB invalidation) doesn't
-   remove. This is a kernel or hypervisor bug, not a bug of QLever.
-   **Round 11 traced two storms**: all faults at one address of the
-   `jemalloc` heap, read or write faults, with a present PTE, and
-   `handle_mm_fault` returning 0 each time (details in appendix D). A stale
-   page-walk cache entry after page tables were freed by `MADV_DONTNEED` is
-   the best candidate explanation.
-11. **Short-lived processes are needed** (round 8 vs. round 6): building the
-   3-triple index over and over in long-running processes never stalled or
-   corrupted (96,000 builds), the same with a fresh process per build did
-   both. Together with 10., a candidate mechanism is the ASID rollover of
-   arm64 (each new address space needs a new ASID; after a rollover, each
-   CPU flushes its TLB only at its next context switch): a CPU that keeps
-   running one thread without a context switch could keep entries that a
-   by-ASID invalidation doesn't hit. **Round 12 refutes this**: 226 ASID
-   rollovers per hour (with a process spawner) didn't make the stripped loop
-   fail.
+2. **A stall is a storm of spurious page faults on one CPU.** One thread
+   (in `__memmove_sve`, `ZSTD_compress`, or anything else that touches
+   memory) takes 3.6 to 4.0 million minor faults per second, almost all in
+   the kernel, with a flat RSS. `bpftrace` (round 11): all faults hit a
+   single address of the `jemalloc` heap, read or write faults under the
+   per-VMA lock, the PTE is present and valid, `handle_pte_fault` →
+   `__ptep_set_access_flags` changes nothing, `handle_mm_fault` returns 0,
+   and the CPU faults again. **Moving the thread to another CPU ends the
+   storm immediately, pinning it to its current CPU doesn't** (round 10,
+   every storm), and neither does reading anything in `/proc/<pid>` (round
+   9). `SIGSTOP`/`SIGCONT`, gdb attaching, and the CPU stop for inserting
+   kprobes also end it (by taking the thread off its CPU). Without
+   intervention, a storm lasts indefinitely (up to 9844 s in CI).
+3. **Stalls and corruptions have the same cause.** They happen in the same
+   tests and code paths (building the test indexes, mostly POS), and the
+   corruption shows up right after a storm ends: in rounds 3, 4, 9 and in
+   PR #3892, the failing test was the one whose storm had just been ended.
+   The corrupt values are zeros, leftover heap bytes, or data from
+   elsewhere in one column, i.e. writes that went to the wrong physical
+   page. Corruption also occurs without a long storm.
+4. **Undefined behavior in QLever is ruled out as the cause.** The PTE is
+   valid (so the access itself is legal), the loop is inside the kernel,
+   another CPU executes the same access without a fault, unrelated code
+   (`ZSTD_compress`) is affected the same way, and the same code is fine on
+   6.17 and on amd64.
+5. **What triggers it:** `jemalloc`'s purging (returning freed memory via
+   `madvise`): no purging, or no `jemalloc` at all, makes the bug disappear
+   (round 5); immediate purging makes it more frequent. And **many
+   short-lived processes**: the same index builds in long-running processes
+   never failed (round 6, 96,000 builds), with a fresh process per build
+   they did (round 8). Transparent huge pages set to `never` (none are used,
+   the default is `madvise`) also almost makes it disappear (rounds 3 and 4).
+6. **What doesn't trigger it:** swap (round 3), memory compaction / page
+   migration (round 4, even 30 million forced migrations), `io_uring`
+   (round 15), ASID rollovers (round 12: 226 per hour with a process spawner
+   changed nothing).
+7. **Synthetic reproducers failed so far:** `memmove`/`zstd`/thread pools
+   with glibc or `jemalloc` (with immediate purging), `MADV_FREE` /
+   `MADV_DONTNEED` of chunks reused by other threads (also 2 MiB aligned,
+   which frees page tables), pinned touchers vs. a zapper (`ptzap`), all
+   with and without a process spawner: nothing in about 300,000 processes.
+   QLever's index building does something these don't.
+8. **Suspects in the kernel** (not confirmed): the change "arm64,
+   tlbflush: don't TLBI broadcast if page reused in write fault" (Huang Ying,
+   arm64 tree November 2025, in 7.0 but not in 6.17), which replaces
+   broadcast TLB invalidations by local ones plus a fixup in the
+   spurious-fault path; or a stale page-walk cache entry after page tables
+   are freed (the local spurious-fault fixup only invalidates the last
+   level, and read faults get no invalidation at all), possibly specific to
+   Hyper-V.
 
 ## Mitigations
 
@@ -137,10 +113,16 @@ no corruption in 341 iterations) but affects the whole runner.
 
 ## Next steps
 
-- Narrow the reproducer to one test binary and one test filter, then to a
-  standalone program that mimics that test's memory access pattern (see
-  appendix D), to report the bug upstream (Ubuntu `linux-azure`, arm64
-  maintainers) with a reproducer.
+- Apply the `MALLOC_CONF` mitigation to the arm64 Docker build (round 16
+  re-checks it against the fastest reproducer).
+- Report upstream (Ubuntu `linux-azure` on Launchpad, and GitHub's
+  `actions/runner-images`) with the evidence of appendix D, rounds 10 and 11,
+  and the round-14 reproducer (two QLever test binaries, ~25 minutes
+  including the build). A self-contained C reproducer would be better, but
+  none of the synthetic workloads triggered the bug yet.
+- To get there: record the system calls of a failing test (`strace -f -e
+  trace=memory` for `madvise`/`mmap`/`munmap`/`mprotect`) and replay that
+  pattern synthetically.
 
 ---
 
@@ -223,7 +205,8 @@ Workflow `.github/workflows/repro.yml`, all on `ubuntu-24.04-arm` with
 | 12 `fresh-1-spawn`                  | round 8 `fresh-1` plus the spawner: **226 ASID rollovers in 1 h** (16-bit ASIDs, generation 65536 → 14,876,672) | **nothing** in 22,015 processes: frequent ASID rollovers alone don't trigger the bug. Controls: `fresh-1-nospawn` (10 rollovers/h) nothing in about 24,800 processes; `longrun-spawn` (226 rollovers/h, long-running processes) nothing in 28,200 builds (only slow builds from the CPU contention) |
 | 12 synthetic `*-spawn` (42147934730) | `repro.c` `mixed` (glibc / `jemalloc` with immediate purging) and `madvdontneed` with 2 MiB chunks, with and without the spawner | **nothing** in 3,800 to 6,000 processes each, no storms |
 | 15 `qlever-nouring-*` (42162005315)  | the five-test `ctest` loop, built with `-DUSE_IO_URING=OFF` (QLever reads vocabularies via `io_uring`, which no synthetic workload did) | `qlever-nouring-2`: 4 storms (3 ended only by moving the thread to another CPU) and **corruption in iteration 18**: `io_uring` is not the trigger |
-| 14 `tests-graph*` (42157071431)     | only the stalling tests (`TransitivePathTest` `*raph*EmptyPath*`, `JoinTest` `*joinTwoScansWithDifferentGraphs*`), each in its own process, 4 or 1 at a time, default or no purging | running |
+| 14 `tests-graph*` (42157071431)     | only the stalling tests (`TransitivePathTest` `*raph*EmptyPath*`, `JoinTest` `*joinTwoScansWithDifferentGraphs*`, 30 tests), each in its own process, 4 or 1 at a time | **`tests-graph-p1` reproduces everything**: in 1 h, 49,318 processes, 36 failed (POS pattern check 26+, QLever assertions 6, SIGBUS 1, SIGSEGV 1), first failure after 4 minutes, and ~290 storms, 267 of them ended by moving the thread to another CPU. The parallel jobs were invalid (the instances shared a directory and overwrote each other's index files) |
+| 16 `tests-graph-p4*`, `-p1*` (42165619238) | round 14 with a directory per instance; with no purging; with THP `never`; and p1 again | running |
 | 13 `ptzap-*` (42148661716)          | `repro ptzap`: touchers pinned to their CPUs keep writing/reading words in 2 MiB chunks, a zapper on another CPU empties whole chunks via `MADV_DONTNEED` (frees page tables); stall and corruption detection built in | **nothing**: 130 processes × 60 s per job (pinned, unpinned, pinned + spawner), no stall, no corruption (the watcher's hundreds of "storms" are `ptzap`'s legitimate fault load: none ended by moving the thread to another CPU, except one ambiguous case) |
 | 12 `longrun-spawn`, `fresh-1-(no)spawn` (42147934519), synthetic `*-spawn` (42147934730) | a host process that starts `/bin/true` as fast as possible (many ASID rollovers) next to the long-running index loop (nothing in round 6) and next to the synthetic workloads; ASID generation logged on the host | running |
 | 9 `qlever-watch-*` (42138288151)    | the QLever tests (as round 3) with `fault-storm-watch.sh` | `qlever-watch-1`: **storm caught live** in iteration 2 (details below), then the corruption in exactly that test. `qlever-watch-2`: 5 storms (3.6 to 4.0 M faults/s) in 17 iterations, **all 5 unaffected by reading `/proc` and ended by `SIGSTOP`/`SIGCONT`**; corruption in iteration 17 in `CompressedRelationReader.getFirstAndLastTripleIgnoringGraph` (1.49 s, no storm detected, i.e. corruption also happens without a long storm) |
