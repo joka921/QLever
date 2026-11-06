@@ -109,6 +109,30 @@ reproducers.
 | **`MALLOC_CONF=dirty_decay_ms:-1,muzzy_decay_ms:-1` for the test step of the Docker build** (`jemalloc` never returns memory to the kernel; the tests are short-lived, so the memory cost is irrelevant) | **works** in round 5 (0 stalls in 188 iterations); **recommended**: one environment variable, keeps `jemalloc`, no host changes |
 | Run the arm64 tests outside the Docker build or on amd64 only | avoids the symptom only if the trigger is specific to the build; not tested |
 
+### Suggested change for the Docker build (not applied yet)
+
+In QLever's `Dockerfile`, run the tests with `jemalloc`'s purging disabled
+(only for `ctest`; the shipped binaries are unaffected):
+
+```dockerfile
+RUN if [ "$RUN_TESTS" = "true" ]; then \
+      cmake --build . && { \
+        # The arm64 runners' kernel (7.0.0-1017-azure) has a bug that `jemalloc`'s
+        # purging via `madvise` triggers (stalls and memory corruption in the
+        # tests), see `REPORT.md` on the `arm64-stall-repro` branch.
+        MALLOC_CONF=dirty_decay_ms:-1,muzzy_decay_ms:-1 \
+        QLEVER_TEST_DIAGNOSTICS_DIR=/qlever/build/test-diagnostics \
+          ctest --rerun-failed --output-on-failure; \
+        ...
+```
+
+`MALLOC_CONF` is only read by `jemalloc`, and the test processes are
+short-lived, so not returning freed memory to the kernel costs nothing. A
+host-side alternative (in the workflow, before the build) is
+`echo never | sudo tee /sys/kernel/mm/transparent_hugepage/enabled` (plus
+`defrag` and `khugepaged/defrag`), which was almost as effective (1 stall,
+no corruption in 341 iterations) but affects the whole runner.
+
 ## Next steps
 
 - Narrow the reproducer to one test binary and one test filter, then to a
