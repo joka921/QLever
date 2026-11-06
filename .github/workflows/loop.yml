@@ -13,7 +13,9 @@
 # named graphs), each in its own process, 4 (or 1) at a time. Round 16: the
 # same with a separate working directory per instance (in round 14, parallel
 # instances overwrote each other's index files), and the two mitigations
-# (no `jemalloc` purging, THP `never` on the host).
+# (no `jemalloc` purging, THP `never` on the host). Round 18: some VMs don't
+# reproduce at all (round 15/16), so test the `MALLOC_CONF` mitigation on 3
+# VMs against 2 default VMs, all one test at a time, with more host info.
 name: arm64 stall reproducer (index build loop)
 
 on:
@@ -31,10 +33,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: tests-graph-p4, parallel: 4, builds: "", spawn: 0, thp: "", malloc_conf: "", tests: "TransitivePathTest:*raph*EmptyPath* JoinTest:*joinTwoScansWithDifferentGraphs*" }
-          - { name: tests-graph-p4-nopurge, parallel: 4, builds: "", spawn: 0, thp: "", malloc_conf: "dirty_decay_ms:-1,muzzy_decay_ms:-1", tests: "TransitivePathTest:*raph*EmptyPath* JoinTest:*joinTwoScansWithDifferentGraphs*" }
-          - { name: tests-graph-p1-thpnever, parallel: 1, builds: "", spawn: 0, thp: never, malloc_conf: "", tests: "TransitivePathTest:*raph*EmptyPath* JoinTest:*joinTwoScansWithDifferentGraphs*" }
-          - { name: tests-graph-p1, parallel: 1, builds: "", spawn: 0, thp: "", malloc_conf: "", tests: "TransitivePathTest:*raph*EmptyPath* JoinTest:*joinTwoScansWithDifferentGraphs*" }
+          - { name: p1-default-a, parallel: 1, builds: "", spawn: 0, thp: "", malloc_conf: "", tests: "TransitivePathTest:*raph*EmptyPath* JoinTest:*joinTwoScansWithDifferentGraphs*" }
+          - { name: p1-default-b, parallel: 1, builds: "", spawn: 0, thp: "", malloc_conf: "", tests: "TransitivePathTest:*raph*EmptyPath* JoinTest:*joinTwoScansWithDifferentGraphs*" }
+          - { name: p1-nopurge-a, parallel: 1, builds: "", spawn: 0, thp: "", malloc_conf: "dirty_decay_ms:-1,muzzy_decay_ms:-1", tests: "TransitivePathTest:*raph*EmptyPath* JoinTest:*joinTwoScansWithDifferentGraphs*" }
+          - { name: p1-nopurge-b, parallel: 1, builds: "", spawn: 0, thp: "", malloc_conf: "dirty_decay_ms:-1,muzzy_decay_ms:-1", tests: "TransitivePathTest:*raph*EmptyPath* JoinTest:*joinTwoScansWithDifferentGraphs*" }
+          - { name: p1-nopurge-c, parallel: 1, builds: "", spawn: 0, thp: "", malloc_conf: "dirty_decay_ms:-1,muzzy_decay_ms:-1", tests: "TransitivePathTest:*raph*EmptyPath* JoinTest:*joinTwoScansWithDifferentGraphs*" }
     name: ${{ matrix.name }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 180
@@ -45,8 +48,12 @@ jobs:
       - name: Print kernel and CPU information
         run: |
           uname -a
-          lscpu | grep -E 'Model name|Stepping'
+          lscpu
           free -m
+          grep -m 4 -E 'CPU (implementer|variant|part|revision)' /proc/cpuinfo
+          cat /sys/devices/system/cpu/cpu0/regs/identification/midr_el1 || true
+          sudo dmesg | grep -iE 'hyper-?v|hv_|errat|smccc|psci|cpu features' | head -n 40 || true
+          cat /sys/class/dmi/id/{sys_vendor,product_name,product_version,bios_version} 2> /dev/null || true
       - uses: actions/checkout@v4
         with:
           repository: ad-freiburg/qlever
@@ -88,7 +95,7 @@ jobs:
         run: |
           docker buildx build --progress=plain --target loop \
             --cache-from type=gha,scope=index-loop \
-            --build-arg DURATION=2700 --build-arg PARALLEL=${{ matrix.parallel }} \
+            --build-arg DURATION=1800 --build-arg PARALLEL=${{ matrix.parallel }} \
             --build-arg "MALLOC_CONF=${{ matrix.malloc_conf }}" \
             --build-arg "BUILDS_PER_PROCESS=${{ matrix.builds }}" \
             --build-arg "REPRO_TESTS=${{ matrix.tests }}" \
